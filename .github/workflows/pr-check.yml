@@ -1,0 +1,102 @@
+# PR / main gate: last checks before merge.
+name: PR check
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: pr-check-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        shell: bash
+        run: |
+          out=xallor-remote
+          if [ "${{ runner.os }}" = "Windows" ]; then out=xallor-remote.exe; fi
+          go build -o "$out" ./cmd/xallor-remote
+
+      - name: Cross-compile
+        if: runner.os == 'Linux'
+        run: |
+          GOOS=windows GOARCH=amd64 go build -o /tmp/xallor-remote.exe ./cmd/xallor-remote
+          GOOS=linux GOARCH=amd64 go build -o /tmp/xallor-remote ./cmd/xallor-remote
+
+  mcp:
+    name: MCP
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/mcp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: packages/mcp/package-lock.json
+
+      - run: npm ci
+      - run: npm test
+
+  gui:
+    name: GUI typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/gui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/gui/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+
+  # Single required status for branch protection.
+  pr-check:
+    name: pr-check
+    needs: [go, mcp, gui]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: All gates green
+        run: |
+          echo "go=${{ needs.go.result }}"
+          echo "mcp=${{ needs.mcp.result }}"
+          echo "gui=${{ needs.gui.result }}"
+          test "${{ needs.go.result }}" = "success"
+          test "${{ needs.mcp.result }}" = "success"
+          test "${{ needs.gui.result }}" = "success"

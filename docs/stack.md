@@ -36,6 +36,7 @@ SSOT：语言、库、仓库形态、发行。语言级选型结论在 [decision
 | Relay 落盘 | v0：**SQLite**，纯 Go 驱动 **`modernc.org/sqlite`**（devices / grants / audit） | v0 上 Postgres；自写 wal；stdout 进库 |
 | JSON | 标准库 `encoding/json` / `JSON.stringify` | 新 IDL（protobuf/connect）——v0 不值得 |
 | 发行 Go | **GoReleaser** 出各 OS 文件 + checksum | 手写三套 zip 脚本当正途 |
+| PR 合入校验 | **GitHub Actions** `.github/workflows/pr-check.yml`（Go 双 OS + MCP + GUI typecheck） | 只靠本机测就合 main |
 | 前端（GUI） | 任选 React 或 Svelte，**无业务逻辑** | 在 Web 里实现策略/授权 |
 
 PTY、终端仿真、远程桌面协议：**不引入** `creack/pty`、xterm 当产品能力（v0 无交互 stdin）。
