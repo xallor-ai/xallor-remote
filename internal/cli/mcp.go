@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/WangKangAandy/xallor-remote/internal/mcpconfig"
+	"github.com/xallor-ai/xallor-remote/internal/mcpconfig"
 )
 
 func cmdMCP() *cobra.Command {

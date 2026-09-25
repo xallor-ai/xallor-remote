@@ -1,4 +1,4 @@
-# Push current HEAD to GitHub via API (git://443 is often blocked).
+﻿# Push current HEAD to GitHub via API (git://443 is often blocked).
 import base64
 import json
 import subprocess
@@ -6,7 +6,7 @@ import sys
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-REPO = "WangKangAandy/xallor-remote"
+REPO = "xallor-ai/xallor-remote"
 ROOT = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip()
 
 

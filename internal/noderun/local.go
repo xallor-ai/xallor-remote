@@ -3,8 +3,8 @@ package noderun
 import (
 	"encoding/json"
 
-	"github.com/WangKangAandy/xallor-remote/internal/ipc"
-	"github.com/WangKangAandy/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/ipc"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {

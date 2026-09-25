@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/WangKangAandy/xallor-remote/internal/ipc"
+	"github.com/xallor-ai/xallor-remote/internal/ipc"
 )
 
 func rpc(method string, params map[string]any) (map[string]any, error) {

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/WangKangAandy/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 type Quota struct {

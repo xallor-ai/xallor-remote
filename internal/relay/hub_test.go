@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/WangKangAandy/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 type memStore struct {

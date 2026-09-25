@@ -1,4 +1,4 @@
-module github.com/WangKangAandy/xallor-remote
+module github.com/xallor-ai/xallor-remote
 
 go 1.25.0
 

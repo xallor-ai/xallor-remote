@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/WangKangAandy/xallor-remote/internal/ipc"
-	"github.com/WangKangAandy/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/ipc"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 type testSink struct {

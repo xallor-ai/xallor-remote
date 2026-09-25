@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/WangKangAandy/xallor-remote/internal/ipc"
+	"github.com/xallor-ai/xallor-remote/internal/ipc"
 )
 
 func cmdApprove() *cobra.Command {

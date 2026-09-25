@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/WangKangAandy/xallor-remote/internal/appdata"
-	"github.com/WangKangAandy/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/appdata"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 type Peer struct {

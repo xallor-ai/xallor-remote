@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/WangKangAandy/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 func (d *Daemon) runLocalExec(link *wsConn, msg protocol.Message) {

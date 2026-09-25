@@ -12,12 +12,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/WangKangAandy/xallor-remote/internal/appdata"
-	"github.com/WangKangAandy/xallor-remote/internal/identity"
-	"github.com/WangKangAandy/xallor-remote/internal/ipc"
-	"github.com/WangKangAandy/xallor-remote/internal/noderun"
-	"github.com/WangKangAandy/xallor-remote/internal/protocol"
-	"github.com/WangKangAandy/xallor-remote/internal/relay"
+	"github.com/xallor-ai/xallor-remote/internal/appdata"
+	"github.com/xallor-ai/xallor-remote/internal/identity"
+	"github.com/xallor-ai/xallor-remote/internal/ipc"
+	"github.com/xallor-ai/xallor-remote/internal/noderun"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/relay"
 )
 
 func Execute() error {

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/WangKangAandy/xallor-remote/internal/identity"
-	"github.com/WangKangAandy/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/identity"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 func (d *Daemon) runLocalRead(link *wsConn, msg protocol.Message) {

@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/WangKangAandy/xallor-remote/internal/appdata"
+	"github.com/xallor-ai/xallor-remote/internal/appdata"
 )
 
 func Listen() (net.Listener, error) {
