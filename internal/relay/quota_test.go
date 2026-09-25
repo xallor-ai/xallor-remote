@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/WangKangAandy/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 func TestLimiterDisabledAlwaysAllows(t *testing.T) {

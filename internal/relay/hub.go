@@ -3,7 +3,7 @@ package relay
 import (
 	"sync"
 
-	"github.com/WangKangAandy/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 // Sender is a live WSS connection. Writes must be serialized by the impl.

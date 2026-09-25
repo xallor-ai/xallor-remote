@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/WangKangAandy/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 func writeHealth(w http.ResponseWriter, _ *http.Request) {

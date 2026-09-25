@@ -1,6 +1,6 @@
 package noderun
 
-import "github.com/WangKangAandy/xallor-remote/internal/protocol"
+import "github.com/xallor-ai/xallor-remote/internal/protocol"
 
 // takeChunk clips one stdout/stderr frame to remaining quota and max frame size.
 // drain is true when the caller should keep reading but stop sending.

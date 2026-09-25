@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/WangKangAandy/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 // 目的：hello_client 失败时把协议码交给 IPC，不要一律说成中转断开。

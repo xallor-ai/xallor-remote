@@ -5,8 +5,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/WangKangAandy/xallor-remote/internal/ipc"
-	"github.com/WangKangAandy/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/ipc"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 const approvalWait = 60 * time.Second

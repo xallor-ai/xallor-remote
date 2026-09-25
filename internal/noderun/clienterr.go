@@ -1,6 +1,6 @@
 package noderun
 
-import "github.com/WangKangAandy/xallor-remote/internal/protocol"
+import "github.com/xallor-ai/xallor-remote/internal/protocol"
 
 func clientDialCode(err error) string {
 	if err == nil {

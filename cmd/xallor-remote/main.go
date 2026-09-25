@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/WangKangAandy/xallor-remote/internal/cli"
+	"github.com/xallor-ai/xallor-remote/internal/cli"
 )
 
 func main() {

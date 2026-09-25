@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/WangKangAandy/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 func (h *Hub) record(deviceID, op, execID, decision, code string, payload []byte) {
