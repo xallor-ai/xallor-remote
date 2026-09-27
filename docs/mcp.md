@@ -24,7 +24,7 @@ Cursor 等 spawn 的短驻 stdio 进程：全局安装后的 `xallor-remote-mcp`
     "xallor-remote": {
       "command": "xallor-remote-mcp",
       "env": {
-        "XALLOR_REMOTE_DEVICE_ID": "dev_windows_gpu",
+        "XALLOR_REMOTE_DEVICE_ID": "andy",
         "XALLOR_REMOTE_DEVICE_GRANT": "xr_grant_…"
       }
     }

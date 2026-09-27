@@ -26,7 +26,7 @@ function Find-VsInstall {
 }
 
 $vs = Find-VsInstall
-if (-not $vs) { throw "找不到带 VC Tools 的 Visual Studio / Build Tools。" }
+if (-not $vs) { throw "Cannot find Visual Studio / Build Tools with VC Tools." }
 
 $vcvars = Join-Path $vs "VC\Auxiliary\Build\vcvars64.bat"
 cmd /c "`"$vcvars`" >nul 2>&1 && set" | ForEach-Object {
@@ -36,6 +36,6 @@ cmd /c "`"$vcvars`" >nul 2>&1 && set" | ForEach-Object {
 }
 $env:Path = "$env:USERPROFILE\.cargo\bin;" + $env:Path
 
-Write-Host "VS=$vs"
-Write-Host "link=$(Get-Command link.exe | Select-Object -ExpandProperty Source)"
-Write-Host "rc=$(Get-Command rc.exe | Select-Object -ExpandProperty Source)"
+Write-Host ("VS=" + $vs)
+Write-Host ("link=" + (Get-Command link.exe | Select-Object -ExpandProperty Source))
+Write-Host ("rc=" + (Get-Command rc.exe | Select-Object -ExpandProperty Source))

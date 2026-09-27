@@ -8,6 +8,11 @@ type Status = {
   version?: string;
 };
 
+type Config = {
+  relay_url?: string;
+  workspace?: string;
+};
+
 function inTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -71,6 +76,27 @@ export async function peerAdd(deviceId: string, grant: string): Promise<void> {
     return;
   }
   await http("/__ipc", { method: "peer.add", params: { device_id: deviceId, grant } });
+}
+
+export async function peerRemove(deviceId: string): Promise<void> {
+  if (inTauri()) {
+    await invoke("peer_remove", { device_id: deviceId });
+    return;
+  }
+  await http("/__ipc", { method: "peer.remove", params: { device_id: deviceId } });
+}
+
+export async function configGet(): Promise<Config> {
+  if (inTauri()) return invoke<Config>("config_get");
+  return http<Config>("/__ipc", { method: "config.get" });
+}
+
+export async function configSetWorkspace(workspace: string): Promise<void> {
+  if (inTauri()) {
+    await invoke("config_set_workspace", { workspace });
+    return;
+  }
+  await http("/__ipc", { method: "config.set", params: { workspace } });
 }
 
 export async function execCommand(

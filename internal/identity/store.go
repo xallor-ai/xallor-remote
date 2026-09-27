@@ -2,6 +2,7 @@ package identity
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -85,17 +86,24 @@ func LoadFrom(dir string) (*Store, error) {
 		}
 		s.Config.Workspace = ws
 	}
-	if s.DeviceID == "" || s.Secret == "" {
-		id, err := protocol.NewDeviceID()
-		if err != nil {
-			return nil, err
-		}
+	want := Username()
+	if want == "" {
+		return nil, errors.New("无法读取本机用户名")
+	}
+	idChanged := false
+	if s.DeviceID != want {
+		s.DeviceID = want
+		idChanged = true
+	}
+	if s.Secret == "" {
 		sec, err := protocol.NewSecret()
 		if err != nil {
 			return nil, err
 		}
-		s.DeviceID = id
 		s.Secret = sec
+		idChanged = true
+	}
+	if idChanged {
 		if err := s.persistIdentity(); err != nil {
 			return nil, err
 		}

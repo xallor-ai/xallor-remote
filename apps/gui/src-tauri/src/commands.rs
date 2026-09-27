@@ -54,6 +54,29 @@ pub fn peer_add(device_id: String, grant: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn peer_remove(device_id: String) -> Result<(), String> {
+    crate::ipc::rpc("peer.remove", serde_json::json!({"device_id": device_id}))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn config_get() -> Result<serde_json::Value, String> {
+    crate::ipc::rpc("config.get", serde_json::json!({}))
+}
+
+#[tauri::command]
+pub fn config_set_workspace(workspace: String) -> Result<(), String> {
+    if workspace.trim().is_empty() {
+        return Err("请填写 workspace 路径。".into());
+    }
+    crate::ipc::rpc(
+        "config.set",
+        serde_json::json!({"workspace": workspace.trim()}),
+    )?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn exec_cmd(app: AppHandle, command: String, device_id: String) -> Result<(), String> {
     crate::ipc::exec_stream(&command, &device_id, |s| {
         let _ = app.emit("exec-out", s);

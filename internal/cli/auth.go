@@ -71,7 +71,7 @@ func cmdReset() *cobra.Command {
 			if _, err := rpc("reset", map[string]any{"confirm": true}); err != nil {
 				return err
 			}
-			fmt.Println("已注销本机身份。下次 start 会生成新的设备 ID。")
+			fmt.Println("已注销本机身份。下次 start 会按登录用户名重新登记。")
 			return nil
 		},
 	}
