@@ -29,7 +29,7 @@ Agent 或人
 
 ## 2. 没有任务时
 
-**目标机：** `xallor-remote ensure` / `start` → 若无身份则生成 device_id + secret → 确保默认 workspace → `hello_device`（inbound=false）→ Relay 标 online。此时 **没有** 授权码。
+**目标机：** `xallor-remote ensure` / `start` → 若无身份则以登录用户名为 device_id 并生成 secret → 确保默认 workspace → `hello_device`（inbound=false）→ Relay 标 online。此时 **没有** 授权码。
 
 **控制机：** `xallor-remote peer add` 或 mcp.json 覆盖被 Runtime 收编 → 本机 Runtime 对目标做 `hello_client`（可惰性：第一次 exec 再建）。
 

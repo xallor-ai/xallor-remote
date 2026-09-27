@@ -7,7 +7,7 @@ import (
 
 func TestFormatHomeShowsDeviceAndInboundOff(t *testing.T) {
 	s := formatHome(map[string]any{
-		"device_id": "dev_ab",
+		"device_id": "andy",
 		"workspace": `C:\ws`,
 		"relay":     "ws://127.0.0.1:18443",
 		"inbound":   false,
@@ -15,7 +15,7 @@ func TestFormatHomeShowsDeviceAndInboundOff(t *testing.T) {
 		"online":    true,
 		"version":   "0.1.0-dev",
 	})
-	if !strings.Contains(s, "dev_ab") || !strings.Contains(s, "关（还没有授权码）") {
+	if !strings.Contains(s, "andy") || !strings.Contains(s, "关（还没有授权码）") {
 		t.Fatal(s)
 	}
 }

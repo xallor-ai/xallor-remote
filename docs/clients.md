@@ -58,7 +58,7 @@ xallor-remote reset --yes
 
 ## 5. GUI（v0.1）
 
-**Tauri 2**，调本机 Runtime。5 分钟：看见 ID、issue、加 peer、结束前看到输出行。左栏：本机 / Peer / 会话 / 审批 / 审计 / 设置。不做键鼠。不做 Electron。
+**Tauri 2**，调本机 Runtime。5 分钟路径在「连接」一屏完成：看见本机 ID、签发/分享授权码、开关入站、添加对方。会话里对流式执行。左栏：连接 / 会话 / 审批 / 审计 / 设置。Relay 不对用户展示；workspace 在设置里改。不做键鼠。不做 Electron。
 
 工程：`apps/gui`。本机需 Rust + MSVC；开发 `npm run tauri:dev`，发行物 `xallor-remote-gui.exe`（先有本机 Runtime）。
 

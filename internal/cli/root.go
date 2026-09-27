@@ -171,7 +171,7 @@ func cmdPeer() *cobra.Command {
 			return nil
 		},
 	}
-	add.Flags().StringVar(&id, "id", "", "对方设备 ID")
+	add.Flags().StringVar(&id, "id", "", "对方用户名")
 	add.Flags().StringVar(&grant, "grant", "", "对方授权码")
 	c.AddCommand(add)
 	c.AddCommand(&cobra.Command{
@@ -214,7 +214,7 @@ func cmdPeer() *cobra.Command {
 			return nil
 		},
 	}
-	rm.Flags().StringVar(&rid, "id", "", "对方设备 ID")
+	rm.Flags().StringVar(&rid, "id", "", "对方用户名")
 	c.AddCommand(rm)
 	return c
 }
@@ -238,7 +238,7 @@ func cmdExec() *cobra.Command {
 			return streamExec(device, command)
 		},
 	}
-	c.Flags().StringVar(&device, "device", "", "目标 device_id（仅一台时可省）")
+	c.Flags().StringVar(&device, "device", "", "对方用户名（仅一台时可省）")
 	return c
 }
 

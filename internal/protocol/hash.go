@@ -27,14 +27,6 @@ func NewGrant() (string, error) {
 	return GrantPrefix + h, nil
 }
 
-func NewDeviceID() (string, error) {
-	h, err := RandomHex(6)
-	if err != nil {
-		return "", err
-	}
-	return "dev_" + h, nil
-}
-
 func NewSecret() (string, error) {
 	return RandomHex(32)
 }

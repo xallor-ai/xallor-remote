@@ -12,6 +12,9 @@ pub fn run() {
             commands::inbound_set,
             commands::peer_list,
             commands::peer_add,
+            commands::peer_remove,
+            commands::config_get,
+            commands::config_set_workspace,
             commands::exec_cmd,
         ])
         .run(tauri::generate_context!())

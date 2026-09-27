@@ -10,10 +10,12 @@ SSOT：三套秘密与授权语义。协议角色见 [protocol.md](protocol.md)�
 
 ```text
 Relay:     wss://api.xallor.com/remote
-Device ID: dev_windows_gpu
+Device ID: andy
 Workspace: C:\Users\<you>\XallorRemote\workspace
 入站:      关（还没有授权码）
 ```
+
+设备 ID = 本机登录用户名（去掉域前缀，如 `ANDY\andy` → `andy`）。本机与对方设备一律用这个名字识别与配对；同一 Relay 上用户名须唯一。
 
 需要给别人控：`xallor-remote grant issue`（**必须在这台被控机本机**）
 
@@ -75,7 +77,7 @@ v0：**一台设备一个有效 grant**；轮换即作废旧的。多控制端�
 
 授权码：高熵、前缀 `xr_grant_`；Relay 只存 **SHA-256** 哈希；日志不得打全文；禁止放进 URL。
 
-设备 ID：同一 Relay 唯一；不是密钥。
+设备 ID：登录用户名；同一 Relay 唯一；不是密钥。
 
 多 peer：`xallor-remote peer add`；多台时 exec 必带 device_id。不得用 A 的 grant 打 B。
 
