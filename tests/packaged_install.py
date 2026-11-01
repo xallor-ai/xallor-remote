@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    version = json.loads((ROOT / "packages/mcp/package.json").read_text())["version"]
+    version = json.loads((ROOT / "packages/mcp/package.json").read_text(encoding="utf-8"))["version"]
     archive = ROOT / f"dist/release/xallor-remote-mcp-{version}.tgz"
     assert archive.is_file(), archive
     root = Path(tempfile.mkdtemp(prefix="xr-package-")).resolve()
@@ -29,7 +29,7 @@ def main():
         subprocess.run([npm, "install", "--prefix", str(root), "--no-audit", "--no-fund", str(archive)],
                        check=True, timeout=180, env=env)
         pkg = root / "node_modules/xallor-remote-mcp"
-        metadata = json.loads((pkg / "package.json").read_text())
+        metadata = json.loads((pkg / "package.json").read_text(encoding="utf-8"))
         wrapper = pkg / metadata["bin"]["xallor-remote"]
         vendor = pkg / ("vendor/win32-x64" if os.name == "nt" else "vendor/linux-x64")
         binary = vendor / ("xallor-remote.exe" if os.name == "nt" else "xallor-remote")
@@ -39,7 +39,7 @@ def main():
                                   capture_output=True, encoding="utf-8", timeout=30).stdout
 
         actual = json.loads(cli("version", "--json"))
-        manifest = json.loads((vendor / "manifest.json").read_text())
+        manifest = json.loads((vendor / "manifest.json").read_text(encoding="utf-8"))
         assert actual["version"] == version and actual["revision"] == manifest["build"]["revision"]
         assert actual["dirty"] is False
         cli("runtime", "install", "--bundle", str(vendor))
@@ -59,7 +59,7 @@ def main():
             deadline = time.monotonic() + 10
             while True:
                 check = subprocess.run([str(binary), "runtime", "status"], env=env,
-                                       capture_output=True, text=True, timeout=20)
+                                       capture_output=True, encoding="utf-8", errors="replace", timeout=20)
                 if check.returncode != 0:
                     clean = False
                     break
@@ -71,7 +71,7 @@ def main():
                 time.sleep(.1)
         if clean:
             assert root.parent == Path(tempfile.gettempdir()).resolve() and root.name.startswith("xr-package-")
-            assert (root / ".owner").read_text() == "packaged-install"
+            assert (root / ".owner").read_text(encoding="utf-8") == "packaged-install"
             # npm may create executable symlinks. rmtree does not follow them.
             shutil.rmtree(root)
         else:

@@ -19,7 +19,7 @@ type runtimeControl struct{}
 func (runtimeControl) Running() (*buildinfo.Executable, error) {
 	raw, err := ipc.Dial(300 * time.Millisecond)
 	if err != nil {
-		if os.IsNotExist(err) || errors.Is(err, syscall.ECONNREFUSED) {
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) {
 			return nil, nil
 		}
 		return nil, err
