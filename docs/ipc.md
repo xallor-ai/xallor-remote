@@ -64,15 +64,18 @@ SSOT：命名管道 / Unix socket 上的报文与 ensure。路径与权限见 [d
 | `inbound.set` | 人侧头 | `{enabled:bool}` |
 | `revoke` / `reset` | 人侧头 | reset 须 `params.confirm=true` |
 | `peer.add` / `list` / `remove` | 任一头 | add 会收编 mcp.json 那套 id+grant |
+| `peer.rename` | 任一头 | `{device_id,name}` 修改备注，最多 80 字符；空字符串清除，不改 ID 或授权 |
 | `config.get` / `config.set` | 人侧头 | relay URL、workspace、shell |
 | `approval.subscribe` | 人侧头 | 注册为审批 UI；断开即取消 |
-| `approval.respond` | 人侧头 | 同一 `id`，`{allow:bool}` |
+| `approval.respond` | 人侧头 | 独立请求 ID；`{approval_id,allow:bool}`，同一审批最多确认一次 |
+| `approval.list` | 人侧头 | 当前待审批 `{pending:[{id,exec_id,preview,created}]}`；只读，不代替订阅 |
+| `audit.list` | 人侧头 | 本机最近 500 条操作元数据 `{entries:[...]}`；读取失败明确报错 |
 
 MCP **可以**调 `status` / `peer.*` / 下面远程方法；**不要**调 grant/inbound/revoke（包里不实现）。Runtime 不做「MCP 指纹鉴权」——防模型靠 tool 面，不靠 IPC 分角色。MCP 连接**不算**审批 UI。
 
 `status.result.build`：version、revision、built_at、dirty、protocol、os、arch、path、sha256、pid。path/hash 在进程启动时采集，表示正在运行的制品，不把升级后的磁盘文件冒充当前进程。远程 info 的 build 不包含本机 path/hash/pid。
 
-`status` 的 peers 仅含 `device_id`、`has_grant`，不返回授权码或 device_secret。`relay` 仅返回 scheme + host，去掉可能携带凭据的 userinfo/path/query/fragment；编辑地址仍走显式 `config.get`。
+`status` 的 peers 仅含 `device_id`、`name`、`has_grant`，不返回授权码或 device_secret。`relay` 仅返回 scheme + host，去掉可能携带凭据的 userinfo/path/query/fragment；编辑地址仍走显式 `config.get`。
 
 `doctor` 返回 `{schema:1, observed_at, device_id?, ok, checks:[{layer,state,code?,action?}]}`。固定层次：`ipc`、`runtime_relay`、`peer`、`relay_transport`、`authorization`、`target_online`、`inbound`、`target_runtime`。状态为 `ok` / `fail` / `unknown` / `skipped`；前置失败后的未测项不冒充成功。省略设备时仅测本机服务及其 Relay 连接；目标诊断创建一次独立 client 连接，hello 后只调用只读 `info`，以目标 ID 与成功终态验证目标响应，不执行 shell，不修改配对/授权/入站，不复用正在执行任务的连接。远程探测上限 5 秒。未返回终态只能表示未确认，诊断不承诺后续任务一定成功。
 
@@ -98,7 +101,7 @@ CLI `doctor [--device ID] [--json]` 不调用 ensure，也不创建数据目录�
 {"id":"a9","event":"approval","params":{"exec_id":"ex_…","preview":"rm -rf …"}}
 ```
 
-头回同一 `id`：`approval.respond` `{allow:true|false}`。
+头以独立请求 ID 发送 `approval.respond`，参数为 `{approval_id:"a9",allow:true|false}`。审批 ID 与 IPC 请求 ID 不混用；重复确认返回 unknown_exec。
 
 v0：**发出后 T 秒内没有任何头订阅/应答 → `policy_deny` 或 `approval_timeout`**（与 [runtime.md](runtime.md) 一致）。MCP 连接不算「有 UI」。无头机不要等。
 
@@ -135,3 +138,11 @@ v0：**发出后 T 秒内没有任何头订阅/应答 → `policy_deny` 或 `app
 ```
 
 IPC 的 `id` 与 WSS 的 `exec_id` 是两层。Runtime 做映射；头只需要 IPC `id` 和返回里的 `exec_id`（给 cancel / 展示用）。
+
+## 7. GUI 连接与本机记录
+
+桌面 GUI 启动同安装版本的 `xallor-remote ipc-bridge` 子进程，由 Go 复用 profile 路径和 ensure，透明转发 NDJSON 到一条本机 IPC。子进程不实现策略，不接 Relay。关闭窗口或子进程输入流会关闭该 IPC；只取消该连接的任务，Runtime 继续运行。开发页面的 HTTP 转发仅用于本机开发，要求同源 POST JSON；发行 GUI 不监听 HTTP。
+
+GUI 单次任务上限 60 秒，页面切换保留当前连接和最多 20 条内存任务，最多 8 个并行任务；单任务显示最多 256 Ki 字符，截断明确提示。收到终态才确认结果；断开或超时显示待确认，重新连接不重放命令。IPC 桥单帧上限 2 MiB，积压上限 8 MiB / 4096 帧，溢出关闭连接并明确报错。
+
+`audit.list` 返回 time、exec_id、direction、device_id、op、stage、code、exit_code；stage 为 requested / finished / rejected / unknown。device_id 是执行目标，不代表控制者实名。仅记录 Runtime 观测到的已发起操作及终态，不宣称完整防篡改审计。数据目录 activity.json 保留最后 500 条、最大 512 KiB，不含命令、输出、授权码；损坏或写失败不伪装成空记录。退出码缺失保留 null，禁止补成成功的 0。

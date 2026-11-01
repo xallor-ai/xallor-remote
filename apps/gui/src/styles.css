@@ -129,3 +129,22 @@ pre {
 dl.compact { display: grid; grid-template-columns: 88px 1fr; gap: 8px 12px; margin: 0; }
 dl.compact dt { color: var(--muted); }
 dl.compact dd { margin: 0; word-break: break-all; }
+
+.peer-detail { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.peer-list li { flex-wrap: wrap; }
+.peer-list .row { margin: 0; }
+.task-command, code, pre { overflow-wrap: anywhere; }
+#connection:not(:empty) { margin-bottom: 16px; color: #edb56c; }
+#history { margin-top: 16px; }
+.card pre + .row { margin-top: 12px; }
+.task-state { color: #b8d4ff; }
+main { min-width: 0; width: 100%; }
+input, select { min-width: 0; max-width: 100%; }
+@media (max-width: 640px) {
+  #app { flex-direction: column; }
+  .nav { width: 100%; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); padding: 12px; }
+  .nav h1 { width: 100%; margin: 0 0 4px; }
+  main { padding: 20px 14px; }
+  .card { padding: 14px; }
+  .card-head { flex-wrap: wrap; }
+}

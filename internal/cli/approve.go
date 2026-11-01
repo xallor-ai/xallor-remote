@@ -58,7 +58,7 @@ func cmdApprove() *cobra.Command {
 				fmt.Printf("\n需要确认的命令:\n  %s\n允许执行？[y/N] ", p.Preview)
 				line, _ := in.ReadString('\n')
 				allow := strings.EqualFold(strings.TrimSpace(line), "y")
-				if err := ipc.Call(c, ev.ID, "approval.respond", map[string]any{"allow": allow}); err != nil {
+				if err := ipc.Call(c, ev.ID, "approval.respond", map[string]any{"approval_id": ev.ID, "allow": allow}); err != nil {
 					return err
 				}
 				ack, err := c.ReadFrame()

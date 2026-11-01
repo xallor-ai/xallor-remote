@@ -1,6 +1,7 @@
 package noderun
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -24,8 +25,10 @@ type frameWriter interface {
 }
 
 type pendingApproval struct {
-	execID string
-	ch     chan decide
+	execID  string
+	preview string
+	created string
+	ch      chan decide
 }
 
 type decide struct {
@@ -54,14 +57,17 @@ func (h *approvalHub) unsubscribe(c frameWriter) {
 }
 
 // ask broadcasts to human UI heads. No subscriber → policy_deny without waiting.
-func (h *approvalHub) ask(execID, preview string) (allow bool, code string) {
+func (h *approvalHub) ask(ctx context.Context, execID, preview string) (allow bool, code string) {
+	if ctx.Err() != nil {
+		return false, protocol.Cancelled
+	}
 	h.mu.Lock()
 	if len(h.subs) == 0 {
 		h.mu.Unlock()
 		return false, protocol.PolicyDeny
 	}
 	id := "a" + itoa(h.seq.Add(1))
-	p := &pendingApproval{execID: execID, ch: make(chan decide, 1)}
+	p := &pendingApproval{execID: execID, preview: preview, created: time.Now().UTC().Format(time.RFC3339), ch: make(chan decide, 1)}
 	h.pending[id] = p
 	h.byExec[execID] = id
 	subs := make([]frameWriter, 0, len(h.subs))
@@ -79,6 +85,9 @@ func (h *approvalHub) ask(execID, preview string) (allow bool, code string) {
 	timer := time.NewTimer(approvalWait)
 	defer timer.Stop()
 	select {
+	case <-ctx.Done():
+		h.clear(id, execID)
+		return false, protocol.Cancelled
 	case d := <-p.ch:
 		h.clear(id, execID)
 		if d.allow {
@@ -97,6 +106,10 @@ func (h *approvalHub) ask(execID, preview string) (allow bool, code string) {
 func (h *approvalHub) respond(id string, allow bool) bool {
 	h.mu.Lock()
 	p := h.pending[id]
+	// Claim once, before the waiting goroutine can consume and clear its channel.
+	if p != nil {
+		delete(h.pending, id)
+	}
 	h.mu.Unlock()
 	if p == nil {
 		return false

@@ -71,7 +71,7 @@ jobs:
       - run: npm test
 
   gui:
-    name: GUI typecheck
+    name: GUI build and unit tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -86,7 +86,52 @@ jobs:
           cache-dependency-path: apps/gui/package-lock.json
 
       - run: npm ci
-      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+
+  gui-e2e:
+    name: GUI and native bridge (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/gui/src-tauri
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - run: npm ci
+        working-directory: apps/gui
+      - run: npm run build
+        working-directory: apps/gui
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/gui
+      - run: cargo test --manifest-path apps/gui/src-tauri/Cargo.toml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gui-cargo-lock-${{ matrix.os }}
+          path: apps/gui/src-tauri/Cargo.lock
+      - run: go build -o dist/gui-runtime.exe ./cmd/xallor-remote
+      - run: python tests/gui_e2e.py --binary dist/gui-runtime.exe --native
+        env:
+          XR_GUI_EVIDENCE: ${{ runner.temp }}/xr-gui-evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gui-evidence-${{ matrix.os }}
+          path: ${{ runner.temp }}/xr-gui-evidence
 
   release-lifecycle:
     name: Release lifecycle (${{ matrix.os }})
@@ -162,7 +207,7 @@ jobs:
   # Single required status for branch protection.
   pr-check:
     name: pr-check
-    needs: [go, mcp, gui, release-lifecycle, integration]
+    needs: [go, mcp, gui, gui-e2e, release-lifecycle, integration]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -174,5 +219,6 @@ jobs:
           test "${{ needs.go.result }}" = "success"
           test "${{ needs.mcp.result }}" = "success"
           test "${{ needs.gui.result }}" = "success"
+          test "${{ needs.gui-e2e.result }}" = "success"
           test "${{ needs.release-lifecycle.result }}" = "success"
           test "${{ needs.integration.result }}" = "success"

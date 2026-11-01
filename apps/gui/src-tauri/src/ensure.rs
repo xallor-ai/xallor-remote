@@ -1,11 +1,5 @@
 use std::env;
 use std::path::PathBuf;
-use std::process::Command;
-
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 fn exe_name() -> &'static str {
     if cfg!(windows) {
@@ -16,6 +10,9 @@ fn exe_name() -> &'static str {
 }
 
 fn data_dir() -> PathBuf {
+    if let Ok(dir) = env::var("XALLOR_REMOTE_DATA_DIR") {
+        if !dir.is_empty() { return PathBuf::from(dir); }
+    }
     if cfg!(windows) {
         if let Ok(base) = env::var("APPDATA") {
             return PathBuf::from(base).join("XallorRemote");
@@ -42,7 +39,7 @@ fn look_in_path() -> Option<PathBuf> {
     None
 }
 
-fn find_bin() -> Result<PathBuf, String> {
+pub fn find_bin() -> Result<PathBuf, String> {
     if let Ok(p) = env::var("XALLOR_REMOTE_BIN") {
         if !p.is_empty() {
             return Ok(PathBuf::from(p));
@@ -56,22 +53,4 @@ fn find_bin() -> Result<PathBuf, String> {
         return Ok(bundled);
     }
     Err("找不到 xallor-remote。请先安装后再打开。".into())
-}
-
-pub fn ensure() -> Result<(), String> {
-    if crate::ipc::try_connect().is_ok() {
-        return Ok(());
-    }
-    let bin = find_bin()?;
-    let mut cmd = Command::new(&bin);
-    cmd.arg("ensure");
-    #[cfg(windows)]
-    {
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-    let status = cmd.status().map_err(|_| "无法拉起 Runtime。".to_string())?;
-    if !status.success() {
-        return Err("无法拉起 Runtime。".into());
-    }
-    Ok(())
 }

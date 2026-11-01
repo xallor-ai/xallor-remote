@@ -8,12 +8,14 @@ import (
 	"sync"
 
 	"github.com/xallor-ai/xallor-remote/internal/appdata"
+	"github.com/xallor-ai/xallor-remote/internal/atomicfile"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 type Peer struct {
 	DeviceID string `json:"device_id"`
 	Grant    string `json:"grant"`
+	Name     string `json:"name,omitempty"`
 }
 
 type Config struct {
@@ -136,7 +138,7 @@ func (s *Store) persistConfig() error {
 
 func (s *Store) persistPeers() error {
 	b, _ := json.MarshalIndent(s.Peers, "", "  ")
-	return os.WriteFile(filepath.Join(s.Dir, "peers.json"), b, 0o600)
+	return atomicfile.Write(filepath.Join(s.Dir, "peers.json"), b)
 }
 
 func (s *Store) IssueGrant() (string, error) {

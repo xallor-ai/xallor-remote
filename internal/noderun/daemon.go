@@ -11,6 +11,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
+	"github.com/xallor-ai/xallor-remote/internal/activity"
 	"github.com/xallor-ai/xallor-remote/internal/buildinfo"
 	"github.com/xallor-ai/xallor-remote/internal/identity"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
@@ -18,9 +19,10 @@ import (
 )
 
 type wsConn struct {
-	mu   sync.Mutex
-	ctx  context.Context
-	conn *websocket.Conn
+	mu      sync.Mutex
+	ctx     context.Context
+	conn    *websocket.Conn
+	observe func(protocol.Message)
 }
 
 func (w *wsConn) send(m protocol.Message) error {
@@ -30,6 +32,9 @@ func (w *wsConn) send(m protocol.Message) error {
 	}
 	if len(raw) > protocol.MaxWSMessageBytes {
 		return errMsgTooLarge
+	}
+	if w.observe != nil {
+		w.observe(m)
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -60,9 +65,12 @@ type Daemon struct {
 	local     map[string]context.CancelFunc
 	remote    map[string]*remoteExec
 	approvals *approvalHub
+	activity  *activity.Log
 }
 
 type remoteExec struct {
+	mu   sync.Mutex // serialize invoke with cancellation; never hold Daemon.mu during I/O
+	sent bool
 	link *wsConn
 	ipc  *ipc.Conn
 }
@@ -76,6 +84,7 @@ func New(store *identity.Store, log *slog.Logger) *Daemon {
 		local:     map[string]context.CancelFunc{},
 		remote:    map[string]*remoteExec{},
 		approvals: newApprovalHub(),
+		activity:  activity.Open(store.Dir),
 	}
 }
 
@@ -128,7 +137,7 @@ func (d *Daemon) connectDevice() error {
 	}
 	conn.SetReadLimit(int64(protocol.MaxWSMessageBytes))
 	defer conn.Close(websocket.StatusNormalClosure, "")
-	link := &wsConn{ctx: ctx, conn: conn}
+	link := &wsConn{ctx: ctx, conn: conn, observe: func(msg protocol.Message) { d.recordTerminal("inbound", id, msg) }}
 	inb := inbound && grant != ""
 	hello := protocol.Message{
 		Type: protocol.TypeHelloDevice, DeviceID: id, Secret: secret,
@@ -204,9 +213,10 @@ func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
 			}
 			return
 		}
+		d.recordActivity(activity.Entry{ExecID: msg.ExecID, Direction: "inbound", DeviceID: d.store.DeviceID, Op: msg.Op, Stage: "requested"})
 		switch msg.Op {
 		case protocol.OpExec:
-			go d.runLocalExec(link, msg)
+			d.startLocalExec(link, msg)
 		case protocol.OpRead:
 			go d.runLocalRead(link, msg)
 		case protocol.OpWrite:

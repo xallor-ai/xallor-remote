@@ -13,7 +13,7 @@ func (d *Daemon) status() map[string]any {
 	id, _, grant, ws, relay, inbound, peers := d.store.Snapshot()
 	public := make([]map[string]any, 0, len(peers))
 	for _, peer := range peers {
-		public = append(public, map[string]any{"device_id": peer.DeviceID, "has_grant": peer.Grant != ""})
+		public = append(public, map[string]any{"device_id": peer.DeviceID, "name": peer.Name, "has_grant": peer.Grant != ""})
 	}
 	return map[string]any{"device_id": id, "workspace": ws, "relay": diagnostics.Endpoint(relay),
 		"inbound": inbound, "has_grant": grant != "", "online": d.deviceOnline(),
