@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Username returns the local login name used as device_id (domain prefix stripped).
+// Username returns the local login name (domain prefix stripped). Not used as device_id.
 func Username() string {
 	name := ""
 	if u, err := user.Current(); err == nil {
