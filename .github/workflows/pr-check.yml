@@ -35,6 +35,10 @@ jobs:
       - name: Test
         run: go test ./...
 
+      - name: Race detection
+        if: runner.os == 'Linux'
+        run: go test -race ./internal/relay ./internal/noderun ./internal/release
+
       - name: Build
         shell: bash
         run: |
@@ -118,10 +122,47 @@ jobs:
           name: release-lifecycle-${{ matrix.os }}
           path: dist/verification/
 
+  integration:
+    name: Cross-layer integration (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux/amd64
+          - os: windows-latest
+            platform: windows/amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: packages/mcp/package-lock.json
+      - run: npm ci
+        working-directory: packages/mcp
+      - run: npm run build
+        working-directory: packages/mcp
+      - run: python scripts/build-release.py --platform ${{ matrix.platform }}
+      - run: python tests/cross_layer_e2e.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cross-layer-${{ matrix.os }}
+          path: |
+            dist/verification/cross-layer.json
+            dist/release/**/manifest.json
+
   # Single required status for branch protection.
   pr-check:
     name: pr-check
-    needs: [go, mcp, gui, release-lifecycle]
+    needs: [go, mcp, gui, release-lifecycle, integration]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -134,3 +175,4 @@ jobs:
           test "${{ needs.mcp.result }}" = "success"
           test "${{ needs.gui.result }}" = "success"
           test "${{ needs.release-lifecycle.result }}" = "success"
+          test "${{ needs.integration.result }}" = "success"

@@ -20,7 +20,6 @@ type deviceSlot struct {
 }
 
 type clientSlot struct {
-	conn     Sender
 	targetID string
 	grantHex string
 }
@@ -37,6 +36,7 @@ type Hub struct {
 	mu       sync.Mutex
 	devices  map[string]*deviceSlot
 	grants   map[string]string // device_id -> grant hash
+	clients  map[Sender]clientSlot
 	inflight map[string]*inflight
 	store    Store
 }
@@ -51,6 +51,7 @@ func NewHub(store Store) *Hub {
 	return &Hub{
 		devices:  map[string]*deviceSlot{},
 		grants:   map[string]string{},
+		clients:  map[Sender]clientSlot{},
 		inflight: map[string]*inflight{},
 		store:    store,
 	}
@@ -76,7 +77,7 @@ func (h *Hub) Handle(from Sender, role string, targetID string, msg protocol.Mes
 		if role != protocol.RoleDevice {
 			return
 		}
-		h.forwardToClient(msg)
+		h.forwardToClient(from, msg)
 	default:
 		return
 	}
@@ -136,6 +137,7 @@ func (h *Hub) RegisterClient(targetID, grant string, conn Sender) string {
 	if gh != want {
 		return protocol.Unauthorized
 	}
+	h.clients[conn] = clientSlot{targetID: targetID, grantHex: want}
 	return ""
 }
 
@@ -151,6 +153,7 @@ func (h *Hub) Drop(from Sender, role, deviceOrTarget string) {
 		return
 	}
 	h.cancelClientLocked(from)
+	delete(h.clients, from)
 }
 
 func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
@@ -160,6 +163,10 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if binding, ok := h.clients[from]; !ok || binding.targetID != targetID || binding.grantHex != h.grants[targetID] {
+		_ = from.Send(protocol.Nack(msg.ExecID, protocol.Unauthorized))
+		return
+	}
 	if msg.ExecID == "" {
 		_ = from.Send(protocol.Nack(msg.ExecID, protocol.AgentError))
 		h.record(targetID, msg.Op, msg.ExecID, "nack", protocol.AgentError, msg.Payload)
@@ -216,11 +223,14 @@ func (h *Hub) handleCancel(from Sender, execID string) {
 	}
 }
 
-func (h *Hub) forwardToClient(msg protocol.Message) {
+func (h *Hub) forwardToClient(from Sender, msg protocol.Message) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	inf := h.inflight[msg.ExecID]
 	if inf == nil {
+		return
+	}
+	if device := h.devices[inf.deviceID]; device == nil || device.conn != from {
 		return
 	}
 	if msg.Type == protocol.TypeStdout || msg.Type == protocol.TypeStderr {

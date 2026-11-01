@@ -40,6 +40,7 @@ var errMsgTooLarge = errStr(protocol.TooLarge)
 
 type clientLink struct {
 	target  string
+	grant   string
 	ws      *wsConn
 	cancel  context.CancelFunc
 	mu      sync.Mutex

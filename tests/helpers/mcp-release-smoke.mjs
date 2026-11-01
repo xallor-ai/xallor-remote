@@ -30,6 +30,13 @@ try {
   if (result.isError) throw new Error(JSON.stringify(result));
   const status = JSON.parse(result.content[0].text);
   if (!/^[0-9]{9}$/.test(status.device_id) || status.version !== expectedVersion) throw Error("incorrect runtime identity");
+  if (process.env.XALLOR_TEST_TARGET) {
+    const executed = await call("tools/call", { name: "remote.exec", arguments: { device_id: process.env.XALLOR_TEST_TARGET, command: "echo mcp-e2e" } });
+    if (executed.isError || !executed.content.some(c => c.text?.includes("mcp-e2e") && c.text.includes("exit_code=0")))
+      throw Error("MCP remote execution failed");
+    const failed = await call("tools/call", { name: "remote.exec", arguments: { device_id: process.env.XALLOR_TEST_TARGET, command: "exit 7" } });
+    if (!failed.isError) throw Error("MCP lost nonzero remote exit");
+  }
   if (process.env.XALLOR_TEST_CLI) {
     const run = promisify(execFile);
     const cli = (...args) => run(process.env.XALLOR_TEST_CLI, args, { env: process.env, windowsHide: true, timeout: 20000 });
