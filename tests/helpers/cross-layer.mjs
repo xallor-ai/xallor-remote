@@ -38,7 +38,12 @@ try {
   assert(!fs.existsSync(path.join(root, "workspaces/escaped.txt")));
   pass("utf8_file_roundtrip_and_workspace_boundary");
   const events = [];
-  const result = await bounded(controller.stream("exec", { device_id: targetID, command: "echo first; " + (process.platform === "win32" ? "Start-Sleep -Milliseconds 300" : "sleep 0.3") + "; echo second" }, f => events.push(f)));
+  let firstObserved;
+  const result = await bounded(controller.stream("exec", { device_id: targetID, command: "echo first; " + (process.platform === "win32" ? "Start-Sleep -Milliseconds 500" : "sleep 0.5") + "; echo second" }, f => {
+    events.push(f);
+    if (f.data?.includes("first") && firstObserved === undefined) firstObserved = Date.now();
+  }));
+  assert(firstObserved !== undefined && Date.now() - firstObserved >= 250, "output was buffered until completion");
   assert.equal(ok(result).exit_code, 0);
   const text = events.map(f => f.data || "").join("");
   assert(text.includes("first") && text.includes("second"));
