@@ -29,7 +29,7 @@ MCP **原样** 传 `command`。Windows 默认 `powershell.exe -NoProfile -NonInt
 
 ## 3. 路径
 
-Workspace 默认：`%USERPROFILE%\XallorRemote\workspace` / `~/XallorRemote/workspace`。`..`、盘符跳转、逃出根的链接一律拒绝。Windows 大小写不敏感（先规范化）；Linux 敏感。
+Workspace 默认：`%USERPROFILE%\XallorRemote\workspace` / `~/XallorRemote/workspace`。打开限制用 `os.Root`：`..`、盘符跳转、junction / 逃出根的链接一律 `policy_deny`。写入全程在 Root 内完成，禁止先截断再当唯一检查。Windows 大小写不敏感（先规范化）；Linux 敏感。
 
 ---
 

@@ -72,11 +72,11 @@ on disconnect: 退避重连；不恢复旧子进程
 
 ## 6. read / write / 进程 / info
 
-**read：** workspace 内；head/tail 或区间；默认当 UTF-8 文本；明显二进制 → 拒绝或 `too_large` 策略（v0 可直接拒绝）。上限见 protocol。
+**read：** workspace 内（`os.Root`）；`head`/`tail` 按行（去掉文件末空段）；`offset`/`limit` 按字节；默认当 UTF-8 文本；明显二进制 → 拒绝或 `too_large` 策略（v0 可直接拒绝）。上限见 protocol。超过单帧则分帧上送。
 
 **write（写死）：**
 
-- 仅 workspace 内
+- 仅 workspace 内（`os.Root`；junction / 逃出根拒绝）
 - **整文件覆盖**；不 append、不 patch、不部分写
 - 先写同目录临时文件再替换（原子替换）；失败则旧文件保留
 - 上限 1 MiB，超则 `too_large`，磁盘上不留半份新内容

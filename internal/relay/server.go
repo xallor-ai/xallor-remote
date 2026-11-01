@@ -73,7 +73,7 @@ func serveConn(parent context.Context, hub *Hub, c *websocket.Conn, log *slog.Lo
 	defer c.Close(websocket.StatusNormalClosure, "")
 	s := &wsSender{ctx: ctx, conn: c}
 
-	c.SetReadLimit(int64(protocol.MaxFrameBytes) * 16)
+	c.SetReadLimit(int64(protocol.MaxWSMessageBytes))
 	var hello protocol.Message
 	ctxRead, cancelRead := context.WithTimeout(ctx, 15*time.Second)
 	err := wsjson.Read(ctxRead, c, &hello)
