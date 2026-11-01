@@ -19,8 +19,8 @@ func cmdMCP() *cobra.Command {
     "xallor-remote": {
       "command": "xallor-remote-mcp",
       "env": {
-        "XALLOR_REMOTE_DEVICE_ID": "对方用户名",
-        "XALLOR_REMOTE_DEVICE_GRANT": "xr_grant_对方授权码"
+        "XALLOR_REMOTE_DEVICE_ID": "对方的9位设备ID",
+        "XALLOR_REMOTE_DEVICE_GRANT": "对方授权码"
       }
     }
   }
@@ -56,12 +56,12 @@ func cmdMCP() *cobra.Command {
 			}
 			fmt.Println("已写入", mcpconfig.ServerKey)
 			fmt.Println(r.Path)
-			fmt.Println("把 DEVICE_ID / GRANT 改成对方的值后重启 Cursor。")
+			fmt.Println("把 DEVICE_ID 改成对方的 9 位设备 ID 后重启 Cursor。")
 			return nil
 		},
 	}
 	merge.Flags().StringVar(&path, "path", "", "mcp.json 路径（默认 ~/.cursor/mcp.json）")
-	merge.Flags().StringVar(&deviceID, "device-id", "", "写入的对方用户名")
+	merge.Flags().StringVar(&deviceID, "device-id", "", "写入的对方 9 位设备 ID")
 	merge.Flags().StringVar(&grant, "grant", "", "写入的对方授权码")
 	c.AddCommand(merge)
 	return c
