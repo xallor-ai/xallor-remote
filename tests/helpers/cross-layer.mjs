@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { RuntimeIpc } from "../../packages/mcp/dist/ipc.js";
+import { verifyTree } from "./process-tree.mjs";
 
 const root = process.env.XALLOR_TEST_CLUSTER;
 assert(root && fs.readFileSync(path.join(root, ".owner"), "utf8") === "runtime-cluster");
@@ -71,6 +72,10 @@ try {
   assert(timeoutOutput.includes("timeout-ready"), "timeout case did not reach a running child: " + JSON.stringify(timed));
   assert.equal(ok(timed).status, "timeout");
   pass("timeout_has_explicit_terminal_status");
+  for (const mode of ["cancel", "timeout", "disconnect"]) {
+    await verifyTree(root, targetID, mode);
+    pass("descendant_processes_are_reclaimed_on_" + mode);
+  }
   const flood = process.platform === "win32" ? "[Console]::Write(('x' * 9000000))" : "head -c 9000000 /dev/zero | tr '\\0' x";
   let bytes = 0;
   const flooded = await bounded(controller.stream("exec", { device_id: targetID, command: flood }, f => { bytes += Buffer.byteLength(f.data || ""); }), 30000);

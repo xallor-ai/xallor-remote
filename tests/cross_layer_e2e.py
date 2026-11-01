@@ -16,10 +16,13 @@ def main():
     parser = argparse.ArgumentParser()
     platform = "windows-amd64/xallor-remote.exe" if os.name == "nt" else "linux-amd64/xallor-remote"
     parser.add_argument("--binary", default=str(ROOT / "dist/release" / platform))
+    parser.add_argument("--go", default="go")
     args = parser.parse_args()
     cluster = Cluster(args.binary)
     results = []
     try:
+        tree = cluster.root / ("tree.exe" if os.name == "nt" else "tree")
+        subprocess.run([args.go, "build", "-o", str(tree), "./tests/fixtures/process-tree"], cwd=ROOT, check=True, timeout=180)
         cluster.start()
         target = cluster.add("target")
         cluster.add("controller")
@@ -31,7 +34,7 @@ def main():
         results.append({"name":"cli_propagates_nonzero_exit", "status":"pass"})
         env = dict(cluster.env("controller"), XALLOR_TEST_CLUSTER=str(cluster.root),
                    XALLOR_TEST_TARGET=target, XALLOR_TEST_RELAY_PID=str(cluster.relay.pid))
-        subprocess.run(["node", str(ROOT / "tests/helpers/cross-layer.mjs")], env=env, check=True, timeout=150)
+        subprocess.run(["node", str(ROOT / "tests/helpers/cross-layer.mjs")], env=env, check=True, timeout=210)
         results += json.loads((cluster.root / "cross-layer-results.json").read_text(encoding="utf-8"))
         cluster.restart_relay()
         deadline = time.monotonic() + 45
