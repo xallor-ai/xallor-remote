@@ -76,9 +76,13 @@ func TestReadWriteWorkspace_should_leave_sentinel_when_junction_escapes(t *testi
 	}
 	if err := writeWorkspaceFile(ws, filepath.Join("junc", "secret.txt"), "HACKED"); err == nil {
 		t.Fatal("overwrite through junction should deny")
+	} else if !pathDenied(err) {
+		t.Fatalf("overwrite should be policy_deny, got %v", err)
 	}
 	if err := writeWorkspaceFile(ws, filepath.Join("junc", "newfile.txt"), "HACKED"); err == nil {
 		t.Fatal("create through junction should deny")
+	} else if !pathDenied(err) {
+		t.Fatalf("create should be policy_deny, got %v", err)
 	}
 
 	got, err := os.ReadFile(sentinel)
@@ -118,6 +122,8 @@ func TestWriteWorkspace_should_deny_when_dir_replaced_with_junction(t *testing.T
 
 	if err := writeWorkspaceFile(ws, filepath.Join("sub", "file.txt"), "HACKED"); err == nil {
 		t.Fatal("write after junction replace should deny")
+	} else if !pathDenied(err) {
+		t.Fatalf("replace write should be policy_deny, got %v", err)
 	}
 	if err := writeWorkspaceFile(ws, filepath.Join("sub", "secret.txt"), "HACKED"); err == nil {
 		t.Fatal("replace onto outside sentinel should deny")

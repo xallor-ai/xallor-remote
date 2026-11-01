@@ -28,37 +28,49 @@ export function execToolText(
   return { text: bits.join("\n"), isError: execToolIsError(status, exitCode) };
 }
 
-export type ProgressExtra = {
-  signal?: AbortSignal;
-  _meta?: { progressToken?: string | number };
-  sendNotification?: (msg: { method: string; params: Record<string, unknown> }) => Promise<void>;
+export type ToolCtx = {
+  mcpReq?: {
+    signal?: AbortSignal;
+    _meta?: { progressToken?: string | number };
+    notify?: (msg: { method: string; params: Record<string, unknown> }) => Promise<void>;
+  };
 };
 
-export function progressTokenOf(extra: ProgressExtra | undefined): string | number | undefined {
-  return extra?._meta?.progressToken;
+export function progressTokenOf(ctx: ToolCtx | undefined): string | number | undefined {
+  return ctx?.mcpReq?._meta?.progressToken;
 }
 
 export async function notifyExecProgress(
-  extra: ProgressExtra | undefined,
+  ctx: ToolCtx | undefined,
+  progress: number,
   message: string,
 ): Promise<void> {
-  const token = progressTokenOf(extra);
-  if (token === undefined || !extra?.sendNotification) {
+  const token = progressTokenOf(ctx);
+  if (token === undefined || !ctx?.mcpReq?.notify) {
     return;
   }
-  await extra.sendNotification({
+  await ctx.mcpReq.notify({
     method: "notifications/progress",
-    params: { progressToken: token, progress: 0, message },
+    params: { progressToken: token, progress, message },
   });
 }
 
+export function newExecProgress(ctx: ToolCtx | undefined): (message: string) => Promise<void> {
+  let n = 0;
+  return async (message: string) => {
+    n += 1;
+    await notifyExecProgress(ctx, n, message);
+  };
+}
+
 export function bindHostCancel(
-  extra: ProgressExtra | undefined,
+  ctx: ToolCtx | undefined,
   cancel: (execId: string) => void,
 ): (execId: string) => void {
+  const signal = ctx?.mcpReq?.signal;
   let execId = "";
-  let aborted = false;
-  extra?.signal?.addEventListener("abort", () => {
+  let aborted = Boolean(signal?.aborted);
+  signal?.addEventListener("abort", () => {
     aborted = true;
     if (execId) {
       cancel(execId);

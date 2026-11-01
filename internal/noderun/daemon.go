@@ -42,7 +42,7 @@ type clientLink struct {
 	ws      *wsConn
 	cancel  context.CancelFunc
 	mu      sync.Mutex
-	waiters map[string]chan protocol.Message
+	waiters map[string]*execWaiter
 }
 
 type Daemon struct {
@@ -215,19 +215,18 @@ func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
 	}
 }
 
-func (d *Daemon) dropClient(id string) {
+func (d *Daemon) dropClient(id string, inst *clientLink) {
 	d.mu.Lock()
-	cl := d.clients[id]
-	delete(d.clients, id)
-	d.mu.Unlock()
-	if cl == nil {
+	cur := d.clients[id]
+	if inst != nil && cur != inst {
+		d.mu.Unlock()
+		inst.closeConn()
 		return
 	}
-	if cl.cancel != nil {
-		cl.cancel()
-	}
-	if cl.ws != nil && cl.ws.conn != nil {
-		_ = cl.ws.conn.Close(websocket.StatusNormalClosure, "")
+	delete(d.clients, id)
+	d.mu.Unlock()
+	if cur != nil {
+		cur.closeConn()
 	}
 }
 

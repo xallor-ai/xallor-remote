@@ -25,13 +25,22 @@ func (d *Daemon) runLocalRead(link *wsConn, msg protocol.Message) {
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.InboundDisabled))
 		return
 	}
+	st, err := statWorkspaceFile(workspace, p.Path)
+	if err != nil {
+		nackReadErr(link, msg.ExecID, err)
+		return
+	}
+	if st.IsDir() {
+		_ = link.send(protocol.Nack(msg.ExecID, protocol.PolicyDeny))
+		return
+	}
+	if readTooLarge(st.Size(), p) {
+		_ = link.send(protocol.Nack(msg.ExecID, protocol.TooLarge))
+		return
+	}
 	raw, err := readWorkspaceFile(workspace, p.Path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			_ = link.send(protocol.Nack(msg.ExecID, protocol.AgentError))
-			return
-		}
-		_ = link.send(protocol.Nack(msg.ExecID, protocol.PolicyDeny))
+		nackReadErr(link, msg.ExecID, err)
 		return
 	}
 	limit := p.Limit
@@ -41,19 +50,11 @@ func (d *Daemon) runLocalRead(link *wsConn, msg protocol.Message) {
 	if limit > protocol.MaxReadBytes {
 		limit = protocol.MaxReadBytes
 	}
-	if int64(len(raw)) > int64(protocol.MaxReadBytes) && p.Head == 0 && p.Tail == 0 && p.Limit == 0 {
-		_ = link.send(protocol.Nack(msg.ExecID, protocol.TooLarge))
-		return
-	}
 	if bytes.IndexByte(raw, 0) >= 0 {
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.PolicyDeny))
 		return
 	}
 	out := sliceRead(raw, p, limit)
-	if len(out) > protocol.MaxReadBytes {
-		_ = link.send(protocol.Nack(msg.ExecID, protocol.TooLarge))
-		return
-	}
 	if err := sendStdoutFrames(link, msg.ExecID, out); err != nil {
 		if err == errMsgTooLarge {
 			_ = link.send(protocol.Nack(msg.ExecID, protocol.TooLarge))
@@ -131,6 +132,13 @@ func (d *Daemon) runLocalWrite(link *wsConn, msg protocol.Message) {
 	d.sendOKExit(link, msg.ExecID, start)
 }
 
+func readTooLarge(size int64, p protocol.ReadPayload) bool {
+	if p.Head != 0 || p.Tail != 0 || p.Limit != 0 || p.Offset != 0 {
+		return false
+	}
+	return size > int64(protocol.MaxReadBytes)
+}
+
 func pathDenied(err error) bool {
 	if err == nil {
 		return false
@@ -139,7 +147,15 @@ func pathDenied(err error) bool {
 	return strings.Contains(s, "outside workspace") ||
 		strings.Contains(s, "path too long") ||
 		strings.Contains(s, "sensitive path") ||
-		strings.Contains(s, "escaped the parent")
+		strings.Contains(s, "path escapes from parent")
+}
+
+func nackReadErr(link *wsConn, execID string, err error) {
+	if os.IsNotExist(err) {
+		_ = link.send(protocol.Nack(execID, protocol.AgentError))
+		return
+	}
+	_ = link.send(protocol.Nack(execID, protocol.PolicyDeny))
 }
 
 func stdoutFrameBudget() int {

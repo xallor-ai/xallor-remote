@@ -63,6 +63,21 @@ func TestNextUTF8Frame_should_respect_budget_for_ascii(t *testing.T) {
 	}
 }
 
+func TestReadTooLarge_should_reject_before_read_when_default_whole_file(t *testing.T) {
+	if !readTooLarge(int64(protocol.MaxReadBytes)+1, protocol.ReadPayload{}) {
+		t.Fatal("default oversize should reject")
+	}
+	if readTooLarge(int64(protocol.MaxReadBytes)+1, protocol.ReadPayload{Head: 1}) {
+		t.Fatal("head may read then slice")
+	}
+}
+
+func TestPathDenied_should_match_os_root_escape(t *testing.T) {
+	if !pathDenied(errStr("openat junc\\secret.txt: path escapes from parent")) {
+		t.Fatal("os.Root escape must be policy_deny")
+	}
+}
+
 func TestWrapCommand_should_only_set_encoding(t *testing.T) {
 	got := wrapCommand("Write-Error \"x\"")
 	if strings.Contains(got, "LASTEXITCODE") {

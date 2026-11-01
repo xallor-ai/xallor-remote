@@ -4,9 +4,15 @@ import {
   bindHostCancel,
   execToolIsError,
   execToolText,
+  newExecProgress,
   notifyExecProgress,
   progressTokenOf,
+  type ToolCtx,
 } from "./exec-result.js";
+
+function ctxWith(partial: NonNullable<ToolCtx["mcpReq"]>): ToolCtx {
+  return { mcpReq: partial };
+}
 
 test("nonzero exit or cancelled/timeout is error", () => {
   assert.equal(execToolIsError("completed", 0), false);
@@ -34,43 +40,55 @@ test("completed nonzero still returns protocol exit fields", () => {
   assert.match(got.text, /stderr:\nboom/);
 });
 
-test("progress is skipped without token", async () => {
+test("progress is skipped without token on mcpReq", async () => {
   let sent = 0;
-  await notifyExecProgress({ sendNotification: async () => { sent += 1; } }, "ex");
+  await notifyExecProgress({ mcpReq: { notify: async () => { sent += 1; } } }, 1, "ex");
   assert.equal(sent, 0);
-  assert.equal(progressTokenOf({ _meta: { progressToken: "t1" } }), "t1");
+  assert.equal(progressTokenOf(ctxWith({ _meta: { progressToken: "t1" } })), "t1");
 });
 
-test("progress sends first message when token exists", async () => {
+test("progress uses mcpReq.notify and increases", async () => {
   const notes: Record<string, unknown>[] = [];
-  await notifyExecProgress(
-    {
+  const report = newExecProgress(
+    ctxWith({
       _meta: { progressToken: "tok" },
-      sendNotification: async (msg) => {
+      notify: async (msg) => {
         notes.push(msg.params);
       },
-    },
-    "ex_9",
+    }),
   );
-  assert.equal(notes.length, 1);
+  await report("ex_9");
+  await report("out");
+  assert.equal(notes.length, 2);
   assert.equal(notes[0]?.progressToken, "tok");
+  assert.equal(notes[0]?.progress, 1);
   assert.equal(notes[0]?.message, "ex_9");
+  assert.equal(notes[1]?.progress, 2);
 });
 
-test("host abort cancels after exec_id arrives", () => {
+test("host abort on mcpReq.signal cancels after exec_id arrives", () => {
   const ac = new AbortController();
   const seen: string[] = [];
-  const onExec = bindHostCancel({ signal: ac.signal }, (id) => seen.push(id));
+  const onExec = bindHostCancel(ctxWith({ signal: ac.signal }), (id) => seen.push(id));
   ac.abort();
   onExec("ex_late");
   assert.deepEqual(seen, ["ex_late"]);
 });
 
-test("host abort cancels live exec", () => {
+test("host abort cancels live exec via mcpReq.signal", () => {
   const ac = new AbortController();
   const seen: string[] = [];
-  const onExec = bindHostCancel({ signal: ac.signal }, (id) => seen.push(id));
+  const onExec = bindHostCancel(ctxWith({ signal: ac.signal }), (id) => seen.push(id));
   onExec("ex_live");
   ac.abort();
   assert.deepEqual(seen, ["ex_live"]);
+});
+
+test("already aborted mcpReq.signal still cancels when exec_id arrives", () => {
+  const ac = new AbortController();
+  ac.abort();
+  const seen: string[] = [];
+  const onExec = bindHostCancel(ctxWith({ signal: ac.signal }), (id) => seen.push(id));
+  onExec("ex_early");
+  assert.deepEqual(seen, ["ex_early"]);
 });

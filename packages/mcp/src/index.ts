@@ -4,7 +4,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
 import { findBinary, INSTALL_HINT } from "./ensure.js";
-import { bindHostCancel, execToolText, notifyExecProgress, type ProgressExtra } from "./exec-result.js";
+import { bindHostCancel, execToolText, newExecProgress, type ToolCtx } from "./exec-result.js";
 import { failText, RuntimeIpc, type Frame } from "./ipc.js";
 import { MCP_VERSION, versionsMatch } from "./version.js";
 
@@ -87,6 +87,8 @@ function fromFrame(f: Frame, extra?: string) {
 function createServer(): McpServer {
   const server = new McpServer({ name: "xallor-remote", version: MCP_VERSION });
 
+  // Tool 名用 snake_case：Cursor 代理层会把 catalog 里的点号展成下划线再去 call，
+  // 若服务端仍注册 remote.exec，会出现「列表有、调用 not found」。
   server.registerTool(
     "remote.devices",
     {
@@ -150,7 +152,7 @@ function createServer(): McpServer {
           .describe("超时毫秒，最长 1 小时"),
       }),
     },
-    async ({ command, device_id, cwd, timeout_ms }, extra) => {
+    async ({ command, device_id, cwd, timeout_ms }, ctx) => {
       if (!process.env.XALLOR_REMOTE_DEVICE_GRANT && !process.env.XALLOR_REMOTE_DEVICE_ID) {
         const ipc = await ensureRuntime();
         const st = await ipc.call("status");
@@ -160,8 +162,9 @@ function createServer(): McpServer {
         }
       }
       const ipc = await ensureRuntime();
-      const toolExtra = extra as ProgressExtra;
-      const onExec = bindHostCancel(toolExtra, (id) => {
+      const toolCtx = ctx as ToolCtx;
+      const report = newExecProgress(toolCtx);
+      const onExec = bindHostCancel(toolCtx, (id) => {
         void ipc.call("exec.cancel", { exec_id: id });
       });
       const stdout: string[] = [];
@@ -179,15 +182,15 @@ function createServer(): McpServer {
           if (ev.exec_id && !announced) {
             announced = true;
             onExec(ev.exec_id);
-            void notifyExecProgress(toolExtra, ev.exec_id);
+            void report(ev.exec_id);
           }
           if (ev.event === "stdout" && ev.data) {
             stdout.push(ev.data);
-            void notifyExecProgress(toolExtra, ev.data);
+            void report(ev.data);
           }
           if (ev.event === "stderr" && ev.data) {
             stderr.push(ev.data);
-            void notifyExecProgress(toolExtra, ev.data);
+            void report(ev.data);
           }
         },
       );

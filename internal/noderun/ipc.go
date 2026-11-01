@@ -154,47 +154,21 @@ func (d *Daemon) ipcOp(c *ipc.Conn, req ipc.Request, op string) {
 func (d *Daemon) forwardInvoke(c *ipc.Conn, reqID, deviceID string, link *wsConn, cl *clientLink, op, execID string, payload json.RawMessage, stream bool) {
 	d.trackRemote(execID, link, c)
 	defer d.untrackRemote(execID)
-	ch := cl.subscribe(execID)
+	w := cl.subscribe(execID)
 	defer cl.unsubscribe(execID)
 	if err := link.send(protocol.Message{Type: protocol.TypeInvoke, ExecID: execID, Op: op, Payload: payload}); err != nil {
 		if err == errMsgTooLarge {
 			_ = c.WriteFrame(ipc.Fail(reqID, protocol.TooLarge, ipc.Human(protocol.TooLarge)))
 			return
 		}
-		d.dropClient(deviceID)
+		d.dropClient(deviceID, cl)
 		_ = c.WriteFrame(ipc.Fail(reqID, protocol.RelayError, ipc.Human(protocol.RelayError)))
 		return
 	}
 	if stream {
 		_ = c.WriteFrame(ipc.Frame{ID: reqID, Event: "stdout", ExecID: execID})
 	}
-	d.consumeClient(c, reqID, execID, deviceID, link, ch, stream)
-}
-
-func (cl *clientLink) subscribe(id string) chan protocol.Message {
-	ch := make(chan protocol.Message, 16)
-	cl.mu.Lock()
-	if cl.waiters == nil {
-		cl.waiters = map[string]chan protocol.Message{}
-	}
-	cl.waiters[id] = ch
-	cl.mu.Unlock()
-	return ch
-}
-
-func (cl *clientLink) unsubscribe(id string) {
-	cl.mu.Lock()
-	delete(cl.waiters, id)
-	cl.mu.Unlock()
-}
-
-func (cl *clientLink) failWaiters() {
-	cl.mu.Lock()
-	defer cl.mu.Unlock()
-	for id, ch := range cl.waiters {
-		close(ch)
-		delete(cl.waiters, id)
-	}
+	d.consumeClient(c, reqID, execID, link, w, stream)
 }
 
 func (d *Daemon) runClientReader(deviceID string, cl *clientLink) {
@@ -202,25 +176,10 @@ func (d *Daemon) runClientReader(deviceID string, cl *clientLink) {
 		var msg protocol.Message
 		if err := wsjson.Read(cl.ws.ctx, cl.ws.conn, &msg); err != nil {
 			cl.failWaiters()
-			d.dropClient(deviceID)
+			d.dropClient(deviceID, cl)
 			return
 		}
-		if msg.ExecID == "" {
-			continue
-		}
-		cl.mu.Lock()
-		ch := cl.waiters[msg.ExecID]
-		cl.mu.Unlock()
-		if ch == nil {
-			continue
-		}
-		select {
-		case ch <- msg:
-		case <-cl.ws.ctx.Done():
-			cl.failWaiters()
-			d.dropClient(deviceID)
-			return
-		}
+		cl.dispatch(msg)
 	}
 }
 
@@ -276,7 +235,7 @@ func (d *Daemon) dialClient(peer identity.Peer) (*wsConn, *clientLink, error) {
 		cancel()
 		return nil, nil, fmt.Errorf("%s", ack.Code)
 	}
-	cl := &clientLink{target: peer.DeviceID, ws: link, cancel: cancel, waiters: map[string]chan protocol.Message{}}
+	cl := &clientLink{target: peer.DeviceID, ws: link, cancel: cancel, waiters: map[string]*execWaiter{}}
 	go d.runClientReader(peer.DeviceID, cl)
 	go func() {
 		t := time.NewTicker(protocol.HeartbeatEvery)
@@ -284,13 +243,13 @@ func (d *Daemon) dialClient(peer identity.Peer) (*wsConn, *clientLink, error) {
 		for {
 			select {
 			case <-d.ctx.Done():
-				d.dropClient(peer.DeviceID)
+				d.dropClient(peer.DeviceID, cl)
 				return
 			case <-ctx.Done():
 				return
 			case <-t.C:
 				if err := link.send(protocol.Message{Type: protocol.TypeHeartbeat}); err != nil {
-					d.dropClient(peer.DeviceID)
+					d.dropClient(peer.DeviceID, cl)
 					return
 				}
 			}
@@ -299,9 +258,14 @@ func (d *Daemon) dialClient(peer identity.Peer) (*wsConn, *clientLink, error) {
 	return link, cl, nil
 }
 
-func (d *Daemon) consumeClient(ipcConn *ipc.Conn, reqID, execID, deviceID string, link *wsConn, ch <-chan protocol.Message, stream bool) {
+func (d *Daemon) consumeClient(ipcConn *ipc.Conn, reqID, execID string, link *wsConn, w *execWaiter, stream bool) {
 	var collected string
-	for msg := range ch {
+	for {
+		msg, ok := w.next()
+		if !ok {
+			_ = ipcConn.WriteFrame(ipc.Fail(reqID, protocol.RelayError, ipc.Human(protocol.RelayError)))
+			return
+		}
 		switch msg.Type {
 		case protocol.TypeStdout:
 			if stream {
@@ -346,8 +310,6 @@ func (d *Daemon) consumeClient(ipcConn *ipc.Conn, reqID, execID, deviceID string
 			return
 		}
 	}
-	d.dropClient(deviceID)
-	_ = ipcConn.WriteFrame(ipc.Fail(reqID, protocol.RelayError, ipc.Human(protocol.RelayError)))
 }
 
 func (d *Daemon) trackRemote(execID string, link *wsConn, c *ipc.Conn) {

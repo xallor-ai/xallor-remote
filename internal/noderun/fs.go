@@ -79,6 +79,19 @@ func resolveInWorkspace(workspace, p string) (string, error) {
 	return filepath.Join(ws, rel), nil
 }
 
+func statWorkspaceFile(workspace, p string) (os.FileInfo, error) {
+	rel, err := workspaceRel(workspace, p)
+	if err != nil {
+		return nil, err
+	}
+	root, err := openWorkspace(workspace)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return root.Stat(rel)
+}
+
 func readWorkspaceFile(workspace, p string) ([]byte, error) {
 	rel, err := workspaceRel(workspace, p)
 	if err != nil {
@@ -109,8 +122,13 @@ func writeWorkspaceFile(workspace, p, content string) error {
 	defer root.Close()
 	parent := filepath.Dir(rel)
 	if parent != "." {
-		if err := root.MkdirAll(parent, 0o700); err != nil {
-			return err
+		if _, err := root.Stat(parent); err != nil {
+			if !os.IsNotExist(err) {
+				return err
+			}
+			if err := root.MkdirAll(parent, 0o700); err != nil {
+				return err
+			}
 		}
 	}
 	tmpRel := filepath.Join(parent, fmt.Sprintf(".xr-write-%d", time.Now().UnixNano()))
