@@ -78,7 +78,7 @@ async function connectPage(main: HTMLElement): Promise<void> {
     </section>
     <section class="card">
       <h3>对方设备</h3>
-      <p class="hint">用对方的用户名和授权码添加后，到「会话」执行命令。</p>
+      <p class="hint">输入对方的 9 位设备 ID 和授权码。连上后到「会话」执行。</p>
       <ul class="peer-list" id="peers">${
         peers.length
           ? peers
@@ -90,7 +90,7 @@ async function connectPage(main: HTMLElement): Promise<void> {
           : `<li class="hint">还没有对方设备。</li>`
       }</ul>
       <form id="add" class="add-row">
-        <input name="id" placeholder="对方用户名" autocomplete="off" />
+        <input name="id" placeholder="对方的 9 位设备 ID" autocomplete="off" inputmode="numeric" />
         <input name="grant" placeholder="对方授权码" autocomplete="off" />
         <button type="submit" class="primary">添加</button>
       </form>
@@ -125,7 +125,7 @@ async function connectPage(main: HTMLElement): Promise<void> {
       alert("还没有授权码。");
       return;
     }
-    const line = `用户名: ${st.device_id || ""}\n授权码: ${g}`;
+    const line = `设备 ID: ${st.device_id || ""}\n授权码: ${g}`;
     await navigator.clipboard.writeText(line);
     alert("已复制，发给对方即可。");
   });
@@ -146,7 +146,7 @@ async function connectPage(main: HTMLElement): Promise<void> {
     const id = String(fd.get("id") || "").trim();
     const g = String(fd.get("grant") || "").trim();
     if (!id || !g) {
-      alert("请填写用户名和授权码。");
+      alert("请填写设备 ID 和授权码。");
       return;
     }
     try {
@@ -219,7 +219,7 @@ async function settings(main: HTMLElement): Promise<void> {
       <h3>关于</h3>
       <dl class="compact">
         <dt>版本</dt><dd>${esc(st.version || "")}</dd>
-        <dt>用户名</dt><dd>${esc(st.device_id || "")}</dd>
+        <dt>设备 ID</dt><dd>${esc(st.device_id || "")}</dd>
       </dl>
     </section>
   `;

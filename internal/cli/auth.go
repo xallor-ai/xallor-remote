@@ -15,10 +15,14 @@ func cmdInbound() *cobra.Command {
 			if err := ensureRuntime(); err != nil {
 				return err
 			}
-			if _, err := rpc("inbound.set", map[string]any{"enabled": true}); err != nil {
+			res, err := rpc("inbound.set", map[string]any{"enabled": true})
+			if err != nil {
 				return err
 			}
 			fmt.Println("入站已开。")
+			if g, _ := res["grant"].(string); g != "" {
+				fmt.Printf("授权码: %s    ← 把这一行给对方\n", g)
+			}
 			return nil
 		},
 	})
@@ -71,7 +75,7 @@ func cmdReset() *cobra.Command {
 			if _, err := rpc("reset", map[string]any{"confirm": true}); err != nil {
 				return err
 			}
-			fmt.Println("已注销本机身份。下次 start 会按登录用户名重新登记。")
+			fmt.Println("已注销本机身份。下次 start 会重新生成设备 ID。")
 			return nil
 		},
 	}

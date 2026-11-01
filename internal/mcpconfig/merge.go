@@ -63,8 +63,8 @@ func Merge(path string, opt Options) (Result, error) {
 		return res, nil
 	}
 	env := map[string]string{
-		"XALLOR_REMOTE_DEVICE_ID":    placeholder(opt.DeviceID, "对方用户名"),
-		"XALLOR_REMOTE_DEVICE_GRANT": placeholder(opt.Grant, "xr_grant_对方授权码"),
+		"XALLOR_REMOTE_DEVICE_ID":    placeholder(opt.DeviceID, "对方的9位设备ID"),
+		"XALLOR_REMOTE_DEVICE_GRANT": placeholder(opt.Grant, "对方授权码"),
 	}
 	servers[ServerKey] = map[string]any{
 		"command": opt.Command,

@@ -24,13 +24,15 @@ Cursor 等 spawn 的短驻 stdio 进程：全局安装后的 `xallor-remote-mcp`
     "xallor-remote": {
       "command": "xallor-remote-mcp",
       "env": {
-        "XALLOR_REMOTE_DEVICE_ID": "andy",
+        "XALLOR_REMOTE_DEVICE_ID": "774758105",
         "XALLOR_REMOTE_DEVICE_GRANT": "xr_grant_…"
       }
     }
   }
 }
 ```
+
+`XALLOR_REMOTE_DEVICE_ID` 填对方的 **9 位设备 ID**（`xallor-remote status` 里那串数字），不要填操作系统用户名。对方若从用户名 ID 升上来，以对方当前 `status` 为准，旧用户名配不上。
 
 自托管时再加 `XALLOR_REMOTE_RELAY_URL`。多台用 `xallor-remote peer add`。不要写 IP / SSH。覆盖内置二进制时设 `XALLOR_REMOTE_BIN`。
 

@@ -80,3 +80,25 @@ func TestShouldPreserveOtherServers(t *testing.T) {
 		t.Fatal("xallor-remote missing")
 	}
 }
+
+// 目的：未指定 ID 时模板占位必须是 9 位设备 ID，不能再写「对方用户名」。
+func TestShould_useNumericDeviceIDPlaceholder_whenMergeEmpty(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.json")
+	if _, err := Merge(path, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err := json.Unmarshal(raw, &root); err != nil {
+		t.Fatal(err)
+	}
+	env := root["mcpServers"].(map[string]any)[ServerKey].(map[string]any)["env"].(map[string]any)
+	got, _ := env["XALLOR_REMOTE_DEVICE_ID"].(string)
+	if got != "对方的9位设备ID" {
+		t.Fatalf("placeholder=%q", got)
+	}
+}

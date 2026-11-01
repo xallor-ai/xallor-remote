@@ -33,10 +33,11 @@ func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
 		}
 		if *p.Enabled {
 			d.pushGrant(g)
+			_ = c.WriteFrame(ipc.OK(req.ID, map[string]any{"inbound": true, "grant": g}))
 		} else {
 			d.pushInbound(false)
+			_ = c.WriteFrame(ipc.OK(req.ID, map[string]any{"inbound": false}))
 		}
-		_ = c.WriteFrame(ipc.OK(req.ID, map[string]any{"inbound": *p.Enabled}))
 	case "revoke":
 		d.pushRevoke()
 		_ = d.store.ClearGrant()
