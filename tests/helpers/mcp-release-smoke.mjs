@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 if (!process.env.XALLOR_REMOTE_DATA_DIR) throw new Error("isolated profile required");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const expectedVersion = JSON.parse(readFileSync(path.join(root, "packages/mcp/package.json"), "utf8")).version;
-const child = spawn(process.execPath, [path.join(root, "packages/mcp/dist/index.js")],
+const child = spawn(process.execPath, [process.env.XALLOR_TEST_MCP_ENTRY || path.join(root, "packages/mcp/dist/index.js")],
   { env: { ...process.env, XALLOR_REMOTE_DEVICE_ID: "", XALLOR_REMOTE_DEVICE_GRANT: "" }, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
 const pending = new Map();
 let seq = 0;

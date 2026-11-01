@@ -108,6 +108,9 @@ jobs:
       - run: npm run build
         working-directory: packages/mcp
       - run: python tests/release_lifecycle.py
+      - run: python scripts/build-release.py
+      - run: node scripts/pack-mcp-with-runtime.mjs
+      - run: python tests/packaged_install.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
