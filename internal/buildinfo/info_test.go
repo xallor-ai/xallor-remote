@@ -3,13 +3,14 @@ package buildinfo
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 )
 
 // A running artifact must expose a usable identity, not a hardcoded dev marker.
 func TestCurrent_should_identifyExecutingArtifact(t *testing.T) {
 	i := Current()
-	if i.Version != "0.2.0" || i.Protocol != 1 || i.Revision == "" || i.OS == "" {
+	if !regexp.MustCompile(`^\d+\.\d+\.\d+$`).MatchString(i.Version) || i.Protocol != 1 || i.Revision == "" || i.OS == "" {
 		t.Fatalf("%+v", i)
 	}
 	e := Running()

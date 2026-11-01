@@ -117,7 +117,8 @@ def main():
         assert denied.returncode != 0 and "开放入站" in denied.stderr, denied.stderr
         record("upgrade_reconnect_keeps_inbound_disabled")
         cli(target, "inbound", "on")
-        cli(controller, "exec", "--device", identity["device_id"], "--", "echo release-e2e")
+        executed = cli(controller, "exec", "--device", identity["device_id"], "--", "echo release-e2e")
+        assert "release-e2e" in executed.stdout, "remote exec returned without the expected output"
         cli(target, "inbound", "off")
         record("upgraded_runtime_executes_over_real_relay")
 

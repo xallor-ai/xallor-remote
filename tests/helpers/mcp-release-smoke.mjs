@@ -1,11 +1,13 @@
 import { spawn } from "node:child_process";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { readFileSync } from "node:fs";
 import readline from "node:readline";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 if (!process.env.XALLOR_REMOTE_DATA_DIR) throw new Error("isolated profile required");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const expectedVersion = JSON.parse(readFileSync(path.join(root, "packages/mcp/package.json"), "utf8")).version;
 const child = spawn(process.execPath, [path.join(root, "packages/mcp/dist/index.js")],
   { env: { ...process.env, XALLOR_REMOTE_DEVICE_ID: "", XALLOR_REMOTE_DEVICE_GRANT: "" }, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
 const pending = new Map();
@@ -27,7 +29,7 @@ try {
   const result = await call("tools/call", { name: "remote.devices", arguments: {} });
   if (result.isError) throw new Error(JSON.stringify(result));
   const status = JSON.parse(result.content[0].text);
-  if (!/^[0-9]{9}$/.test(status.device_id) || status.version !== "0.2.0") throw Error("incorrect runtime identity");
+  if (!/^[0-9]{9}$/.test(status.device_id) || status.version !== expectedVersion) throw Error("incorrect runtime identity");
   if (process.env.XALLOR_TEST_CLI) {
     const run = promisify(execFile);
     const cli = (...args) => run(process.env.XALLOR_TEST_CLI, args, { env: process.env, windowsHide: true, timeout: 20000 });
