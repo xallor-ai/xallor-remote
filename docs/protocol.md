@@ -41,7 +41,7 @@ client 连接上出现 `revoke` / `grant_rotate` / `inbound_set` → 忽略或 n
 
 - `exec`：`command`（字符串）、`cwd?`、`timeout_ms?`
 - `cancel`：`exec_id`。只取消**本条 client 连接**登记的 inflight；对别人的或未知 id 一律 `unknown_exec`（不区分「存在但是别人的」）
-- `read`：路径 + `head`/`tail` 或 offset/limit
+- `read`：路径 + `head`/`tail`（行）或 offset/limit（字节）
 - `write`：路径 + **完整** `content`。覆盖；无 append、无 patch
 
 ---
@@ -94,11 +94,13 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 
 | 项 | v0 |
 | --- | --- |
-| WSS 单帧 | 64 KiB；超则丢该数据帧并标 truncated |
+| WSS 单帧 `data` | 64 KiB（解码后）；超则丢该数据帧并标 truncated |
+| WSS 读上限 | `MaxWSMessageBytes` = 6 × (write 上限 + 路径上限) + 8 KiB 信封；覆盖 JSON `\u00XX` 最坏转义 |
+| 路径 | 最长 4096 字节；超则 `policy_deny` |
 | 单次 stdout+stderr | **4 MiB** 后丢后续输出，`exit.truncated=true` |
 | Relay 每 inflight 待发缓冲 | **1 MiB**；超则丢数据帧并 truncated，不堵整条 device 连接 |
 | read 默认 / 上限 | 64 KiB / 1 MiB |
-| **write 上限** | **1 MiB**；超则 `too_large`，不落盘 |
+| **write 上限** | **1 MiB**（解码后）；整包 marshal 超 WSS 读上限则 `too_large`，不落盘 |
 | 每设备并发 exec | **4** |
 | 排队 | 不排队，超额 `quota_exceeded` |
 | heartbeat | 30s 发一拍；60s 无任何帧 → 连接死 |

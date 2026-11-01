@@ -118,15 +118,13 @@ func (d *Daemon) ipcExec(c *ipc.Conn, req ipc.Request) {
 		_ = c.WriteFrame(ipc.Fail(req.ID, code, ipc.Human(code)))
 		return
 	}
-	cl.mu.Lock()
-	defer cl.mu.Unlock()
 	execID, err := protocol.NewExecID()
 	if err != nil {
 		_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, err.Error()))
 		return
 	}
 	payload, _ := json.Marshal(protocol.ExecPayload{Command: p.Command, Cwd: p.Cwd, TimeoutMS: p.TimeoutMS})
-	d.forwardInvoke(c, req.ID, peer.DeviceID, link, protocol.OpExec, execID, payload, true)
+	d.forwardInvoke(c, req.ID, peer.DeviceID, link, cl, protocol.OpExec, execID, payload, true)
 }
 
 func (d *Daemon) ipcOp(c *ipc.Conn, req ipc.Request, op string) {
@@ -145,38 +143,75 @@ func (d *Daemon) ipcOp(c *ipc.Conn, req ipc.Request, op string) {
 		_ = c.WriteFrame(ipc.Fail(req.ID, code, ipc.Human(code)))
 		return
 	}
-	cl.mu.Lock()
-	defer cl.mu.Unlock()
 	execID, err := protocol.NewExecID()
 	if err != nil {
 		_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, err.Error()))
 		return
 	}
-	d.forwardInvoke(c, req.ID, peer.DeviceID, link, op, execID, req.Params, false)
+	d.forwardInvoke(c, req.ID, peer.DeviceID, link, cl, op, execID, req.Params, false)
 }
 
-func (d *Daemon) forwardInvoke(c *ipc.Conn, reqID, deviceID string, link *wsConn, op, execID string, payload json.RawMessage, stream bool) {
+func (d *Daemon) forwardInvoke(c *ipc.Conn, reqID, deviceID string, link *wsConn, cl *clientLink, op, execID string, payload json.RawMessage, stream bool) {
 	d.trackRemote(execID, link, c)
 	defer d.untrackRemote(execID)
+	w := cl.subscribe(execID)
+	defer cl.unsubscribe(execID)
 	if err := link.send(protocol.Message{Type: protocol.TypeInvoke, ExecID: execID, Op: op, Payload: payload}); err != nil {
-		d.dropClient(deviceID)
+		if err == errMsgTooLarge {
+			_ = c.WriteFrame(ipc.Fail(reqID, protocol.TooLarge, ipc.Human(protocol.TooLarge)))
+			return
+		}
+		d.dropClient(deviceID, cl)
 		_ = c.WriteFrame(ipc.Fail(reqID, protocol.RelayError, ipc.Human(protocol.RelayError)))
 		return
 	}
 	if stream {
 		_ = c.WriteFrame(ipc.Frame{ID: reqID, Event: "stdout", ExecID: execID})
 	}
-	d.readClientLoop(c, reqID, execID, deviceID, link, stream)
+	d.consumeClient(c, reqID, execID, link, w, stream)
+}
+
+func (d *Daemon) runClientReader(deviceID string, cl *clientLink) {
+	for {
+		var msg protocol.Message
+		if err := wsjson.Read(cl.ws.ctx, cl.ws.conn, &msg); err != nil {
+			cl.failWaiters()
+			d.dropClient(deviceID, cl)
+			return
+		}
+		cl.dispatch(msg)
+	}
 }
 
 func (d *Daemon) ensureClient(peer identity.Peer) (*wsConn, *clientLink, error) {
-	d.mu.Lock()
-	if cl, ok := d.clients[peer.DeviceID]; ok && cl.ws != nil {
+	for {
+		d.mu.Lock()
+		if cl, ok := d.clients[peer.DeviceID]; ok && cl.ws != nil {
+			d.mu.Unlock()
+			return cl.ws, cl, nil
+		}
+		if wait, ok := d.ensuring[peer.DeviceID]; ok {
+			d.mu.Unlock()
+			<-wait
+			continue
+		}
+		done := make(chan struct{})
+		d.ensuring[peer.DeviceID] = done
 		d.mu.Unlock()
-		return cl.ws, cl, nil
-	}
-	d.mu.Unlock()
 
+		link, cl, err := d.dialClient(peer)
+		d.mu.Lock()
+		delete(d.ensuring, peer.DeviceID)
+		if err == nil {
+			d.clients[peer.DeviceID] = cl
+		}
+		close(done)
+		d.mu.Unlock()
+		return link, cl, err
+	}
+}
+
+func (d *Daemon) dialClient(peer identity.Peer) (*wsConn, *clientLink, error) {
 	_, _, _, _, relay, _, _ := d.store.Snapshot()
 	ctx, cancel := context.WithCancel(d.ctx)
 	conn, _, err := websocket.Dial(ctx, relay, nil)
@@ -184,6 +219,7 @@ func (d *Daemon) ensureClient(peer identity.Peer) (*wsConn, *clientLink, error) 
 		cancel()
 		return nil, nil, err
 	}
+	conn.SetReadLimit(int64(protocol.MaxWSMessageBytes))
 	link := &wsConn{ctx: ctx, conn: conn}
 	hello := protocol.Message{Type: protocol.TypeHelloClient, TargetID: peer.DeviceID, Grant: peer.Grant}
 	if err := link.send(hello); err != nil {
@@ -199,23 +235,21 @@ func (d *Daemon) ensureClient(peer identity.Peer) (*wsConn, *clientLink, error) 
 		cancel()
 		return nil, nil, fmt.Errorf("%s", ack.Code)
 	}
-	cl := &clientLink{target: peer.DeviceID, ws: link, cancel: cancel}
-	d.mu.Lock()
-	d.clients[peer.DeviceID] = cl
-	d.mu.Unlock()
+	cl := &clientLink{target: peer.DeviceID, ws: link, cancel: cancel, waiters: map[string]*execWaiter{}}
+	go d.runClientReader(peer.DeviceID, cl)
 	go func() {
 		t := time.NewTicker(protocol.HeartbeatEvery)
 		defer t.Stop()
 		for {
 			select {
 			case <-d.ctx.Done():
-				d.dropClient(peer.DeviceID)
+				d.dropClient(peer.DeviceID, cl)
 				return
 			case <-ctx.Done():
 				return
 			case <-t.C:
 				if err := link.send(protocol.Message{Type: protocol.TypeHeartbeat}); err != nil {
-					d.dropClient(peer.DeviceID)
+					d.dropClient(peer.DeviceID, cl)
 					return
 				}
 			}
@@ -224,17 +258,13 @@ func (d *Daemon) ensureClient(peer identity.Peer) (*wsConn, *clientLink, error) 
 	return link, cl, nil
 }
 
-func (d *Daemon) readClientLoop(ipcConn *ipc.Conn, reqID, execID, deviceID string, link *wsConn, stream bool) {
+func (d *Daemon) consumeClient(ipcConn *ipc.Conn, reqID, execID string, link *wsConn, w *execWaiter, stream bool) {
 	var collected string
 	for {
-		var msg protocol.Message
-		if err := wsjson.Read(link.ctx, link.conn, &msg); err != nil {
-			d.dropClient(deviceID)
+		msg, ok := w.next()
+		if !ok {
 			_ = ipcConn.WriteFrame(ipc.Fail(reqID, protocol.RelayError, ipc.Human(protocol.RelayError)))
 			return
-		}
-		if msg.ExecID != "" && msg.ExecID != execID {
-			continue
 		}
 		switch msg.Type {
 		case protocol.TypeStdout:

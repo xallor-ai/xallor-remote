@@ -2,6 +2,7 @@ package noderun
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	stdruntime "runtime"
 	"sync"
@@ -22,16 +23,26 @@ type wsConn struct {
 }
 
 func (w *wsConn) send(m protocol.Message) error {
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	if len(raw) > protocol.MaxWSMessageBytes {
+		return errMsgTooLarge
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return wsjson.Write(w.ctx, w.conn, m)
+	return w.conn.Write(w.ctx, websocket.MessageText, raw)
 }
 
+var errMsgTooLarge = errStr(protocol.TooLarge)
+
 type clientLink struct {
-	target string
-	ws     *wsConn
-	cancel context.CancelFunc
-	mu     sync.Mutex
+	target  string
+	ws      *wsConn
+	cancel  context.CancelFunc
+	mu      sync.Mutex
+	waiters map[string]*execWaiter
 }
 
 type Daemon struct {
@@ -43,6 +54,7 @@ type Daemon struct {
 	mu        sync.Mutex
 	device    *wsConn
 	clients   map[string]*clientLink
+	ensuring  map[string]chan struct{}
 	local     map[string]context.CancelFunc
 	remote    map[string]*remoteExec
 	approvals *approvalHub
@@ -58,6 +70,7 @@ func New(store *identity.Store, log *slog.Logger) *Daemon {
 	return &Daemon{
 		log: log, store: store, ctx: ctx, cancel: cancel,
 		clients:   map[string]*clientLink{},
+		ensuring:  map[string]chan struct{}{},
 		local:     map[string]context.CancelFunc{},
 		remote:    map[string]*remoteExec{},
 		approvals: newApprovalHub(),
@@ -109,6 +122,7 @@ func (d *Daemon) connectDevice() error {
 	if err != nil {
 		return err
 	}
+	conn.SetReadLimit(int64(protocol.MaxWSMessageBytes))
 	defer conn.Close(websocket.StatusNormalClosure, "")
 	link := &wsConn{ctx: ctx, conn: conn}
 	inb := inbound && grant != ""
@@ -201,19 +215,18 @@ func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
 	}
 }
 
-func (d *Daemon) dropClient(id string) {
+func (d *Daemon) dropClient(id string, inst *clientLink) {
 	d.mu.Lock()
-	cl := d.clients[id]
-	delete(d.clients, id)
-	d.mu.Unlock()
-	if cl == nil {
+	cur := d.clients[id]
+	if inst != nil && cur != inst {
+		d.mu.Unlock()
+		inst.closeConn()
 		return
 	}
-	if cl.cancel != nil {
-		cl.cancel()
-	}
-	if cl.ws != nil && cl.ws.conn != nil {
-		_ = cl.ws.conn.Close(websocket.StatusNormalClosure, "")
+	delete(d.clients, id)
+	d.mu.Unlock()
+	if cur != nil {
+		cur.closeConn()
 	}
 }
 

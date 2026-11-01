@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
 import { findBinary, INSTALL_HINT } from "./ensure.js";
+import { bindHostCancel, execToolText, newExecProgress, type ToolCtx } from "./exec-result.js";
 import { failText, RuntimeIpc, type Frame } from "./ipc.js";
 import { MCP_VERSION, versionsMatch } from "./version.js";
 
@@ -86,6 +87,8 @@ function fromFrame(f: Frame, extra?: string) {
 function createServer(): McpServer {
   const server = new McpServer({ name: "xallor-remote", version: MCP_VERSION });
 
+  // Tool 名用 snake_case：Cursor 代理层会把 catalog 里的点号展成下划线再去 call，
+  // 若服务端仍注册 remote.exec，会出现「列表有、调用 not found」。
   server.registerTool(
     "remote.devices",
     {
@@ -149,7 +152,7 @@ function createServer(): McpServer {
           .describe("超时毫秒，最长 1 小时"),
       }),
     },
-    async ({ command, device_id, cwd, timeout_ms }) => {
+    async ({ command, device_id, cwd, timeout_ms }, ctx) => {
       if (!process.env.XALLOR_REMOTE_DEVICE_GRANT && !process.env.XALLOR_REMOTE_DEVICE_ID) {
         const ipc = await ensureRuntime();
         const st = await ipc.call("status");
@@ -159,8 +162,14 @@ function createServer(): McpServer {
         }
       }
       const ipc = await ensureRuntime();
+      const toolCtx = ctx as ToolCtx;
+      const report = newExecProgress(toolCtx);
+      const onExec = bindHostCancel(toolCtx, (id) => {
+        void ipc.call("exec.cancel", { exec_id: id });
+      });
       const stdout: string[] = [];
       const stderr: string[] = [];
+      let announced = false;
       const f = await ipc.stream(
         "exec",
         {
@@ -170,26 +179,34 @@ function createServer(): McpServer {
           ...(timeout_ms ? { timeout_ms } : {}),
         },
         (ev) => {
-          if (ev.event === "stdout" && ev.data) stdout.push(ev.data);
-          if (ev.event === "stderr" && ev.data) stderr.push(ev.data);
+          if (ev.exec_id && !announced) {
+            announced = true;
+            onExec(ev.exec_id);
+            void report(ev.exec_id);
+          }
+          if (ev.event === "stdout" && ev.data) {
+            stdout.push(ev.data);
+            void report(ev.data);
+          }
+          if (ev.event === "stderr" && ev.data) {
+            stderr.push(ev.data);
+            void report(ev.data);
+          }
         },
       );
       if (f.ok === false) {
         return textResult(failText(f), true);
       }
-      const status = String(f.result?.status ?? "");
-      if (status === "cancelled") {
-        return textResult("任务已取消。", true);
-      }
-      if (status === "timeout") {
-        return textResult("执行超时。", true);
-      }
-      const bits = [
+      const got = execToolText(
+        String(f.result?.status ?? ""),
+        f.result?.exit_code,
+        f.result?.duration_ms,
+        f.result?.truncated,
+        f.result?.exec_id,
         stdout.join(""),
-        stderr.join("") ? `stderr:\n${stderr.join("")}` : "",
-        `exit_code=${f.result?.exit_code} duration_ms=${f.result?.duration_ms} truncated=${f.result?.truncated} exec_id=${f.result?.exec_id}`,
-      ].filter(Boolean);
-      return textResult(bits.join("\n"));
+        stderr.join(""),
+      );
+      return textResult(got.text, got.isError);
     },
   );
 
@@ -215,8 +232,8 @@ function createServer(): McpServer {
       inputSchema: z.object({
         path: z.string(),
         device_id: z.string().optional(),
-        head: z.number().int().nonnegative().max(1_048_576).optional().describe("从头读的字节数上限"),
-        tail: z.number().int().nonnegative().max(1_048_576).optional().describe("从尾读的字节数上限"),
+        head: z.number().int().nonnegative().max(1_048_576).optional().describe("从头读的行数"),
+        tail: z.number().int().nonnegative().max(1_048_576).optional().describe("从尾读的行数"),
       }),
     },
     async (args) => {

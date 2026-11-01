@@ -77,7 +77,7 @@ func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
 			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, err.Error()))
 			return true
 		}
-		d.dropClient(p.DeviceID)
+		d.dropClient(p.DeviceID, nil)
 		_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
 	case "config.get":
 		_, _, _, ws, relay, _, _ := d.store.Snapshot()
