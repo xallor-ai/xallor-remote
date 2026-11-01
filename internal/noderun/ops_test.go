@@ -11,33 +11,78 @@ import (
 
 func TestSliceRead_should_keep_last_line_when_file_ends_with_newline(t *testing.T) {
 	raw := []byte("a\nb\n")
-	got := sliceRead(raw, protocol.ReadPayload{Tail: 1}, 64*1024)
-	if !bytes.Equal(got, []byte("b")) {
-		t.Fatalf("tail:1 on trailing newline: %q", got)
+	got, trunc := sliceRead(raw, protocol.ReadPayload{Tail: 1}, 64*1024)
+	if trunc || !bytes.Equal(got, []byte("b")) {
+		t.Fatalf("tail:1 on trailing newline: %q trunc=%v", got, trunc)
 	}
-	got = sliceRead(raw, protocol.ReadPayload{Head: 1}, 64*1024)
-	if !bytes.Equal(got, []byte("a")) {
-		t.Fatalf("head:1: %q", got)
+	got, trunc = sliceRead(raw, protocol.ReadPayload{Head: 1}, 64*1024)
+	if trunc || !bytes.Equal(got, []byte("a")) {
+		t.Fatalf("head:1: %q trunc=%v", got, trunc)
 	}
 }
 
 func TestSliceReadHeadTail(t *testing.T) {
 	raw := []byte("a\nb\nc\nd")
-	got := sliceRead(raw, protocol.ReadPayload{Head: 2}, 64*1024)
-	if !bytes.Equal(got, []byte("a\nb")) {
-		t.Fatalf("head: %q", got)
+	got, trunc := sliceRead(raw, protocol.ReadPayload{Head: 2}, 64*1024)
+	if trunc || !bytes.Equal(got, []byte("a\nb")) {
+		t.Fatalf("head: %q trunc=%v", got, trunc)
 	}
-	got = sliceRead(raw, protocol.ReadPayload{Tail: 2}, 64*1024)
-	if !bytes.Equal(got, []byte("c\nd")) {
-		t.Fatalf("tail: %q", got)
+	got, trunc = sliceRead(raw, protocol.ReadPayload{Tail: 2}, 64*1024)
+	if trunc || !bytes.Equal(got, []byte("c\nd")) {
+		t.Fatalf("tail: %q trunc=%v", got, trunc)
 	}
 }
 
 func TestSliceRead_should_use_bytes_when_offset_and_limit_set(t *testing.T) {
 	raw := []byte("abcdef")
-	got := sliceRead(raw, protocol.ReadPayload{Offset: 2, Limit: 3}, 64*1024)
-	if !bytes.Equal(got, []byte("cde")) {
-		t.Fatalf("offset/limit: %q", got)
+	got, trunc := sliceRead(raw, protocol.ReadPayload{Offset: 2, Limit: 3}, 64*1024)
+	if trunc || !bytes.Equal(got, []byte("cde")) {
+		t.Fatalf("offset/limit: %q trunc=%v", got, trunc)
+	}
+}
+
+// Default window is 64 KiB. A larger file must be marked truncated and stay valid UTF-8.
+func TestSliceRead_should_markTruncatedOnRuneBoundary_whenDefaultWindowCutsCJK(t *testing.T) {
+	raw := bytes.Repeat([]byte("中"), protocol.DefaultReadBytes)
+	got, trunc := sliceRead(raw, protocol.ReadPayload{}, protocol.DefaultReadBytes)
+	if !trunc {
+		t.Fatal("default window on oversized file should be truncated")
+	}
+	if !utf8.Valid(got) {
+		t.Fatalf("cut mid-rune: %q", got)
+	}
+	if bytes.ContainsRune(got, '\uFFFD') {
+		t.Fatal("replacement rune leaked into read window")
+	}
+	if len(got) == 0 || len(got) > protocol.DefaultReadBytes {
+		t.Fatalf("len=%d", len(got))
+	}
+}
+
+// Follow-up at DefaultReadBytes (not the snapped length) must still return the rest, not look like EOF.
+func TestSliceRead_should_keepFollowingCJK_whenOffsetLandsMidRune(t *testing.T) {
+	raw := bytes.Repeat([]byte("中"), protocol.DefaultReadBytes)
+	first, trunc := sliceRead(raw, protocol.ReadPayload{}, protocol.DefaultReadBytes)
+	if !trunc || !utf8.Valid(first) || len(first) == 0 {
+		t.Fatalf("first window len=%d trunc=%v", len(first), trunc)
+	}
+	got, _ := sliceRead(raw, protocol.ReadPayload{Offset: protocol.DefaultReadBytes}, protocol.DefaultReadBytes)
+	if len(got) == 0 {
+		t.Fatal("mid-rune offset dropped the rest of the file")
+	}
+	if !utf8.Valid(got) || bytes.ContainsRune(got, '\uFFFD') {
+		t.Fatalf("follow-up window invalid: %q", got[:min(12, len(got))])
+	}
+	if !bytes.HasPrefix(got, []byte("中")) {
+		t.Fatalf("expected snapped rune, got %q", got[:min(12, len(got))])
+	}
+}
+
+func TestSliceRead_should_notMarkTruncated_whenFileFitsDefaultWindow(t *testing.T) {
+	raw := []byte("short")
+	got, trunc := sliceRead(raw, protocol.ReadPayload{}, protocol.DefaultReadBytes)
+	if trunc || !bytes.Equal(got, raw) {
+		t.Fatalf("got=%q trunc=%v", got, trunc)
 	}
 }
 
@@ -49,6 +94,30 @@ func TestNextUTF8Frame_should_split_on_rune_boundary(t *testing.T) {
 	}
 	if string(rest) != "文x" {
 		t.Fatalf("rest=%q", rest)
+	}
+}
+
+// Incomplete trailing rune after a byte cut must be dropped, not emitted as U+FFFD.
+func TestNextUTF8Frame_should_dropInvalidRemainder_whenInputEndsMidRune(t *testing.T) {
+	raw := append([]byte("中"), []byte{0xe4}...)
+	frame, rest := nextUTF8Frame(raw, len(raw))
+	if string(frame) != "中" || !utf8.Valid(frame) {
+		t.Fatalf("frame=%q", frame)
+	}
+	if len(rest) == 0 {
+		t.Fatal("expected leftover continuation")
+	}
+	frame, rest = nextUTF8Frame(rest, 64)
+	if len(frame) != 0 || len(rest) != 0 {
+		t.Fatalf("invalid remainder should be dropped frame=%q rest=%q", frame, rest)
+	}
+}
+
+func TestNextUTF8Frame_should_skipLeadingContinuation_whenMoreRunesFollow(t *testing.T) {
+	raw := append([]byte{0xb8, 0xad}, []byte("中")...)
+	frame, rest := nextUTF8Frame(raw, 16)
+	if string(frame) != "中" || len(rest) != 0 {
+		t.Fatalf("frame=%q rest=%q", frame, rest)
 	}
 }
 

@@ -8,6 +8,7 @@ const (
 	MaxRelayBufferBytes = 1 * 1024 * 1024
 	MaxWriteBytes       = 1 * 1024 * 1024
 	MaxReadBytes        = 1 * 1024 * 1024
+	MaxReadOffsetBytes  = 1 * 1024 * 1024 * 1024
 	DefaultReadBytes    = 64 * 1024
 	MaxPathBytes        = 4096
 	MaxEnvelopeBytes    = 8192

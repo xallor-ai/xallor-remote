@@ -54,7 +54,7 @@ func (d *Daemon) runLocalRead(link *wsConn, msg protocol.Message) {
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.PolicyDeny))
 		return
 	}
-	out := sliceRead(raw, p, limit)
+	out, trunc := sliceRead(raw, p, limit)
 	if err := sendStdoutFrames(link, msg.ExecID, out); err != nil {
 		if err == errMsgTooLarge {
 			_ = link.send(protocol.Nack(msg.ExecID, protocol.TooLarge))
@@ -63,7 +63,7 @@ func (d *Daemon) runLocalRead(link *wsConn, msg protocol.Message) {
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.AgentError))
 		return
 	}
-	d.sendOKExit(link, msg.ExecID, start)
+	d.sendOKExit(link, msg.ExecID, start, trunc)
 }
 
 func splitLines(raw []byte) [][]byte {
@@ -77,7 +77,7 @@ func splitLines(raw []byte) [][]byte {
 	return lines
 }
 
-func sliceRead(raw []byte, p protocol.ReadPayload, limit int) []byte {
+func sliceRead(raw []byte, p protocol.ReadPayload, limit int) ([]byte, bool) {
 	if p.Head > 0 {
 		lines := splitLines(raw)
 		if p.Head < len(lines) {
@@ -89,9 +89,9 @@ func sliceRead(raw []byte, p protocol.ReadPayload, limit int) []byte {
 			raw = bytes.Join(lines[len(lines)-p.Tail:], []byte("\n"))
 		}
 	} else if p.Offset > 0 || p.Limit > 0 {
-		off := p.Offset
-		if off > len(raw) {
-			return nil
+		off := snapUTF8Start(raw, p.Offset)
+		if off >= len(raw) {
+			return nil, false
 		}
 		end := len(raw)
 		if p.Limit > 0 && off+p.Limit < end {
@@ -99,10 +99,37 @@ func sliceRead(raw []byte, p protocol.ReadPayload, limit int) []byte {
 		}
 		raw = raw[off:end]
 	}
+	cut := false
 	if len(raw) > limit {
-		return raw[:limit]
+		raw = raw[:limit]
+		cut = true
 	}
-	return raw
+	out := clampUTF8Prefix(raw)
+	if cut || len(out) < len(raw) {
+		return out, true
+	}
+	return out, false
+}
+
+func clampUTF8Prefix(b []byte) []byte {
+	for len(b) > 0 && !utf8.Valid(b) {
+		b = b[:len(b)-1]
+	}
+	return b
+}
+
+// snapUTF8Start moves a byte offset back to the start of the rune that contains it.
+func snapUTF8Start(raw []byte, off int) int {
+	if off <= 0 {
+		return 0
+	}
+	if off >= len(raw) {
+		return len(raw)
+	}
+	for off > 0 && !utf8.RuneStart(raw[off]) {
+		off--
+	}
+	return off
 }
 
 func (d *Daemon) runLocalWrite(link *wsConn, msg protocol.Message) {
@@ -129,7 +156,7 @@ func (d *Daemon) runLocalWrite(link *wsConn, msg protocol.Message) {
 		_ = link.send(protocol.Nack(msg.ExecID, code))
 		return
 	}
-	d.sendOKExit(link, msg.ExecID, start)
+	d.sendOKExit(link, msg.ExecID, start, false)
 }
 
 func readTooLarge(size int64, p protocol.ReadPayload) bool {
@@ -171,6 +198,14 @@ func stdoutFrameBudget() int {
 }
 
 func nextUTF8Frame(data []byte, max int) (frame, rest []byte) {
+	i := 0
+	for i < len(data) && !utf8.RuneStart(data[i]) {
+		i++
+	}
+	data = data[i:]
+	if len(data) == 0 {
+		return nil, nil
+	}
 	if max > len(data) {
 		max = len(data)
 	}
@@ -178,11 +213,7 @@ func nextUTF8Frame(data []byte, max int) (frame, rest []byte) {
 		max--
 	}
 	if max == 0 {
-		_, size := utf8.DecodeRune(data)
-		if size <= 0 {
-			size = 1
-		}
-		max = size
+		return nil, nil
 	}
 	return data[:max], data[max:]
 }
@@ -191,6 +222,9 @@ func sendStdoutFrames(link *wsConn, execID string, data []byte) error {
 	max := stdoutFrameBudget()
 	for len(data) > 0 {
 		frame, rest := nextUTF8Frame(data, max)
+		if len(frame) == 0 {
+			return nil
+		}
 		if err := link.send(protocol.Message{Type: protocol.TypeStdout, ExecID: execID, Data: string(frame)}); err != nil {
 			if err == errMsgTooLarge && max > 1 {
 				max /= 2
@@ -219,7 +253,7 @@ func (d *Daemon) runLocalProcesses(link *wsConn, msg protocol.Message) {
 		out = out[:protocol.MaxFrameBytes]
 	}
 	_ = link.send(protocol.Message{Type: protocol.TypeStdout, ExecID: msg.ExecID, Data: string(out)})
-	d.sendOKExit(link, msg.ExecID, start)
+	d.sendOKExit(link, msg.ExecID, start, false)
 }
 
 func (d *Daemon) runLocalInfo(link *wsConn, msg protocol.Message) {
@@ -241,15 +275,15 @@ func (d *Daemon) runLocalInfo(link *wsConn, msg protocol.Message) {
 		"nvidia":    false,
 	})
 	_ = link.send(protocol.Message{Type: protocol.TypeStdout, ExecID: msg.ExecID, Data: string(body)})
-	d.sendOKExit(link, msg.ExecID, start)
+	d.sendOKExit(link, msg.ExecID, start, false)
 }
 
-func (d *Daemon) sendOKExit(link *wsConn, execID string, start time.Time) {
+func (d *Daemon) sendOKExit(link *wsConn, execID string, start time.Time, truncated bool) {
 	code := 0
 	dur := time.Since(start).Milliseconds()
 	_ = link.send(protocol.Message{
 		Type: protocol.TypeExit, ExecID: execID, ExitCode: &code,
-		DurationMS: &dur, Truncated: protocol.Bool(false), Status: protocol.ExitCompleted,
+		DurationMS: &dur, Truncated: protocol.Bool(truncated), Status: protocol.ExitCompleted,
 	})
 }
 
