@@ -99,10 +99,16 @@ func sliceRead(raw []byte, p protocol.ReadPayload, limit int) ([]byte, bool) {
 		}
 		raw = raw[off:end]
 	}
-	if len(raw) <= limit {
-		return raw, false
+	cut := false
+	if len(raw) > limit {
+		raw = raw[:limit]
+		cut = true
 	}
-	return clampUTF8Prefix(raw[:limit]), true
+	out := clampUTF8Prefix(raw)
+	if cut || len(out) < len(raw) {
+		return out, true
+	}
+	return out, false
 }
 
 func clampUTF8Prefix(b []byte) []byte {
@@ -117,7 +123,7 @@ func snapUTF8Start(raw []byte, off int) int {
 	if off <= 0 {
 		return 0
 	}
-	if off > len(raw) {
+	if off >= len(raw) {
 		return len(raw)
 	}
 	for off > 0 && !utf8.RuneStart(raw[off]) {
