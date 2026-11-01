@@ -61,11 +61,14 @@ try {
   ok(await call(controller, "exec.cancel", { exec_id: execID }));
   assert.equal(ok(await bounded(running)).status, "cancelled");
   pass("cancel_requires_original_ipc_connection_and_terminates_task");
-  let timeoutStarted = false;
-  const timed = await bounded(controller.stream("exec", { device_id: targetID, command: "echo timeout-ready; " + sleep, timeout_ms: 5000 }, f => {
-    if (f.data?.includes("timeout-ready")) timeoutStarted = true;
-  }));
-  assert(timeoutStarted, "timeout case must reach a running child before testing its terminal");
+  let timeoutOutput = "";
+  const timeoutMS = Number(process.env.XALLOR_TEST_TIMEOUT_MS || 5000);
+  assert(timeoutMS >= 5000 && timeoutMS <= 30000);
+  const longSleep = process.platform === "win32" ? "Start-Sleep -Seconds 60" : "sleep 60";
+  const timed = await bounded(controller.stream("exec", { device_id: targetID, command: "echo timeout-ready; " + longSleep, timeout_ms: timeoutMS }, f => {
+    timeoutOutput += f.data || "";
+  }), timeoutMS + 10000);
+  assert(timeoutOutput.includes("timeout-ready"), "timeout case did not reach a running child: " + JSON.stringify(timed));
   assert.equal(ok(timed).status, "timeout");
   pass("timeout_has_explicit_terminal_status");
   const flood = process.platform === "win32" ? "[Console]::Write(('x' * 9000000))" : "head -c 9000000 /dev/zero | tr '\\0' x";
