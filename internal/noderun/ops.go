@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/xallor-ai/xallor-remote/internal/buildinfo"
 	"github.com/xallor-ai/xallor-remote/internal/identity"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -269,7 +270,8 @@ func (d *Daemon) runLocalInfo(link *wsConn, msg protocol.Message) {
 		"os":        goos,
 		"arch":      arch,
 		"hostname":  identity.Hostname(),
-		"version":   protocol.Version,
+		"version":   buildinfo.Version(),
+		"build":     buildinfo.Current(),
 		"workspace": workspace,
 		"docker":    false,
 		"nvidia":    false,

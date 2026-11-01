@@ -25,6 +25,10 @@ export class RuntimeIpc {
   private buf = "";
   private readonly waiters = new Map<string, Waiter>();
 
+  get isConnected(): boolean {
+    return !!this.sock && !this.sock.destroyed;
+  }
+
   async connect(timeoutMs = 2000): Promise<void> {
     const path = ipcPath();
     this.sock = await new Promise<net.Socket>((resolve, reject) => {

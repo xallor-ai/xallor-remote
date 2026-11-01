@@ -1,4 +1,6 @@
 node_modules/
+__pycache__/
+*.pyc
 dist/
 .env
 .env.*
@@ -15,6 +17,7 @@ Thumbs.db
 bin/
 dist/
 packages/mcp/vendor/
+packages/mcp/build.json
 apps/gui/src-tauri/target/
 apps/gui/src-tauri/gen/
 

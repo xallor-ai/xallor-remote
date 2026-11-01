@@ -15,3 +15,14 @@ go run ./cmd/xallor-remote start
 ```
 
 另一台同样设 Relay URL 后 `grant issue` / `peer add` / `exec -- whoami`。
+
+版本与本机升级（使用可信来源下载并解压的发行包）：
+
+```text
+xallor-remote version --json
+xallor-remote runtime install --bundle <解压目录>
+xallor-remote runtime status
+xallor-remote runtime rollback
+```
+
+安装会重启本机 Runtime，并保留设备 ID、授权码、连接配置和入站选择；请先结束正在执行的任务。失败时自动恢复已纳管的旧版本。首次从 0.1.x 迁移时，先停止旧服务，再用新包安装。构建与发行步骤见 [docs/stack.md](docs/stack.md)。

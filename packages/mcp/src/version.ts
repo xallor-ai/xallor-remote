@@ -1,4 +1,5 @@
-export const MCP_VERSION = "0.1.1";
+import fs from "node:fs";
+export const MCP_VERSION: string = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 export function versionsMatch(runtimeVersion: string, mcpVersion = MCP_VERSION): boolean {
   const a = runtimeVersion.replace(/-.*$/, "").split(".");

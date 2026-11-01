@@ -28,6 +28,8 @@ Linux:   ~/.config/xallor-remote\
 
 IPC 报文见 [ipc.md](ipc.md)。头关系见 [heads.md](heads.md)。
 
+可用绝对路径环境变量 `XALLOR_REMOTE_DATA_DIR` 选择独立本机 profile；默认 workspace 位于该目录的 workspace 子目录，Go 与 MCP 使用相同 profile 对应的独立 IPC 端点。首次加载时创建目录。该设置用于隔离实例和测试；不设置时保留上面的用户级位置。不同 profile 的身份与授权互不复用。
+
 | 文件 | 内容 |
 | --- | --- |
 | `identity.json` | device_id |

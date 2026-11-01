@@ -58,7 +58,7 @@ SSOT：命名管道 / Unix socket 上的报文与 ensure。路径与权限见 [d
 
 | method | 谁可调 | 作用 |
 | --- | --- | --- |
-| `status` | 任一头 | ID、workspace、inbound、online、版本 |
+| `status` | 任一头 | ID、workspace、inbound、online、版本；build 为运行制品身份 |
 | `grant.issue` / `show` / `rotate` | 人侧头 | 见 [credentials.md](credentials.md) |
 | `inbound.set` | 人侧头 | `{enabled:bool}` |
 | `revoke` / `reset` | 人侧头 | reset 须 `params.confirm=true` |
@@ -68,6 +68,8 @@ SSOT：命名管道 / Unix socket 上的报文与 ensure。路径与权限见 [d
 | `approval.respond` | 人侧头 | 同一 `id`，`{allow:bool}` |
 
 MCP **可以**调 `status` / `peer.*` / 下面远程方法；**不要**调 grant/inbound/revoke（包里不实现）。Runtime 不做「MCP 指纹鉴权」——防模型靠 tool 面，不靠 IPC 分角色。MCP 连接**不算**审批 UI。
+
+`status.result.build`：version、revision、built_at、dirty、protocol、os、arch、path、sha256、pid。path/hash 在进程启动时采集，表示正在运行的制品，不把升级后的磁盘文件冒充当前进程。远程 info 的 build 不包含本机 path/hash/pid。
 
 ### 远程（Runtime 再走 WSS）
 
