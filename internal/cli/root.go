@@ -27,7 +27,7 @@ func Execute() error {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(cmdRelay(), cmdStart(), cmdEnsure(), cmdStop(), cmdStatus(), cmdGrant(), cmdInbound(), cmdRevoke(), cmdReset(), cmdPeer(), cmdExec(), cmdApprove(), cmdTUI(), cmdMCP(), cmdVersion(), cmdRuntime())
+	root.AddCommand(cmdRelay(), cmdStart(), cmdEnsure(), cmdStop(), cmdStatus(), cmdDoctor(), cmdGrant(), cmdInbound(), cmdRevoke(), cmdReset(), cmdPeer(), cmdExec(), cmdApprove(), cmdTUI(), cmdMCP(), cmdVersion(), cmdRuntime())
 	return root.Execute()
 }
 
@@ -84,16 +84,6 @@ func cmdEnsure() *cobra.Command {
 			if err := ensureRuntime(); err != nil {
 				return err
 			}
-			return printStatus()
-		},
-	}
-}
-
-func cmdStatus() *cobra.Command {
-	return &cobra.Command{
-		Use:   "status",
-		Short: "本机状态",
-		RunE: func(cmd *cobra.Command, args []string) error {
 			return printStatus()
 		},
 	}

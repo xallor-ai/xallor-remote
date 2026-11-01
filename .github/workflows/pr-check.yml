@@ -111,6 +111,7 @@ jobs:
       - run: python scripts/build-release.py
       - run: node scripts/pack-mcp-with-runtime.mjs
       - run: python tests/packaged_install.py
+      - run: python tests/diagnostics_e2e.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

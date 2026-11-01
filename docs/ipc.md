@@ -59,6 +59,7 @@ SSOT：命名管道 / Unix socket 上的报文与 ensure。路径与权限见 [d
 | method | 谁可调 | 作用 |
 | --- | --- | --- |
 | `status` | 任一头 | ID、workspace、inbound、online、版本；build 为运行制品身份 |
+| `doctor` | 任一头 | 只读分层诊断；`params.device_id` 可选，不省略时必须为 9 位 ID |
 | `grant.issue` / `show` / `rotate` | 人侧头 | 见 [credentials.md](credentials.md) |
 | `inbound.set` | 人侧头 | `{enabled:bool}` |
 | `revoke` / `reset` | 人侧头 | reset 须 `params.confirm=true` |
@@ -70,6 +71,12 @@ SSOT：命名管道 / Unix socket 上的报文与 ensure。路径与权限见 [d
 MCP **可以**调 `status` / `peer.*` / 下面远程方法；**不要**调 grant/inbound/revoke（包里不实现）。Runtime 不做「MCP 指纹鉴权」——防模型靠 tool 面，不靠 IPC 分角色。MCP 连接**不算**审批 UI。
 
 `status.result.build`：version、revision、built_at、dirty、protocol、os、arch、path、sha256、pid。path/hash 在进程启动时采集，表示正在运行的制品，不把升级后的磁盘文件冒充当前进程。远程 info 的 build 不包含本机 path/hash/pid。
+
+`status` 的 peers 仅含 `device_id`、`has_grant`，不返回授权码或 device_secret。`relay` 仅返回 scheme + host，去掉可能携带凭据的 userinfo/path/query/fragment；编辑地址仍走显式 `config.get`。
+
+`doctor` 返回 `{schema:1, observed_at, device_id?, ok, checks:[{layer,state,code?,action?}]}`。固定层次：`ipc`、`runtime_relay`、`peer`、`relay_transport`、`authorization`、`target_online`、`inbound`、`target_runtime`。状态为 `ok` / `fail` / `unknown` / `skipped`；前置失败后的未测项不冒充成功。省略设备时仅测本机服务及其 Relay 连接；目标诊断创建一次独立 client 连接，hello 后只调用只读 `info`，以目标 ID 与成功终态验证目标响应，不执行 shell，不修改配对/授权/入站，不复用正在执行任务的连接。远程探测上限 5 秒。未返回终态只能表示未确认，诊断不承诺后续任务一定成功。
+
+CLI `doctor [--device ID] [--json]` 不调用 ensure，也不创建数据目录；`status --json` 输出上述脱敏状态。doctor 全部已请求检查通过时退出 0，失败或未确认退出非 0；JSON 始终写 stdout，人话错误写 stderr。
 
 ### 远程（Runtime 再走 WSS）
 
