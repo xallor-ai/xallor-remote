@@ -55,12 +55,12 @@ func readCursor(input io.Reader, session, workspace string, onInit func() error)
 			if !initialized || finished || e.Session != session || e.IsError == nil || e.Result == nil {
 				return result, fmt.Errorf("unconfirmed_cli_result")
 			}
+			if !*e.IsError && e.Subtype != "success" {
+				return result, fmt.Errorf("unconfirmed_cli_result")
+			}
 			finished = true
 			result.isError = *e.IsError
 			result.text = *e.Result
-			if !result.isError && e.Subtype != "success" {
-				return result, fmt.Errorf("unconfirmed_cli_result")
-			}
 			if len(result.text) > MaxResponse {
 				end := MaxResponse
 				for end > 0 && !utf8.RuneStart(result.text[end]) {

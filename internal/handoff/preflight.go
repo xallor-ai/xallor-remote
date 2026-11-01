@@ -27,7 +27,17 @@ func beneath(root, target string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && !filepath.IsAbs(rel)
 }
 func (m *Manager) preflight(ctx context.Context, r Request, root string) (Config, string, string, error) {
-	fail := func(code string) (Config, string, string, error) { return Config{}, "", "", fmt.Errorf("%s", code) }
+	probe, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	fail := func(code string) (Config, string, string, error) {
+		if probe.Err() == context.DeadlineExceeded {
+			code = "preflight_timeout"
+		}
+		if probe.Err() == context.Canceled {
+			code = "preflight_interrupted"
+		}
+		return Config{}, "", "", fmt.Errorf("%s", code)
+	}
 	base, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return fail("workspace_unavailable")
@@ -36,8 +46,6 @@ func (m *Manager) preflight(ctx context.Context, r Request, root string) (Config
 	if err != nil || !beneath(base, workspace) {
 		return fail("workspace_outside_root")
 	}
-	probe, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
 	git := func(args ...string) (string, error) {
 		cmd := exec.Command("git", append([]string{"-C", workspace}, args...)...)
 		return m.output(probe, cmd)

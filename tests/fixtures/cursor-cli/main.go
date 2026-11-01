@@ -72,7 +72,11 @@ func main() {
 	if strings.Contains(prompt, "TEST_LARGE_RESULT") {
 		response = strings.Repeat("中", 30000)
 	}
-	emit(map[string]any{"type": "result", "subtype": "success", "session_id": session, "is_error": strings.Contains(prompt, "TEST_ERROR_RESULT"), "result": response})
+	subtype := "success"
+	if strings.Contains(prompt, "TEST_UNCONFIRMED_LARGE") {
+		subtype, response = "unexpected", strings.Repeat("x", 600*1024)
+	}
+	emit(map[string]any{"type": "result", "subtype": subtype, "session_id": session, "is_error": strings.Contains(prompt, "TEST_ERROR_RESULT"), "result": response})
 	if strings.Contains(prompt, "TEST_NONZERO_EXIT") {
 		os.Exit(9)
 	}

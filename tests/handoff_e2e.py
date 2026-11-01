@@ -91,6 +91,7 @@ try:
         ("missing-result", "TEST_MISSING_RESULT", "unknown", "missing_cli_result"),
         ("error-result", "TEST_ERROR_RESULT", "failed", "cli_result_error"),
         ("nonzero-exit", "TEST_NONZERO_EXIT", "unknown", "cli_exit_nonzero"),
+        ("unconfirmed-large", "TEST_UNCONFIRMED_LARGE", "unknown", "unconfirmed_cli_result"),
         ("large-result", "TEST_LARGE_RESULT", "completed", None),
     ]:
         submit(dict(base, request_id=request_id, prompt=marker))
@@ -98,6 +99,7 @@ try:
         assert result["state"] == state, result
         if code:
             assert result["code"] == code, result
+            assert len(result.get("result", "").encode("utf-8")) <= 65536
         else:
             assert result["truncated"] and len(result["result"].encode("utf-8")) <= 65536
     print("PASS wrong session, missing terminal, bounded Unicode result")

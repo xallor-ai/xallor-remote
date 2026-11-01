@@ -47,3 +47,14 @@ func TestCursor_should_boundResult_and_rejectOversizedFrames(t *testing.T) {
 		t.Fatal("oversized frame accepted")
 	}
 }
+
+// Malformed terminal subtypes cannot bypass result bounds or poison the receipt store.
+func TestCursor_should_discardUnconfirmedOversizedResult(t *testing.T) {
+	workspace := t.TempDir()
+	init, _ := json.Marshal(map[string]string{"type": "system", "subtype": "init", "session_id": testSession, "cwd": workspace})
+	result, _ := json.Marshal(map[string]any{"type": "result", "subtype": "unexpected", "session_id": testSession, "is_error": false, "result": strings.Repeat("x", 600*1024)})
+	r, err := readCursor(strings.NewReader(string(init)+"\n"+string(result)+"\n"), testSession, workspace, func() error { return nil })
+	if err == nil || len(r.text) > MaxResponse {
+		t.Fatalf("unconfirmed result escaped bound: bytes=%d err=%v", len(r.text), err)
+	}
+}
