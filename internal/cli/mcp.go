@@ -56,7 +56,7 @@ func cmdMCP() *cobra.Command {
 			}
 			fmt.Println("已写入", mcpconfig.ServerKey)
 			fmt.Println(r.Path)
-			fmt.Println("把 DEVICE_ID 改成对方的 9 位设备 ID 后重启 Cursor。")
+			fmt.Println("把 DEVICE_ID 和 GRANT 改成对方的设备 ID 和授权码后重启 Cursor。")
 			return nil
 		},
 	}
