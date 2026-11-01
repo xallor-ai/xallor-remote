@@ -104,17 +104,19 @@ v0：**发出后 T 秒内没有任何头订阅/应答 → `policy_deny` 或 `app
 ```text
 1. 试连 IPC
 2. 通 → 发 status，版本不匹配则报错退出（见 [stack.md](stack.md)）
-3. 不通 → 按顺序找 `xallor-remote`：`XALLOR_REMOTE_BIN` → npm 包内 `vendor/<platform>/` → `PATH` → 数据目录 `bin/`
-4. 拉起：xallor-remote start --daemon（Windows 无窗口；Unix 脱离终端）
+3. 不通 → 按顺序找 `xallor-remote`：`XALLOR_REMOTE_BIN` → 已校验的托管制品 → npm 包内 `vendor/<platform>/` → `PATH` → 数据目录 `bin/`
+4. 以隐藏窗口/脱离终端方式拉起 `xallor-remote start`；托管制品状态不完整或校验失败时拒绝回退到其它版本
 5. 轮询 IPC，默认 10s，失败给人话（找不到二进制、权限、杀软）
 6. 通了之后：若环境变量带 DEVICE_ID+GRANT，peer.add 收编（幂等）
 ```
 
 **v0 不从网上静默下载二进制**（供应链）。发行见 [stack.md](stack.md)。
 
-已有 Runtime：ensure **不杀不重启**，除非 `start --force`（人显式）。
+已有 Runtime：ensure **不杀不重启**。升级和回滚由显式 `runtime install` / `runtime rollback` 执行，流程见 [runtime.md](runtime.md)。
 
-单实例：数据目录锁 + 只听一个 IPC。第二份 `start` 发现锁则退出 0（当作 ensure 成功）。
+单实例：数据目录锁 + 只听一个 IPC。第二份 `start` 发现锁则报错退出；重复 `ensure` 返回现有进程状态。
+
+显式设置绝对路径 `XALLOR_REMOTE_DATA_DIR` 时，Unix IPC 位于该目录的 `ipc.sock`；Windows 管道名是 `XallorRemote-` 加规范化目录 SHA256 的前 16 位，Go 和 MCP 使用同一算法。读取状态不会创建 profile 或启动 Runtime。
 
 ---
 
