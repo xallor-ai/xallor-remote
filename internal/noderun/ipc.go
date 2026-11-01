@@ -23,7 +23,7 @@ func (d *Daemon) serveIPC(c *ipc.Conn) {
 		if err != nil {
 			return
 		}
-		if d.handleObservation(c, req) || d.handleHeadState(c, req) || d.handleLocal(c, req) {
+		if d.handleObservation(c, req) || d.handleHeadState(c, req) || d.handleHandoffIPC(c, req) || d.handleLocal(c, req) {
 			continue
 		}
 		switch req.Method {

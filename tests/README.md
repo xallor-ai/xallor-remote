@@ -5,6 +5,8 @@ All process tests use owned temporary profiles and a loopback Relay. They never 
 - `release_lifecycle.py`: manifest validation, install/upgrade/rollback and failed-start recovery, data preservation and actual MCP reconnection.
 - `packaged_install.py`: npm tarball installation in a new prefix, packaged CLI version/install and MCP reconnection.
 - `diagnostics_e2e.py`: CLI/IPC/Runtime/Relay/target info; offline, pairing, grant, inbound and read-only checks.
+- `handoff_e2e.py --binary <runtime> [--go <go>]`: actual IPC/Relay/Runtime with a deterministic Cursor CLI fixture; durable dedupe, conflicting reuse, matching session/result, bounded Unicode, repository/attachment validation and restart without replay. Authenticated official Cursor CLI verification is a separate gate, not replaced by this fixture.
+- `handoff_cursor_live.py --binary <runtime> --executable <official-cli> [--prefix-arg <entry>]`: opt-in after local account login; creates a new isolated Ask session, confirms a remembered random token after resuming that exact session, verifies duplicate receipt and clean repository. Evidence stays outside the checkout; credentials and raw login output are never recorded. Ordinary CI does not run this account-dependent test.
 - `cross_layer_e2e.py`: actual CLI nonzero exit; IPC file UTF-8/size/workspace boundaries; incremental output; cancellation ownership; timeout; flood truncation; grant rotation against an already connected client; updated pairing; Relay loss during execution and recovery; actual stdio MCP execution/nonzero/reconnection.
 
 Build MCP and a Runtime before local tests:

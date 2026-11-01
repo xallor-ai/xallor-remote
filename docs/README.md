@@ -67,6 +67,7 @@ CLI：`xallor-remote`。路径与前缀见 [decisions.md](decisions.md)。`platf
 | mcp.json 与 tools | [mcp.md](mcp.md) |
 | 落盘 | [relay.md](relay.md) |
 | CLI/GUI/TUI | [clients.md](clients.md) |
+| Cursor CLI 交接试点、操作与恢复 | [handoff.md](handoff.md) |
 | **栈与复用** | [stack.md](stack.md) |
 | Windows/Linux | [os.md](os.md) |
 | Account / 订阅 | [platform.md](platform.md) |

@@ -37,7 +37,7 @@ client 连接上出现 `revoke` / `grant_rotate` / `inbound_set` → 忽略或 n
 
 `reset` 不是协议消息：CLI 清空本机数据目录，并发送 `revoke`。
 
-`invoke` 的 `op`：`exec` / `read` / `write` / `processes` / `info` / `cancel`。
+`invoke` 的 `op`：`exec` / `read` / `write` / `processes` / `info` / `cancel` / `handoff.submit` / `handoff.get`。
 
 `info` 的 JSON 结果包含 `build`：version、revision、built_at（可省略）、dirty、protocol（当前为 1）、os、arch；用于区分运行制品与代码版本。未知 revision 为 `unknown`，不猜测提交。Relay health 返回同形构建身份。
 
@@ -107,3 +107,19 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 | 每设备并发 exec | **4** |
 | 排队 | 不排队，超额 `quota_exceeded` |
 | heartbeat | 30s 发一拍；60s 无任何帧 → 连接死 |
+
+## Cursor 交接载荷与回执
+
+这是应用层试点，沿用 `invoke → stdout → exit`，不新增 Relay 状态机。`handoff.submit` 的 payload 为 `{request:{...}}`，`handoff.get` 为 `{request_id}`；IPC 另带路由字段 `device_id`。payload 最大 64 KiB。结果 stdout 拼接为 `{receipt:{...}}` 或 `{error:"人话"}`，外层 exit 只确认本次提交/查询。
+
+请求示例（路径、SHA、会话 ID 必须替换为目标真实值）：
+
+```json
+{"request_id":"review-001","workspace":"C:\\XallorRemote\\workspace\\repo","revision":"0123456789012345678901234567890123456789","agent":"cursor","session_id":"12345678-1234-1234-1234-123456789abc","mode":"ask","prompt":"Review the selected revision.","attachments":[],"trust_workspace":true,"timeout_seconds":120}
+```
+
+`request_id` 为 1–64 位字母数字、下划线、连字符，首位字母数字；revision 为 40 位小写十六进制 Git SHA；session_id 为 UUID；agent 仅 cursor；mode 必须为 ask / plan / agent。workspace 为绝对路径，最长 1024 字节，必须解析到目标 Runtime workspace 内的干净 Git 仓库根且 HEAD 匹配。prompt 为 1–16 KiB UTF-8。attachments 最多 8 个 `{path,sha256}`：相对路径最长 1024 字节，解析后仍在仓库内，常规文件最大 1 MiB，SHA256 必须匹配。timeout_seconds 为 1–600，包含预检；预检本身最多 8 秒。
+
+回执字段：`request_id,fingerprint,workspace,revision,agent,session_id,mode,state,code?,created_at,updated_at,cli_version?,result?,truncated`。fingerprint 为规范化请求 JSON 的 SHA256；时间为 UTC RFC3339Nano。state：received / accepted / running / completed / failed / unknown，语义与恢复步骤见 [handoff.md](handoff.md)。回执 code 为适配器诊断，**不是** WSS invoke_nack code。
+
+每 Runtime 最多 2 个在途交接，每会话最多 1 个；最多保留 128 个回执，达到上限拒绝新 ID，不自动淘汰。单回执磁盘上限 512 KiB；CLI 单行最大 1 MiB、累计输出最大 8 MiB；结果最多 64 KiB UTF-8，截断时显式标记。启动配置仅本机设置，最多 4 个固定前置参数，每项最长 2048 字节。

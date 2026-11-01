@@ -104,6 +104,7 @@ Relay：**有鉴权的实时消息路由器**——device 连接、grant 校验�
 | --- | --- |
 | v0 | 执行闭环 + CLI + 官方 Relay 默认 + 自托管 |
 | v0.1 | TUI / Tauri GUI / macOS |
+| 受限试点 | [Cursor CLI 指定会话交接](handoff.md)：显式模式、持久回执、未知结果不重放；不等于通用 A2A |
 | v1 | 账号与设备清单 |
 | v1.x | 计量与套餐 |
 | v2 | 组织、fleet、P2P 旁路 |

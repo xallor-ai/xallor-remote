@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import stat
 import subprocess
 import tempfile
 import time
@@ -100,4 +101,10 @@ class Cluster:
         assert self.root.parent == Path(tempfile.gettempdir()).resolve()
         assert self.root.name.startswith("xr-cluster-") and (self.root / ".owner").read_text() == "runtime-cluster"
         assert not any(p.is_symlink() for p in self.root.rglob("*"))
-        shutil.rmtree(self.root)
+        def remove_readonly(func, path, error):
+            candidate = Path(path).resolve()
+            if not candidate.is_relative_to(self.root) or not candidate.is_file() or not isinstance(error[1], PermissionError):
+                raise error[1]
+            candidate.chmod(stat.S_IREAD | stat.S_IWRITE)
+            func(path)
+        shutil.rmtree(self.root, onerror=remove_readonly)

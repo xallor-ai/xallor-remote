@@ -1,0 +1,52 @@
+# Cursor CLI 会话交接试点
+
+本试点把评审材料交给目标机器上**明确指定的 Cursor CLI 会话**。Runtime 管理接收、执行与回执；Relay 只使用既有鉴权和转发。它不是通用任务平台，也不导入 Cursor 私有数据库，不承诺 IDE 窗口自动同步或完整记忆迁移。
+
+## 目标机器准备
+
+在目标机器上安装并登录官方 Cursor CLI，使用官方 `create-chat` 创建会话，记录会话 ID。在目标 Runtime 的 workspace 内准备干净的 Git 仓库，记录完整 HEAD SHA。身份、授权码和入站规则仍按现有配对流程配置。
+
+仅本机可配置适配器，远程请求不能选择可执行文件：
+
+```powershell
+xallor-remote handoff configure --executable C:\tools\cursor-agent.exe
+```
+
+若官方 Windows 包使用 Node 入口：
+
+```powershell
+xallor-remote handoff configure --executable C:\tools\cursor-cli\node.exe --prefix-arg C:\tools\cursor-cli\index.js
+```
+
+此配置属于当前 Runtime 数据目录。登录凭据由 Cursor 自己管理，XallorRemote 不读取或复制登录密钥。每次执行前检查 CLI 帮助和版本；启动成功不代表登录有效或请求完成。
+
+## 提交与查询
+
+交接 JSON 的完整字段与限额以 [protocol.md](protocol.md#cursor-交接载荷与回执) 为准。必填目标仓库绝对路径、完整提交 SHA、会话 UUID 和模式。`ask` 用于只读问答；`plan`、`agent` 必须显式选择，不根据材料文本升级模式。`trust_workspace` 单独决定是否传递官方 `--trust`；不传 `--force` 或自动批准 MCP 的参数。
+
+```powershell
+xallor-remote handoff submit --device 123456789 --request request.json
+xallor-remote handoff get --device 123456789 --request-id review-001
+```
+
+提交只返回已保存的回执，不等待 Agent 完成。查询不会启动 Agent。网络中断后保留原请求 ID，先查询；相同 ID、相同内容返回已有回执，内容冲突拒绝覆盖。不得用新 ID 自动重试未知结果。
+
+## 结果含义
+
+`received` 表示请求已持久化；`accepted` 表示仓库、附件与 CLI 检查通过；`running` 只在 CLI 返回匹配的初始化事件后出现。只有匹配会话与 workspace 的初始化、匹配会话的成功结果事件以及进程正常退出，才记为 `completed`。这是 CLI 回执，不验证答案正确性或承诺修改已合入。
+
+检查失败或明确错误结果为 `failed`；缺失终态、会话不匹配、超时或执行中断为 `unknown`。Runtime 重启将未结束回执标为 `unknown`，绝不恢复执行。关闭控制端连接仅结束提交/查询，不取消已持久化的交接；目标 Runtime 停止或请求超时才终止它负责的 CLI 进程树。
+
+工作区检查不是文件系统快照。检查后外部程序仍可能修改仓库；需要稳定评审时，应使用专用 worktree 并避免其他写入。Ask/Plan 行为依赖 Cursor 官方模式，不是 OS 沙箱。
+
+## 留存与运维边界
+
+回执存于目标数据目录 `handoff/receipts/`，包含有限长度结果、会话、仓库、SHA 与时间，不保存原始 prompt、授权码或 CLI stderr。结果本身可能包含用户内容。存储损坏或达到容量时停止接收新请求，不静默清空或淘汰旧 ID。当前试点没有在线清理/迁移 API；删除回执会丢失去重历史，因此不得作为自动恢复手段。
+
+同一会话只允许一个在途请求，跨会话并发也有上限。该保障限于单个 Runtime 数据目录；其他 CLI 或另一 Runtime 仍可能操作同一 Cursor 会话。它不提供跨进程全局会话锁或 exactly-once 执行保证。
+
+## 验证边界
+
+`tests/handoff_e2e.py` 使用真实 CLI→IPC→Runtime→Relay→目标 Runtime 链路和确定性 Cursor 协议替身，覆盖去重、冲突、仓库绑定、异常流及重启。真实官方 CLI 另需登录后在新建测试会话执行 Ask 请求，并验证再次恢复同一会话；替身测试不能替代这一步。
+
+官方接口参考：[CLI 参数](https://cursor.com/docs/cli/reference/parameters)、[输出格式](https://cursor.com/docs/cli/reference/output-format)、[认证](https://cursor.com/docs/cli/reference/authentication)。
