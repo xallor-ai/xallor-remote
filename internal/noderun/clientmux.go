@@ -11,11 +11,12 @@ import (
 const waiterDataSlots = 16
 
 type execWaiter struct {
-	ch    chan protocol.Message
-	done  chan struct{}
-	mu    sync.Mutex
-	term  *protocol.Message
-	trunc bool
+	ch       chan protocol.Message
+	done     chan struct{}
+	mu       sync.Mutex
+	term     *protocol.Message
+	trunc    bool
+	finished bool
 }
 
 func newExecWaiter() *execWaiter {
@@ -51,9 +52,10 @@ func (w *execWaiter) push(msg protocol.Message) {
 func (w *execWaiter) finish(msg protocol.Message) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.term != nil {
+	if w.finished {
 		return
 	}
+	w.finished = true
 	if w.trunc && msg.Type == protocol.TypeExit {
 		msg.Truncated = protocol.Bool(true)
 	}

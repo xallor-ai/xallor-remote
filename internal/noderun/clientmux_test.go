@@ -74,6 +74,23 @@ func TestClientLink_should_finish_waiters_when_link_fails(t *testing.T) {
 	}
 }
 
+// 目的：exit 已被 next() 取走后，断线清理不得再次 close(done)。
+// 前置：仍 subscribe；term 已清空。预期：failWaiters 不 panic，后续 next 返回 false。
+func TestExecWaiter_should_not_panic_when_fail_after_term_consumed(t *testing.T) {
+	cl := &clientLink{waiters: map[string]*execWaiter{}}
+	w := cl.subscribe("ex")
+	code := 0
+	cl.dispatch(protocol.Message{Type: protocol.TypeExit, ExecID: "ex", ExitCode: &code, Status: protocol.ExitCompleted})
+	got, ok := w.next()
+	if !ok || got.Type != protocol.TypeExit {
+		t.Fatalf("want exit: %+v ok=%v", got, ok)
+	}
+	cl.failWaiters()
+	if msg, more := w.next(); more {
+		t.Fatalf("consumed terminal should stay final, got %+v", msg)
+	}
+}
+
 func TestDropClient_should_keep_new_link_when_old_instance_drops(t *testing.T) {
 	oldClosed := false
 	newClosed := false
