@@ -235,7 +235,7 @@ function createServer(): McpServer {
         device_id: z.string().optional(),
         head: z.number().int().nonnegative().max(1_048_576).optional().describe("从头读的行数"),
         tail: z.number().int().nonnegative().max(1_048_576).optional().describe("从尾读的行数"),
-        offset: z.number().int().nonnegative().max(1_048_576).optional().describe("按字节的起点"),
+        offset: z.number().int().nonnegative().max(1_073_741_824).optional().describe("按字节的起点，可超过 1MiB"),
         limit: z.number().int().positive().max(1_048_576).optional().describe("按字节的长度，最大 1MiB"),
       }),
     },

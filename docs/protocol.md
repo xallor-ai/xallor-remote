@@ -100,6 +100,7 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 | 单次 stdout+stderr | **4 MiB** 后丢后续输出，`exit.truncated=true` |
 | Relay 每 inflight 待发缓冲 | **1 MiB**；超则丢数据帧并 truncated，不堵整条 device 连接 |
 | read 默认 / 上限 | 64 KiB / 1 MiB；少给则 `exit.truncated=true`，按 rune 边界切 |
+| read `offset` | 字节起点，可大于 1 MiB；落在 rune 中间则回退到该 rune 起点 |
 | **write 上限** | **1 MiB**（解码后）；整包 marshal 超 WSS 读上限则 `too_large`，不落盘 |
 | 每设备并发 exec | **4** |
 | 排队 | 不排队，超额 `quota_exceeded` |

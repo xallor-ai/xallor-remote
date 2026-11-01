@@ -89,8 +89,8 @@ func sliceRead(raw []byte, p protocol.ReadPayload, limit int) ([]byte, bool) {
 			raw = bytes.Join(lines[len(lines)-p.Tail:], []byte("\n"))
 		}
 	} else if p.Offset > 0 || p.Limit > 0 {
-		off := p.Offset
-		if off > len(raw) {
+		off := snapUTF8Start(raw, p.Offset)
+		if off >= len(raw) {
 			return nil, false
 		}
 		end := len(raw)
@@ -110,6 +110,20 @@ func clampUTF8Prefix(b []byte) []byte {
 		b = b[:len(b)-1]
 	}
 	return b
+}
+
+// snapUTF8Start moves a byte offset back to the start of the rune that contains it.
+func snapUTF8Start(raw []byte, off int) int {
+	if off <= 0 {
+		return 0
+	}
+	if off > len(raw) {
+		return len(raw)
+	}
+	for off > 0 && !utf8.RuneStart(raw[off]) {
+		off--
+	}
+	return off
 }
 
 func (d *Daemon) runLocalWrite(link *wsConn, msg protocol.Message) {
@@ -178,6 +192,14 @@ func stdoutFrameBudget() int {
 }
 
 func nextUTF8Frame(data []byte, max int) (frame, rest []byte) {
+	i := 0
+	for i < len(data) && !utf8.RuneStart(data[i]) {
+		i++
+	}
+	data = data[i:]
+	if len(data) == 0 {
+		return nil, nil
+	}
 	if max > len(data) {
 		max = len(data)
 	}

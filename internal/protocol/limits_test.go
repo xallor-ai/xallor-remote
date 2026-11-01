@@ -6,6 +6,12 @@ import (
 	"testing"
 )
 
+func TestMaxReadOffsetBytes_should_exceedMaxReadBytes(t *testing.T) {
+	if MaxReadOffsetBytes <= MaxReadBytes {
+		t.Fatalf("offset cap %d must be larger than read window %d", MaxReadOffsetBytes, MaxReadBytes)
+	}
+}
+
 func TestMaxWSMessageBytes_should_fit_worst_case_write_when_content_is_1mib_controls(t *testing.T) {
 	content := strings.Repeat("\x01", MaxWriteBytes)
 	path := strings.Repeat("p", MaxPathBytes)

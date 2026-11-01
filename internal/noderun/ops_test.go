@@ -59,6 +59,25 @@ func TestSliceRead_should_markTruncatedOnRuneBoundary_whenDefaultWindowCutsCJK(t
 	}
 }
 
+// Follow-up at DefaultReadBytes (not the snapped length) must still return the rest, not look like EOF.
+func TestSliceRead_should_keepFollowingCJK_whenOffsetLandsMidRune(t *testing.T) {
+	raw := bytes.Repeat([]byte("中"), protocol.DefaultReadBytes)
+	first, trunc := sliceRead(raw, protocol.ReadPayload{}, protocol.DefaultReadBytes)
+	if !trunc || !utf8.Valid(first) || len(first) == 0 {
+		t.Fatalf("first window len=%d trunc=%v", len(first), trunc)
+	}
+	got, _ := sliceRead(raw, protocol.ReadPayload{Offset: protocol.DefaultReadBytes}, protocol.DefaultReadBytes)
+	if len(got) == 0 {
+		t.Fatal("mid-rune offset dropped the rest of the file")
+	}
+	if !utf8.Valid(got) || bytes.ContainsRune(got, '\uFFFD') {
+		t.Fatalf("follow-up window invalid: %q", got[:min(12, len(got))])
+	}
+	if !bytes.HasPrefix(got, []byte("中")) {
+		t.Fatalf("expected snapped rune, got %q", got[:min(12, len(got))])
+	}
+}
+
 func TestSliceRead_should_notMarkTruncated_whenFileFitsDefaultWindow(t *testing.T) {
 	raw := []byte("short")
 	got, trunc := sliceRead(raw, protocol.ReadPayload{}, protocol.DefaultReadBytes)
@@ -91,6 +110,14 @@ func TestNextUTF8Frame_should_dropInvalidRemainder_whenInputEndsMidRune(t *testi
 	frame, rest = nextUTF8Frame(rest, 64)
 	if len(frame) != 0 || len(rest) != 0 {
 		t.Fatalf("invalid remainder should be dropped frame=%q rest=%q", frame, rest)
+	}
+}
+
+func TestNextUTF8Frame_should_skipLeadingContinuation_whenMoreRunesFollow(t *testing.T) {
+	raw := append([]byte{0xb8, 0xad}, []byte("中")...)
+	frame, rest := nextUTF8Frame(raw, 16)
+	if string(frame) != "中" || len(rest) != 0 {
+		t.Fatalf("frame=%q rest=%q", frame, rest)
 	}
 }
 
