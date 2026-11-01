@@ -5,6 +5,7 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
 import { findBinary, INSTALL_HINT } from "./ensure.js";
 import { bindHostCancel, execToolText, newExecProgress, type ToolCtx } from "./exec-result.js";
+import { readToolText } from "./read-result.js";
 import { failText, RuntimeIpc, type Frame } from "./ipc.js";
 import { MCP_VERSION, versionsMatch } from "./version.js";
 
@@ -228,18 +229,23 @@ function createServer(): McpServer {
   server.registerTool(
     "remote.read",
     {
-      description: "读取对方 workspace 内文件。路径原样传递。",
+      description: "读取对方 workspace 内文件。路径原样传递。默认前 64KiB；截断时会说明不是全文。",
       inputSchema: z.object({
         path: z.string(),
         device_id: z.string().optional(),
         head: z.number().int().nonnegative().max(1_048_576).optional().describe("从头读的行数"),
         tail: z.number().int().nonnegative().max(1_048_576).optional().describe("从尾读的行数"),
+        offset: z.number().int().nonnegative().max(1_048_576).optional().describe("按字节的起点"),
+        limit: z.number().int().positive().max(1_048_576).optional().describe("按字节的长度，最大 1MiB"),
       }),
     },
     async (args) => {
       const ipc = await ensureRuntime();
       const f = await ipc.call("read", args);
-      return fromFrame(f, typeof f.result?.content === "string" ? f.result.content : undefined);
+      if (f.ok === false) {
+        return fromFrame(f);
+      }
+      return textResult(readToolText(f.result?.content, f.result?.truncated));
     },
   );
 
