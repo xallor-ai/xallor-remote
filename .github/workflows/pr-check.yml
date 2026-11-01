@@ -117,7 +117,8 @@ jobs:
         working-directory: apps/gui
       - run: npx playwright install --with-deps chromium
         working-directory: apps/gui
-      - run: cargo test --manifest-path apps/gui/src-tauri/Cargo.toml
+      - run: cargo test --locked --manifest-path apps/gui/src-tauri/Cargo.toml
+      - run: cargo build --locked --manifest-path apps/gui/src-tauri/Cargo.toml
       - uses: actions/upload-artifact@v4
         if: always()
         with:

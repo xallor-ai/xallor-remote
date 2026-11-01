@@ -64,6 +64,7 @@ func TestApproval_should_cancelBeforeOrDuringAsk(t *testing.T) {
 		sink := &testSink{ch: make(chan ipc.Frame, 1)}
 		h.subscribe(sink)
 		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		if before {
 			cancel()
 		}

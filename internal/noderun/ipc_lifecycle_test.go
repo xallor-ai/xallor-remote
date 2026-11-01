@@ -26,11 +26,15 @@ func TestForward_should_notDispatch_afterHeadClosed(t *testing.T) {
 
 // Cancel after constructing the child but before Start: classify the proven cancellation.
 func TestStart_should_reportCancellation_whenCancelWinsBeforeStart(t *testing.T) {
-	ctx,cancel:=context.WithCancel(context.Background())
-	cmd:=buildCmd(ctx,"echo must-not-run",t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	cmd := buildCmd(ctx, "echo must-not-run", t.TempDir())
 	cancel()
-	if err:=cmd.Start();err==nil {t.Fatal("cancelled command started")}
-	if code:=startFailureCode(ctx);code!=protocol.Cancelled {t.Fatal(code)}
+	if err := cmd.Start(); err == nil {
+		t.Fatal("cancelled command started")
+	}
+	if code := startFailureCode(ctx); code != protocol.Cancelled {
+		t.Fatal(code)
+	}
 }
 
 // Missing exit_code must cross IPC as unknown/null, never fabricated success.

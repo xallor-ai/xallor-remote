@@ -39,7 +39,7 @@ try:
                XR_GUI_CONTROLLER=controller, XR_GUI_ROOT=str(cluster.root), XR_GUI_EVIDENCE=str(evidence))
     gui = repo / "apps" / "gui"
     if args.native:
-        subprocess.run(["cargo", "test", "--manifest-path", "src-tauri/Cargo.toml", "--", "--ignored"],
+        subprocess.run(["cargo", "test", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--", "--ignored"],
                        cwd=gui, env=env, check=True, timeout=600)
     server = subprocess.Popen(["node", "node_modules/vite/bin/vite.js", "--port", str(port)], cwd=gui,
                               env=env, stdout=log, stderr=log)

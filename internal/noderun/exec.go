@@ -140,8 +140,12 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 
 // Cancellation can win between the pre-start check and os/exec.Start.
 func startFailureCode(ctx context.Context) string {
-	if ctx.Err() == context.Canceled { return protocol.Cancelled }
-	if ctx.Err() == context.DeadlineExceeded { return protocol.ExecTimeout }
+	if ctx.Err() == context.Canceled {
+		return protocol.Cancelled
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		return protocol.ExecTimeout
+	}
 	return protocol.AgentError
 }
 
