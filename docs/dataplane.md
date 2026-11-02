@@ -57,7 +57,7 @@ hello 失败：Relay 关连接，不登记。成功：回一条 `hello_ok`（实
 
 ## 3. 请求模型
 
-`exec_id` 由 **A Runtime** 生成（UUID）。在 Relay 进程内必须唯一；重复 → `invoke_nack` `agent_error`。全程所有消息带同一个 `exec_id`。
+`exec_id` 的连接级语义见 [protocol.md](protocol.md)。A Runtime 的关联 ID 只在该 client 连接上匹配请求；Relay 为每次准入生成独立的内部调用 ID，下发 B 后只按内部 ID 路由，再把回事件还原为 A 的关联值。两者不能混用，也不同时在信封上双写。不同 client 同值不冲突；同一 client 的在途重复值拒绝。
 
 A 在已 hello 成功的 client 连接上发：
 
@@ -80,13 +80,13 @@ Relay 收到 `invoke`（`op != cancel`）严格按序，失败即停、发 `invo
 
 ```text
 1. 这条连接是已鉴权的 client；带账号时在路由锁外重新验证凭据、成员启用状态及版本；已认领设备还验证当前归属、分享、到期及本次操作权限
-2. 目标 device_id 存在，否则 unknown_device
-3. 该连接 hello 验证得到的设备 UID + 共享授权实例或归属实例仍匹配当前绑定，否则 unauthorized
+2. 该连接仍存在，目标与 hello 验证得到的设备 UID + 共享授权实例或归属实例匹配当前绑定，否则 unauthorized
+3. 客户端 exec_id 非空，且 (client连接,客户端exec_id) 未占用，否则 agent_error
 4. 目标有活着且内部 UID 匹配的 device 连接，否则 device_offline
 5. 目标 inbound 开，否则 inbound_disabled
 6. 该设备 inflight 数 < 并发上限，否则 quota_exceeded（不排队）
-7. exec_id 未占用
-8. 登记 inflight[exec_id]，保留目标、client 连接及可信调用身份
+7. 连接 context 尚未取消；已断开的请求停止准入
+8. 分配随机内部调用ID，原子登记 requests[(client连接,客户端exec_id)] → 内部ID 及 inflight[内部ID]，保留客户端原值、目标、client连接及可信调用身份
 9. 从已验证的连接绑定推导稳定 scope，重建 invoke 并转给 B 的 device 连接；客户端身份、凭据及无关字段不透传，payload 内 command 不改写。scope 字段见协议，后台交接的消费与留存见 handoff.md。
 ```
 
@@ -103,14 +103,15 @@ B 收到后：校验请求形状 → [runtime.md](runtime.md) 策略。deny / �
 内存里只这件事决定回流打到谁：
 
 ```text
-inflight[exec_id] = { device_id, client_conn }
+requests[(client_conn, client_exec_id)] = internal_exec_id
+inflight[internal_exec_id] = { device_id, client_conn, client_exec_id, identity }
 ```
 
-B → Relay 的 `stdout` / `stderr` / `exit` / `error` / `invoke_nack`：Relay **不解析 data**。只查 `exec_id` → `client_conn`，原样转发。找不到 inflight → 丢弃（不回灌到别人）。
+B → Relay 的 `stdout` / `stderr` / `exit` / `error` / `invoke_nack`：Relay **不解析 data**。以设备回显的内部 `exec_id` 查 inflight，并核对当前 device 连接；还原 client_exec_id 后转发。找不到 inflight → 丢弃，包括旧调用晚到的输出和终态。不能用客户端同值 ID 查找另一个调用。
 
-A → Relay 的 `cancel`：查 inflight，且 `client_conn` 必须是当前这条，否则 `unknown_exec`（不区分「存在但是别人的」）。匹配则把 cancel invoke 转给该 `device_id` 的 device 连接。
+A → Relay 的 `cancel`：以当前连接和客户端 ID 查 requests，再查 inflight，否则 `unknown_exec`（不区分「存在但是别人的」）。匹配则以内部 ID 把 cancel invoke 转给该 device 连接。旧连接不能取消另一连接新建的同值请求。目标上的本地执行映射、审批关联和取消均使用它实际收到的内部 ID。
 
-**每个 `exec_id` 恰好一个终态，然后删除 inflight：**
+**每个内部调用至多转发一个终态，然后同时删除 inflight 与 requests 两项：**设备替换、归属转移、任一队列失败和 client/device 断线也必须同时回收，不能保留悬空索引。Relay 生成错误回复时仍使用客户端原 ID。
 
 | 终态 | 何时 | A 看到 |
 | --- | --- | --- |
@@ -182,7 +183,7 @@ A Runtime 收到后经 IPC 推给 MCP/CLI。MCP 若不能 notifications，可在
 
 ```text
 A 头 → A Runtime → invoke op=cancel, exec_id
-                 → Relay：inflight 且 client_conn 匹配
+                 → Relay：按 client_conn + 客户端ID查到内部ID和inflight
                  → B Runtime：杀进程树（Win Job / Linux 进程组）
                  → wait
                  → exit status=cancelled

@@ -65,18 +65,18 @@ func TestAccess_should_rejectControllerClaimAndInvalidateBearer_whenDeviceClaims
 		t.Fatal(code)
 	}
 	h.Handle(guest, protocol.RoleClient, "device", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpExec, ExecID: "forbidden"})
-	if guest.last().Code != protocol.Unauthorized || h.inflight["forbidden"] != nil {
+	if guest.last().Code != protocol.Unauthorized || h.requests[requestKey{client: guest, id: "forbidden"}] != "" {
 		t.Fatal("operation permission bypassed")
 	}
 	h.Handle(guest, protocol.RoleClient, "device", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "allowed"})
-	if device.last().ExecID != "allowed" {
+	if device.last().Type != protocol.TypeInvoke || device.last().ExecID != h.requests[requestKey{client: guest, id: "allowed"}] {
 		t.Fatal("shared operation was not routed")
 	}
 	before, _ := s.LoadDevice(context.Background(), "device")
 	controlAccess(t, h, device, a.Token, access.Request{Action: "transfer", MembershipID: b.MembershipID})
 	controlAccess(t, h, device, b.Token, access.Request{Action: "transfer", MembershipID: a.MembershipID})
 	h.Handle(owner, protocol.RoleClient, "device", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "resurrected"})
-	if owner.last().Code != protocol.Unauthorized || h.inflight["resurrected"] != nil {
+	if owner.last().Code != protocol.Unauthorized || h.requests[requestKey{client: owner, id: "resurrected"}] != "" {
 		t.Fatal("transfer back revived old owner")
 	}
 	after, _ := s.LoadDevice(context.Background(), "device")

@@ -38,7 +38,7 @@ func TestAccess_should_requireFreshBinding_whenCredentialValueReused(t *testing.
 			}
 			rotate("shared")
 			h.Handle(stale, protocol.RoleClient, "123456789", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "stale"})
-			if stale.last().Code != protocol.Unauthorized || dev.last().ExecID == "stale" {
+			if stale.last().Code != protocol.Unauthorized || h.requests[requestKey{client: stale, id: "stale"}] != "" {
 				t.Fatalf("stale connection regained access: %+v", stale.last())
 			}
 			fresh := &recSender{}
@@ -46,7 +46,7 @@ func TestAccess_should_requireFreshBinding_whenCredentialValueReused(t *testing.
 				t.Fatal(code)
 			}
 			h.Handle(fresh, protocol.RoleClient, "123456789", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "fresh"})
-			if dev.last().ExecID != "fresh" {
+			if dev.last().Type != protocol.TypeInvoke || dev.last().ExecID != h.requests[requestKey{client: fresh, id: "fresh"}] {
 				t.Fatal("new authenticated binding could not route")
 			}
 		})

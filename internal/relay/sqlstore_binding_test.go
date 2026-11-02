@@ -95,7 +95,7 @@ func TestAccess_should_requireMatchingDeviceUID_whenRoutingSnapshotIsOld(t *test
 		t.Fatal(code)
 	}
 	h.Handle(client, protocol.RoleClient, "number", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "new-identity"})
-	if client.last().Code != protocol.DeviceOffline || device.last().ExecID == "new-identity" {
+	if client.last().Code != protocol.DeviceOffline || h.requests[requestKey{client: client, id: "new-identity"}] != "" {
 		t.Fatal("new identity routed into old incarnation")
 	}
 }

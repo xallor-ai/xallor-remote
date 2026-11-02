@@ -68,13 +68,13 @@ func TestInbox_should_requireOwningDevice_whenMarkingDroppedOutput(t *testing.T)
 	h.RegisterDevice("dev_b", "b", true, b)
 	authorizeTestClient(t, h, a, client)
 	h.Handle(client, protocol.RoleClient, "dev_a", protocol.Message{Type: protocol.TypeInvoke, ExecID: "owned", Op: protocol.OpExec})
-	message := protocol.Message{Type: protocol.TypeStdout, ExecID: "owned"}
+	message := protocol.Message{Type: protocol.TypeStdout, ExecID: a.last().ExecID}
 	h.noteDroppedOutput(b, message)
-	if h.inflight["owned"].trunc {
+	if h.inflight[message.ExecID].trunc {
 		t.Fatal("other device changed output state")
 	}
 	h.noteDroppedOutput(a, message)
-	if !h.inflight["owned"].trunc {
+	if !h.inflight[message.ExecID].trunc {
 		t.Fatal("owner's dropped output unreported")
 	}
 }

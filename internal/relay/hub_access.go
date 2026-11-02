@@ -105,8 +105,8 @@ func (h *Hub) invalidateOwnershipLocked(id string) {
 		if device != nil && device.conn != nil {
 			_ = device.conn.Enqueue(protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpCancel, ExecID: execID})
 		}
-		_ = task.client.Enqueue(protocol.Err(execID, protocol.Unauthorized))
-		delete(h.inflight, execID)
+		_ = task.client.Enqueue(protocol.Err(task.requestID, protocol.Unauthorized))
+		h.finishInvocationLocked(execID)
 	}
 	for connection, client := range h.clients {
 		if client.targetID == id {

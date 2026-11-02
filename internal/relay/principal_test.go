@@ -119,14 +119,14 @@ func TestPrincipal_should_rejectNewInvoke_whenCredentialRevoked(t *testing.T) {
 		t.Fatal(code)
 	}
 	h.Handle(client, protocol.RoleClient, "device", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "before", AccountToken: "not-forwarded"})
-	if h.inflight["before"].identity != a.Identity || dev.last().AccountToken != "" {
+	if h.inflight[dev.last().ExecID].identity != a.Identity || dev.last().AccountToken != "" {
 		t.Fatal("trusted invocation context missing or token forwarded")
 	}
 	if err := s.RevokeCredential(context.Background(), a.CredentialID); err != nil {
 		t.Fatal(err)
 	}
 	h.Handle(client, protocol.RoleClient, "device", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "after"})
-	if client.last().Code != protocol.Unauthorized || dev.last().ExecID == "after" {
+	if client.last().Code != protocol.Unauthorized || h.requests[requestKey{client: client, id: "after"}] != "" {
 		t.Fatal("revoked connection retained authorization")
 	}
 	if code := h.RegisterClient("device", "grant", a.Token, &recSender{}); code != protocol.Unauthorized {

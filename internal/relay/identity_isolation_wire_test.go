@@ -59,10 +59,10 @@ func TestIdentityWire_should_routeAndCancelDisconnectedHello_whenSQLPoolBlocked(
 		t.Fatal(err)
 	}
 	var message protocol.Message
-	if err := wsjson.Read(fast, device, &message); err != nil || message.ExecID != "still-live" {
+	if err := wsjson.Read(fast, device, &message); err != nil || message.Type != protocol.TypeInvoke || message.Op != protocol.OpInfo {
 		t.Fatalf("routing blocked: %+v %v", message, err)
 	}
-	if err := wsjson.Write(fast, device, protocol.Message{Type: protocol.TypeExit, ExecID: "still-live", ExitCode: protocol.Int(0), Status: protocol.ExitCompleted}); err != nil {
+	if err := wsjson.Write(fast, device, protocol.Message{Type: protocol.TypeExit, ExecID: message.ExecID, ExitCode: protocol.Int(0), Status: protocol.ExitCompleted}); err != nil {
 		t.Fatal(err)
 	}
 	if err := wsjson.Read(fast, client, &message); err != nil || message.Type != protocol.TypeExit {

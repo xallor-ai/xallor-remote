@@ -45,7 +45,7 @@ func TestAccess_should_stopRouting_whenCommitOutcomeIsUncertain(t *testing.T) {
 		t.Fatal("uncertain ownership write retained a routable connection")
 	}
 	h.Handle(client, protocol.RoleClient, "device", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "unsafe"})
-	if device.last().ExecID == "unsafe" || h.inflight["unsafe"] != nil {
+	if h.requests[requestKey{client: client, id: "unsafe"}] != "" {
 		t.Fatal("old bearer used uncertain ownership")
 	}
 	if code := h.RegisterDevice("device", "secret", true, &recSender{}); code != "" {

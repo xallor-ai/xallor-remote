@@ -55,7 +55,7 @@ client 连接上出现 `revoke` / `grant_rotate` / `inbound_set` → 忽略或 n
 
 `invoke` 的 `op`：`exec` / `read` / `write` / `processes` / `info` / `cancel` / `handoff.submit` / `handoff.get`。
 
-Relay 在通过准入后重新构造发往 device 的非 cancel `invoke`，只保留 `exec_id,op,payload`，添加服务端推导的 `scope`，不转发客户端的身份或凭据字段。`scope` 为 `{authority,device_uid,ownership_id?,grant_id?,principal_id?,tenant_id?}`；所有 ID 为 32 位小写十六进制。`ownership_id` 与 `grant_id` 恰有一个：已认领设备使用归属实例并要求主体/租户；未认领使用共享授权实例，账号主体/租户可同时存在或同时缺省。authority 来自当前 Relay 的持久身份。客户端自报 scope 被覆盖，目标仅信任已认证 Relay 连接。
+Relay 在通过准入后重新构造发往 device 的非 cancel `invoke`，保留 `op,payload`，为 `exec_id` 分配新的内部调用 ID，添加服务端推导的 `scope`，不转发客户端的身份或凭据字段。`scope` 为 `{authority,device_uid,ownership_id?,grant_id?,principal_id?,tenant_id?}`；所有 ID 为 32 位小写十六进制。`ownership_id` 与 `grant_id` 恰有一个：已认领设备使用归属实例并要求主体/租户；未认领使用共享授权实例，账号主体/租户可同时存在或同时缺省。authority 来自当前 Relay 的持久身份。客户端自报 scope 被覆盖，目标仅信任已认证 Relay 连接。
 
 scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据续签、成员代次或重新签发同主体分享不改变它；新的设备 UID、归属实例或未认领共享授权实例会改变它。每次新调用仍独立完成现有认证和操作授权。handoff 收到缺失或非法 scope 返回 `unauthorized`，不回退设备级查询。原连接的 cancel 仍按 inflight 归属路由，不需要客户端传 scope。
 
@@ -83,7 +83,9 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 
 `exit.status`：`completed` | `cancelled` | `timeout`。MCP/CLI 把后两者映射为 code `cancelled` / `exec_timeout`。
 
-`exec_id`：控制侧 Runtime 生成 UUID，全程携带。
+`exec_id`：每条连接上的请求关联值。控制侧 Runtime 为新操作生成随机 ID；Relay 为每次准入另生成独立的随机内部 ID，以该值下发 device，并在回事件时还原调用者原值。目标只回显它收到的 ID。不同 client 连接可以使用相同值；同一连接同时重复使用返回 `agent_error`，不替换原调用。cancel 按原 client 连接与其关联 ID 解析，内部 ID 不能作为控制侧取消凭据。
+
+稳定主体 `scope`、handoff 的 `request_id` 和本次传输的 `exec_id` 各司其职：续签后查询/去重保留前两者，新的提交/查询仍使用新的内部调用 ID。路由清理后旧结果丢弃，不因后续请求复用控制侧 ID 而重新关联。控制端应为每个新操作生成新 ID；同一连接主动复用已结束 ID 时，cancel 指向该 ID 当前的在途调用，不区分客户端滞留的旧取消意图。
 
 ---
 

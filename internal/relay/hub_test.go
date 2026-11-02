@@ -125,27 +125,28 @@ func TestInvokeRoutesAndExitDeletesInflight(t *testing.T) {
 	h.Handle(cli, protocol.RoleClient, "dev_a", protocol.Message{
 		Type: protocol.TypeInvoke, ExecID: "ex_1", Op: protocol.OpExec,
 	})
-	if dev.last().ExecID != "ex_1" {
+	routeID := dev.last().ExecID
+	if routeID == "" || routeID == "ex_1" {
 		t.Fatalf("device did not get invoke: %+v", dev.last())
 	}
 
 	h.Handle(dev, protocol.RoleDevice, "dev_a", protocol.Message{
-		Type: protocol.TypeStdout, ExecID: "ex_1", Data: "hi\n",
+		Type: protocol.TypeStdout, ExecID: routeID, Data: "hi\n",
 	})
-	if cli.last().Data != "hi\n" {
+	if cli.last().Data != "hi\n" || cli.last().ExecID != "ex_1" {
 		t.Fatalf("client stdout %+v", cli.last())
 	}
 
 	ec := 0
 	h.Handle(dev, protocol.RoleDevice, "dev_a", protocol.Message{
-		Type: protocol.TypeExit, ExecID: "ex_1", ExitCode: &ec, Status: protocol.ExitCompleted,
+		Type: protocol.TypeExit, ExecID: routeID, ExitCode: &ec, Status: protocol.ExitCompleted,
 	})
 	if cli.last().Type != protocol.TypeExit {
 		t.Fatalf("want exit got %+v", cli.last())
 	}
 
 	h.Handle(dev, protocol.RoleDevice, "dev_a", protocol.Message{
-		Type: protocol.TypeStdout, ExecID: "ex_1", Data: "late\n",
+		Type: protocol.TypeStdout, ExecID: routeID, Data: "late\n",
 	})
 	n := 0
 	for _, m := range cli.got {
@@ -169,13 +170,14 @@ func TestOversizeStdoutMarksTruncatedOnExit(t *testing.T) {
 	h.Handle(cli, protocol.RoleClient, "dev_a", protocol.Message{
 		Type: protocol.TypeInvoke, ExecID: "ex_t", Op: protocol.OpExec,
 	})
+	routeID := dev.last().ExecID
 	big := strings.Repeat("x", protocol.MaxFrameBytes+1)
 	h.Handle(dev, protocol.RoleDevice, "dev_a", protocol.Message{
-		Type: protocol.TypeStdout, ExecID: "ex_t", Data: big,
+		Type: protocol.TypeStdout, ExecID: routeID, Data: big,
 	})
 	ec := 0
 	h.Handle(dev, protocol.RoleDevice, "dev_a", protocol.Message{
-		Type: protocol.TypeExit, ExecID: "ex_t", ExitCode: &ec, Status: protocol.ExitCompleted,
+		Type: protocol.TypeExit, ExecID: routeID, ExitCode: &ec, Status: protocol.ExitCompleted,
 	})
 	last := cli.last()
 	if last.Type != protocol.TypeExit || last.Truncated == nil || !*last.Truncated {
@@ -203,10 +205,11 @@ func TestClientDropSendsCancelToDevice(t *testing.T) {
 	h.Handle(cli, protocol.RoleClient, "dev_a", protocol.Message{
 		Type: protocol.TypeInvoke, ExecID: "ex_drop", Op: protocol.OpExec,
 	})
+	routeID := dev.last().ExecID
 	h.Drop(cli, protocol.RoleClient, "dev_a")
 	found := false
 	for _, m := range dev.got {
-		if m.Type == protocol.TypeInvoke && m.Op == protocol.OpCancel && m.ExecID == "ex_drop" {
+		if m.Type == protocol.TypeInvoke && m.Op == protocol.OpCancel && m.ExecID == routeID {
 			found = true
 		}
 	}
@@ -214,7 +217,7 @@ func TestClientDropSendsCancelToDevice(t *testing.T) {
 		t.Fatalf("device did not get cancel on client drop: %+v", dev.got)
 	}
 	h.mu.Lock()
-	_, still := h.inflight["ex_drop"]
+	_, still := h.inflight[routeID]
 	h.mu.Unlock()
 	if still {
 		t.Fatal("inflight must be deleted on client drop")

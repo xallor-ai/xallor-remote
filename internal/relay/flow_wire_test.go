@@ -85,12 +85,13 @@ func TestFlowWire_should_routeOtherClient_whenSocketConsumerStopsReading(t *test
 		t.Fatal(err)
 	}
 	var invoke protocol.Message
-	if err := wsjson.Read(ctx, device, &invoke); err != nil || invoke.ExecID != "flood" {
+	if err := wsjson.Read(ctx, device, &invoke); err != nil || invoke.Type != protocol.TypeInvoke || invoke.Op != protocol.OpExec {
 		t.Fatalf("invoke: %+v %v", invoke, err)
 	}
+	floodID := invoke.ExecID
 	chunk := strings.Repeat("x", protocol.MaxFrameBytes)
 	for i := 0; i < 48; i++ {
-		if err := wsjson.Write(ctx, device, protocol.Message{Type: protocol.TypeStdout, ExecID: "flood", Data: chunk}); err != nil {
+		if err := wsjson.Write(ctx, device, protocol.Message{Type: protocol.TypeStdout, ExecID: floodID, Data: chunk}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -101,10 +102,10 @@ func TestFlowWire_should_routeOtherClient_whenSocketConsumerStopsReading(t *test
 	if err := wsjson.Write(fastCtx, healthy, protocol.Message{Type: protocol.TypeInvoke, ExecID: "healthy", Op: protocol.OpInfo}); err != nil {
 		t.Fatal(err)
 	}
-	if err := wsjson.Read(fastCtx, device, &invoke); err != nil || invoke.ExecID != "healthy" {
+	if err := wsjson.Read(fastCtx, device, &invoke); err != nil || invoke.Type != protocol.TypeInvoke || invoke.Op != protocol.OpInfo {
 		t.Fatalf("shared device stalled: %+v %v", invoke, err)
 	}
-	if err := wsjson.Write(fastCtx, device, protocol.Message{Type: protocol.TypeExit, ExecID: "healthy", ExitCode: protocol.Int(0), Status: protocol.ExitCompleted}); err != nil {
+	if err := wsjson.Write(fastCtx, device, protocol.Message{Type: protocol.TypeExit, ExecID: invoke.ExecID, ExitCode: protocol.Int(0), Status: protocol.ExitCompleted}); err != nil {
 		t.Fatal(err)
 	}
 	var terminal protocol.Message
@@ -112,7 +113,7 @@ func TestFlowWire_should_routeOtherClient_whenSocketConsumerStopsReading(t *test
 		t.Fatalf("healthy client stalled: %+v %v", terminal, err)
 	}
 	h.mu.Lock()
-	inf := h.inflight["flood"]
+	inf := h.inflight[floodID]
 	truncated := inf != nil && inf.trunc
 	h.mu.Unlock()
 	if !truncated {

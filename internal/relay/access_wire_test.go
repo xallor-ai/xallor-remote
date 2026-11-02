@@ -63,10 +63,10 @@ func TestAccessWire_should_reloadCommittedOwnership_whenCommitResultLost(t *test
 	if err := wsjson.Write(octx, owner, protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "owner"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := wsjson.Read(fctx, fresh, &reply); err != nil || reply.ExecID != "owner" || reply.AccountToken != "" {
+	if err := wsjson.Read(fctx, fresh, &reply); err != nil || reply.Type != protocol.TypeInvoke || reply.Op != protocol.OpInfo || reply.AccountToken != "" {
 		t.Fatal("owner dispatch", err)
 	}
-	if err := wsjson.Write(fctx, fresh, protocol.Message{Type: protocol.TypeExit, ExecID: "owner", ExitCode: protocol.Int(0), Status: protocol.ExitCompleted}); err != nil {
+	if err := wsjson.Write(fctx, fresh, protocol.Message{Type: protocol.TypeExit, ExecID: reply.ExecID, ExitCode: protocol.Int(0), Status: protocol.ExitCompleted}); err != nil {
 		t.Fatal(err)
 	}
 	if err := wsjson.Read(octx, owner, &reply); err != nil || reply.Type != protocol.TypeExit {

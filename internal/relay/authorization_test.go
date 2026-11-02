@@ -19,7 +19,7 @@ func TestInvoke_should_rejectExistingClient_whenGrantRotated(t *testing.T) {
 	if client.last().Code != protocol.Unauthorized {
 		t.Fatalf("old connection retained permission: %+v", client.last())
 	}
-	if dev.last().ExecID == "after-rotation" {
+	if h.requests[requestKey{client: client, id: "after-rotation"}] != "" {
 		t.Fatal("unauthorized invoke reached device")
 	}
 }
@@ -33,7 +33,7 @@ func TestForward_should_ignoreOtherDevice_and_keepOriginalTask(t *testing.T) {
 	authorizeTestClient(t, h, a, client)
 	h.Handle(client, protocol.RoleClient, "dev_a", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "owned"})
 	zero := 0
-	forged := protocol.Message{Type: protocol.TypeExit, ExecID: "owned", ExitCode: &zero, Status: protocol.ExitCompleted}
+	forged := protocol.Message{Type: protocol.TypeExit, ExecID: a.last().ExecID, ExitCode: &zero, Status: protocol.ExitCompleted}
 	h.Handle(b, protocol.RoleDevice, "dev_b", forged)
 	if client.last().Type == protocol.TypeExit {
 		t.Fatal("other device forged terminal result")

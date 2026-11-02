@@ -54,7 +54,8 @@ func TestOutbox_should_isolateSlowConsumer_and_preserveTruncatedExit(t *testing.
 		t.Fatal("client")
 	}
 	h.Handle(b, protocol.RoleClient, "a", protocol.Message{Type: protocol.TypeInvoke, ExecID: "exec", Op: protocol.OpExec})
-	h.Handle(a, protocol.RoleDevice, "a", protocol.Message{Type: protocol.TypeStdout, ExecID: "exec", Data: "first"})
+	routeID := a.last().ExecID
+	h.Handle(a, protocol.RoleDevice, "a", protocol.Message{Type: protocol.TypeStdout, ExecID: routeID, Data: "first"})
 	waitSignal(t, entered)
 	progress := make(chan struct{})
 	go func() {
@@ -64,9 +65,9 @@ func TestOutbox_should_isolateSlowConsumer_and_preserveTruncatedExit(t *testing.
 	}()
 	waitSignal(t, progress)
 	for i := 0; i < 40; i++ {
-		h.Handle(a, protocol.RoleDevice, "a", protocol.Message{Type: protocol.TypeStdout, ExecID: "exec", Data: strings.Repeat("x", protocol.MaxFrameBytes)})
+		h.Handle(a, protocol.RoleDevice, "a", protocol.Message{Type: protocol.TypeStdout, ExecID: routeID, Data: strings.Repeat("x", protocol.MaxFrameBytes)})
 	}
-	h.Handle(a, protocol.RoleDevice, "a", protocol.Message{Type: protocol.TypeExit, ExecID: "exec", ExitCode: protocol.Int(0), Status: protocol.ExitCompleted})
+	h.Handle(a, protocol.RoleDevice, "a", protocol.Message{Type: protocol.TypeExit, ExecID: routeID, ExitCode: protocol.Int(0), Status: protocol.ExitCompleted})
 	if len(h.inflight) != 0 {
 		t.Fatal("terminal did not release routing state")
 	}

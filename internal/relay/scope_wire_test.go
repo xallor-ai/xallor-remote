@@ -46,7 +46,7 @@ func TestScopeWire_should_replaceForgedIdentity_whenRoutingInvocation(t *testing
 		if got.Scope == nil || *got.Scope != want || !got.Scope.Valid() || got.Secret != "" || got.Grant != "" || got.AccountToken != "" {
 			t.Fatal("untrusted context forwarded", got.Scope)
 		}
-		if err := wsjson.Write(dctx, target, protocol.Message{Type: protocol.TypeExit, ExecID: "request", ExitCode: protocol.Int(0)}); err != nil {
+		if err := wsjson.Write(dctx, target, protocol.Message{Type: protocol.TypeExit, ExecID: got.ExecID, ExitCode: protocol.Int(0)}); err != nil {
 			t.Fatal(err)
 		}
 		if err := wsjson.Read(cctx, caller, &got); err != nil || got.Type != protocol.TypeExit {

@@ -43,7 +43,7 @@ func TestIdentity_should_recheckConnection_whenInvokeWaitsForRoutingLock(t *test
 	cancel()
 	h.mu.Unlock()
 	waitSignal(t, finished)
-	if device.last().ExecID == "after-close" || len(h.inflight) != 0 {
+	if len(h.requests) != 0 || len(h.inflight) != 0 {
 		t.Fatal("disconnected client started an execution")
 	}
 }

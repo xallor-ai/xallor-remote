@@ -97,12 +97,12 @@ func TestPrincipal_should_keepRoutingAndCancelLookup_whenVerificationBlocks(t *t
 		close(routed)
 	}()
 	waitSignal(t, routed)
-	if device.last().ExecID != "other" {
+	if device.last().Type != protocol.TypeInvoke || device.last().ExecID != h.requests[requestKey{client: anonymous, id: "other"}] {
 		t.Fatal("unrelated routing stalled")
 	}
 	cancel()
 	waitSignal(t, done)
-	if _, ok := h.inflight["blocked"]; ok {
+	if _, ok := h.requests[requestKey{client: client, id: "blocked"}]; ok {
 		t.Fatal("disconnected invocation was dispatched")
 	}
 }

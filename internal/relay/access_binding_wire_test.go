@@ -84,10 +84,11 @@ func TestAccessWire_should_rejectOldBinding_whenCredentialReused(t *testing.T) {
 			}
 			fresh := dial(clientHello)
 			write(fresh, protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "fresh"})
-			if m := read(device); m.ExecID != "fresh" {
+			invoke := read(device)
+			if m := invoke; m.Type != protocol.TypeInvoke || m.Op != protocol.OpInfo {
 				t.Fatalf("wrong invocation reached device: %+v", m)
 			}
-			write(device, protocol.Message{Type: protocol.TypeExit, ExecID: "fresh", ExitCode: protocol.Int(0), Status: protocol.ExitCompleted})
+			write(device, protocol.Message{Type: protocol.TypeExit, ExecID: invoke.ExecID, ExitCode: protocol.Int(0), Status: protocol.ExitCompleted})
 			if m := read(fresh); m.Type != protocol.TypeExit || m.ExecID != "fresh" {
 				t.Fatalf("fresh result missing: %+v", m)
 			}
