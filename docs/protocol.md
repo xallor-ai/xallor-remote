@@ -101,6 +101,8 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 | 路径 | 最长 4096 字节；超则 `policy_deny` |
 | 单次 stdout+stderr | **4 MiB** 后丢后续输出，`exit.truncated=true` |
 | Relay 每 inflight 待发缓冲 | **1 MiB**；超则丢数据帧并 truncated，不堵整条 device 连接 |
+| Relay 每连接待发队列 | 最多 256 条等待帧，保留 8 个非输出槽；总内存计量上限 `4 × MaxRelayBufferBytes + MaxWSMessageBytes`（含正在写的帧） |
+| Relay 单次写入 / 关闭排空 | 各最多 5 秒；超时关闭连接并按断线规则回收，不无限等待 |
 | read 默认 / 上限 | 64 KiB / 1 MiB；少给则 `exit.truncated=true`，按 rune 边界切 |
 | read `offset` | 字节起点，可大于 1 MiB；落在 rune 中间则回退到该 rune 起点 |
 | **write 上限** | **1 MiB**（解码后）；整包 marshal 超 WSS 读上限则 `too_large`，不落盘 |

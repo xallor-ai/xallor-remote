@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -12,22 +11,6 @@ import (
 
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
-
-type wsSender struct {
-	mu   sync.Mutex
-	ctx  context.Context
-	conn *websocket.Conn
-}
-
-func (w *wsSender) Send(m protocol.Message) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return wsjson.Write(w.ctx, w.conn, m)
-}
-
-func (w *wsSender) Close() {
-	_ = w.conn.Close(websocket.StatusNormalClosure, "")
-}
 
 func Serve(addr, dataDir string, log *slog.Logger, quota Quota) error {
 	store, err := OpenSQLStore(dataDir)
@@ -71,8 +54,10 @@ func HandlerQuota(hub *Hub, log *slog.Logger, lim *Limiter) http.Handler {
 func serveConn(parent context.Context, hub *Hub, c *websocket.Conn, log *slog.Logger, lim *Limiter, ip string) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
-	defer c.Close(websocket.StatusNormalClosure, "")
-	s := &wsSender{ctx: ctx, conn: c}
+	s := newOutbox(ctx, func(writeCtx context.Context, m protocol.Message) error {
+		return wsjson.Write(writeCtx, c, m)
+	}, func() { _ = c.CloseNow() })
+	defer s.shutdown()
 
 	c.SetReadLimit(int64(protocol.MaxWSMessageBytes))
 	var hello protocol.Message
@@ -90,7 +75,7 @@ func serveConn(parent context.Context, hub *Hub, c *websocket.Conn, log *slog.Lo
 			return
 		}
 		if code := lim.AllowDeviceHello(ip); code != "" {
-			_ = s.Send(protocol.Message{Type: protocol.TypeError, Code: code})
+			_ = s.Enqueue(protocol.Message{Type: protocol.TypeError, Code: code})
 			return
 		}
 		inb := false
@@ -98,23 +83,21 @@ func serveConn(parent context.Context, hub *Hub, c *websocket.Conn, log *slog.Lo
 			inb = *hello.Inbound
 		}
 		if code := hub.RegisterDevice(hello.DeviceID, hello.Secret, inb, s); code != "" {
-			_ = s.Send(protocol.Message{Type: protocol.TypeError, Code: code})
+			_ = s.Enqueue(protocol.Message{Type: protocol.TypeError, Code: code})
 			return
 		}
 		lim.OnDeviceUp(ip)
 		defer lim.OnDeviceDown(ip)
 		role, bindID = protocol.RoleDevice, hello.DeviceID
-		_ = s.Send(protocol.Message{Type: protocol.TypeHelloOK, Role: role})
 	case protocol.TypeHelloClient:
 		if hello.TargetID == "" || hello.Grant == "" {
 			return
 		}
 		if code := hub.RegisterClient(hello.TargetID, hello.Grant, s); code != "" {
-			_ = s.Send(protocol.Message{Type: protocol.TypeError, Code: code})
+			_ = s.Enqueue(protocol.Message{Type: protocol.TypeError, Code: code})
 			return
 		}
 		role, bindID = protocol.RoleClient, hello.TargetID
-		_ = s.Send(protocol.Message{Type: protocol.TypeHelloOK, Role: role})
 	default:
 		return
 	}
@@ -131,7 +114,7 @@ func serveConn(parent context.Context, hub *Hub, c *websocket.Conn, log *slog.Lo
 		}
 		if b, e := msg.Bytes(); e == nil {
 			if code := lim.AddBytes(ip, len(b)); code != "" {
-				_ = s.Send(protocol.Message{Type: protocol.TypeError, ExecID: msg.ExecID, Code: code})
+				_ = s.Enqueue(protocol.Message{Type: protocol.TypeError, ExecID: msg.ExecID, Code: code})
 				return
 			}
 		}
