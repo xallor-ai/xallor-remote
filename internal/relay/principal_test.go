@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xallor-ai/xallor-remote/internal/account"
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -15,11 +16,11 @@ import (
 func TestPrincipal_should_bindAndRevalidate_whenCredentialStateChanges(t *testing.T) {
 	s := openIdentityTestStore(t)
 	ctx := context.Background()
-	a, err := s.EnrollPrincipal(ctx, "alice", "user", "", time.Hour)
+	a, err := account.New(s).CreatePrincipal(ctx, account.CreatePrincipalRequest{Name: "alice", Kind: "user", TenantID: "", TTL: time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := s.EnrollPrincipal(ctx, "agent", "service", a.TenantID, time.Hour)
+	b, err := account.New(s).CreatePrincipal(ctx, account.CreatePrincipalRequest{Name: "agent", Kind: "service", TenantID: a.TenantID, TTL: time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,13 +38,13 @@ func TestPrincipal_should_bindAndRevalidate_whenCredentialStateChanges(t *testin
 	if !errors.Is(s.Verify(ctx, forged), principal.ErrUnauthorized) {
 		t.Fatal("accepted self-reported tenant")
 	}
-	if err := s.SetMembershipActive(ctx, a.MembershipID, false); err != nil {
+	if err := account.New(s).SetMembershipActive(ctx, a.MembershipID, false); err != nil {
 		t.Fatal(err)
 	}
 	if !errors.Is(s.Verify(ctx, a.Identity), principal.ErrUnauthorized) {
 		t.Fatal("disabled membership remained valid")
 	}
-	if err := s.SetMembershipActive(ctx, a.MembershipID, true); err != nil {
+	if err := account.New(s).SetMembershipActive(ctx, a.MembershipID, true); err != nil {
 		t.Fatal(err)
 	}
 	if !errors.Is(s.Verify(ctx, a.Identity), principal.ErrUnauthorized) {
@@ -53,7 +54,7 @@ func TestPrincipal_should_bindAndRevalidate_whenCredentialStateChanges(t *testin
 	if err != nil || fresh.MembershipVersion <= a.MembershipVersion {
 		t.Fatal("fresh membership version missing", err)
 	}
-	if err := s.RevokeCredential(ctx, a.CredentialID); err != nil {
+	if err := account.New(s).RevokeCredential(ctx, a.CredentialID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Authenticate(ctx, a.Token); !errors.Is(err, principal.ErrUnauthorized) {
@@ -76,14 +77,14 @@ func TestPrincipal_should_bindAndRevalidate_whenCredentialStateChanges(t *testin
 func TestPrincipal_should_isolateAuthoritiesAndRollback_whenEnrollmentInvalid(t *testing.T) {
 	s, other := openIdentityTestStore(t), openIdentityTestStore(t)
 	ctx := context.Background()
-	if _, err := s.EnrollPrincipal(ctx, "invalid", "user", "absent", time.Hour); err == nil {
+	if _, err := account.New(s).CreatePrincipal(ctx, account.CreatePrincipalRequest{Name: "invalid", Kind: "user", TenantID: "ffffffffffffffffffffffffffffffff", TTL: time.Hour}); err == nil {
 		t.Fatal("orphan membership accepted")
 	}
 	var count int
 	if err := s.db.QueryRow(`SELECT count(*) FROM principals`).Scan(&count); err != nil || count != 0 {
 		t.Fatal("partial enrollment persisted", err)
 	}
-	a, err := s.EnrollPrincipal(ctx, "alice", "user", "", time.Hour)
+	a, err := account.New(s).CreatePrincipal(ctx, account.CreatePrincipalRequest{Name: "alice", Kind: "user", TenantID: "", TTL: time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +106,7 @@ func TestPrincipal_should_isolateAuthoritiesAndRollback_whenEnrollmentInvalid(t 
 // token revocation; shared device authorization cannot downgrade that connection.
 func TestPrincipal_should_rejectNewInvoke_whenCredentialRevoked(t *testing.T) {
 	s := openIdentityTestStore(t)
-	a, err := s.EnrollPrincipal(context.Background(), "alice", "user", "", time.Hour)
+	a, err := account.New(s).CreatePrincipal(context.Background(), account.CreatePrincipalRequest{Name: "alice", Kind: "user", TenantID: "", TTL: time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +123,7 @@ func TestPrincipal_should_rejectNewInvoke_whenCredentialRevoked(t *testing.T) {
 	if h.inflight[dev.last().ExecID].identity != a.Identity || dev.last().AccountToken != "" {
 		t.Fatal("trusted invocation context missing or token forwarded")
 	}
-	if err := s.RevokeCredential(context.Background(), a.CredentialID); err != nil {
+	if err := account.New(s).RevokeCredential(context.Background(), a.CredentialID); err != nil {
 		t.Fatal(err)
 	}
 	h.Handle(client, protocol.RoleClient, "device", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "after"})

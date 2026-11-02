@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/xallor-ai/xallor-remote/internal/account"
 )
 
 // Account schema upgrades are atomic and retain the exact existing device/grant
@@ -51,7 +53,7 @@ PRAGMA user_version=3;`)
 		s.Close()
 		t.Fatal("upgrade replaced device binding", device, err)
 	}
-	a, err := s.EnrollPrincipal(ctx, "alice", "user", "", time.Hour)
+	a, err := account.New(s).CreatePrincipal(ctx, account.CreatePrincipalRequest{Name: "alice", Kind: "user", TenantID: "", TTL: time.Hour})
 	if err != nil {
 		s.Close()
 		t.Fatal(err)

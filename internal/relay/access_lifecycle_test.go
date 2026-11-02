@@ -7,12 +7,13 @@ import (
 	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/account"
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 )
 
 func enrollment(t *testing.T, s *SQLStore, name, tenant string) principal.Enrollment {
 	t.Helper()
-	p, err := s.EnrollPrincipal(context.Background(), name, "user", tenant, time.Hour)
+	p, err := account.New(s).CreatePrincipal(context.Background(), account.CreatePrincipalRequest{Name: name, Kind: "user", TenantID: tenant, TTL: time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}
