@@ -118,7 +118,7 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 {"request_id":"review-001","workspace":"C:\\XallorRemote\\workspace\\repo","revision":"0123456789012345678901234567890123456789","agent":"cursor","session_id":"12345678-1234-1234-1234-123456789abc","mode":"ask","prompt":"Review the selected revision.","attachments":[],"trust_workspace":true,"timeout_seconds":120}
 ```
 
-`request_id` 为 1–64 位字母数字、下划线、连字符，首位字母数字；revision 为 40 位小写十六进制 Git SHA；session_id 为 UUID；agent 仅 cursor；mode 必须为 ask / plan / agent。workspace 为绝对路径，最长 1024 字节，必须解析到目标 Runtime workspace 内的干净 Git 仓库根且 HEAD 匹配。prompt 为 1–16 KiB UTF-8。attachments 最多 8 个 `{path,sha256}`：相对路径最长 1024 字节，解析后仍在仓库内，常规文件最大 1 MiB，SHA256 必须匹配。timeout_seconds 为 1–600，包含预检；预检本身最多 8 秒。
+`request_id` 为 1–64 位字母数字、下划线、连字符，首位字母数字；revision 为 40 位小写十六进制 Git SHA；session_id 为 UUID；agent 仅 cursor；mode 必须为 ask / plan / agent。workspace 为绝对路径，最长 1024 字节，必须解析到目标 Runtime workspace 内的干净 Git 仓库根且 HEAD 匹配。prompt 为 1–16 KiB UTF-8。attachments 最多 8 个 `{path,sha256}`：相对路径最长 1024 字节，解析后仍在仓库内，常规文件最大 1 MiB，SHA256 必须匹配。timeout_seconds 为 1–600，包含预检；预检本身最多 45 秒，并服从更短的请求总超时。预检超时回执 code 为 `preflight_timeout_<phase>`，phase 标识 workspace、git_root、git_revision、git_status、attachments、adapter_config、cli_help 或 cli_version；取消为 `preflight_interrupted`。
 
 回执字段：`request_id,fingerprint,workspace,revision,agent,session_id,mode,state,code?,created_at,updated_at,cli_version?,result?,truncated`。fingerprint 为规范化请求 JSON 的 SHA256；时间为 UTC RFC3339Nano。state：received / accepted / running / completed / failed / unknown，语义与恢复步骤见 [handoff.md](handoff.md)。回执 code 为适配器诊断，**不是** WSS invoke_nack code。
 

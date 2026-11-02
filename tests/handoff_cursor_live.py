@@ -2,13 +2,13 @@
 import argparse
 import json
 from pathlib import Path
-import re
 import subprocess
 import sys
 import tempfile
 import time
 import uuid
 from fixtures.runtime_cluster import Cluster
+from fixtures.cursor_session import create_chat
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 parser = argparse.ArgumentParser()
@@ -37,14 +37,10 @@ try:
     git("add", "REVIEW.md")
     git("-c", "user.name=Xallor Test", "-c", "user.email=test@example.invalid", "commit", "--quiet", "-m", "fixture")
     revision = git("rev-parse", "HEAD")
-    created = subprocess.run([*agent, "--workspace", str(workspace), "create-chat"], cwd=workspace,
-                             capture_output=True, encoding="utf-8", errors="replace", timeout=45)
-    # Do not print raw authentication-related stderr or account status.
-    if created.returncode:
-        raise AssertionError("Official Cursor create-chat failed; check local CLI login")
-    matches = re.findall(r"\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b", created.stdout, flags=re.I)
-    assert len(set(matches)) == 1, "create-chat did not return one session UUID"
-    session = matches[0].lower()
+    session, creation_exit = create_chat(agent, workspace)
+    (evidence / "session-creation.json").write_text(json.dumps(dict(session_id=session,
+        successful_exit_observed=creation_exit, allocator_stopped_after_id=not creation_exit)), encoding="utf-8")
+    print(f"Allocated test session {session}; successful allocator exit: {creation_exit}", flush=True)
     configure = ["handoff", "configure", "--executable", agent[0]]
     for prefix in args.prefix_arg:
         configure += ["--prefix-arg", prefix]
