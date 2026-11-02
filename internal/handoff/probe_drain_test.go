@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 )
@@ -54,5 +55,37 @@ func TestProbe_should_closeReader_whenCancelledBeforeEOF(t *testing.T) {
 	cancel()
 	if err := finishProbeRead(ctx, reader, done); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
+	}
+}
+
+// An inherited writer may outlive the supervised process. Drain must terminate
+// with a timeout error, release its reader, and join the copying goroutine.
+func TestProbe_should_boundDrain_whenInheritedWriterRemainsOpen(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	defer writer.Close()
+	done := make(chan error, 1)
+	go func() { _, err := io.Copy(io.Discard, reader); done <- err }()
+	if err := finishProbeRead(context.Background(), reader, done); !errors.Is(err, exec.ErrWaitDelay) {
+		t.Fatalf("expected drain timeout, got %v", err)
+	}
+}
+
+// A reader failure after process exit must reach the caller instead of turning
+// a partial probe response into success.
+func TestProbe_should_preserveFailure_whenReaderCannotDrain(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	_ = reader.Close()
+	done := make(chan error, 1)
+	go func() { _, err := io.Copy(io.Discard, reader); done <- err }()
+	if err := finishProbeRead(context.Background(), reader, done); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("expected closed reader error, got %v", err)
 	}
 }

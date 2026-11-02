@@ -37,7 +37,7 @@ type Child struct {
 }
 
 // Start takes sole ownership of an unstarted exec.Command. On Windows, commands
-// with file-backed stdio are created suspended with PROC_THREAD_ATTRIBUTE_JOB_LIST,
+// are created suspended with PROC_THREAD_ATTRIBUTE_JOB_LIST,
 // so the OS assigns the child before any user code runs. CommandContext is
 // rejected: cancellation must target the group, not race a second root killer.
 // Reaping starts immediately. Streaming readers must use their own os.Pipe
