@@ -9,7 +9,6 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
-	"github.com/xallor-ai/xallor-remote/internal/buildinfo"
 	"github.com/xallor-ai/xallor-remote/internal/identity"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
@@ -24,18 +23,10 @@ func (d *Daemon) serveIPC(c *ipc.Conn) {
 		if err != nil {
 			return
 		}
-		if d.handleLocal(c, req) {
+		if d.handleObservation(c, req) || d.handleLocal(c, req) {
 			continue
 		}
 		switch req.Method {
-		case "status":
-			id, _, grant, ws, relay, inbound, peers := d.store.Snapshot()
-			_ = c.WriteFrame(ipc.OK(req.ID, map[string]any{
-				"device_id": id, "workspace": ws, "relay": relay,
-				"inbound": inbound, "has_grant": grant != "",
-				"online": d.deviceOnline(), "version": buildinfo.Version(), "build": buildinfo.Running(),
-				"peers": peers,
-			}))
 		case "grant.issue":
 			g, err := d.store.IssueGrant()
 			if err != nil {

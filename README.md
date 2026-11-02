@@ -26,3 +26,13 @@ xallor-remote runtime rollback
 ```
 
 安装会重启本机 Runtime，并保留设备 ID、授权码、连接配置和入站选择；请先结束正在执行的任务。失败时自动恢复已纳管的旧版本。首次从 0.1.x 迁移时，先停止旧服务，再用新包安装。构建与发行步骤见 [docs/stack.md](docs/stack.md)。
+
+连接异常时先检查：
+
+```text
+xallor-remote status --json
+xallor-remote doctor
+xallor-remote doctor --device <对方的9位ID> --json
+```
+
+诊断只读取状态，不启动服务、不改授权或入站选择。按输出建议处理后再试；“未确认”表示没有收到完整应答。
