@@ -66,12 +66,18 @@ SSOT：命名管道 / Unix socket 上的报文与 ensure。路径与权限见 [d
 | `peer.add` / `list` / `remove` | 任一头 | add 会收编 mcp.json 那套 id+grant |
 | `peer.rename` | 任一头 | `{device_id,name}` 修改备注，最多 80 字符；空字符串清除，不改 ID 或授权 |
 | `config.get` / `config.set` | 人侧头 | relay URL、workspace、shell |
+| `account.set` | 人侧头 | `{token:string}`；必须明确提供，空字符串表示清除；返回 `{configured:bool}` |
+| `account.status` | 人侧头 | 返回 `{configured:bool}`，不返回凭据或宣称已在线认证 |
 | `approval.subscribe` | 人侧头 | 注册为审批 UI；断开即取消 |
 | `approval.respond` | 人侧头 | 独立请求 ID；`{approval_id,allow:bool}`，同一审批最多确认一次 |
 | `approval.list` | 人侧头 | 当前待审批 `{pending:[{id,exec_id,preview,created}]}`；只读，不代替订阅 |
 | `audit.list` | 人侧头 | 本机最近 500 条操作元数据 `{entries:[...]}`；读取失败明确报错 |
 
-MCP **可以**调 `status` / `peer.*` / 下面远程方法；**不要**调 grant/inbound/revoke（包里不实现）。Runtime 不做「MCP 指纹鉴权」——防模型靠 tool 面，不靠 IPC 分角色。MCP 连接**不算**审批 UI。
+MCP **可以**调 `status` / `peer.*` / 下面远程方法；**不要**调 grant/inbound/revoke/account.set（包里不实现）。Runtime 不做「MCP 指纹鉴权」——防模型靠 tool 面，不靠 IPC 分角色。MCP 连接**不算**审批 UI。
+
+`account.set` 原子持久化到当前 profile 的 `account.json`，绑定当前 Relay URL。成功后递增本机身份代次并关闭旧控制连接，等待中的调用可能收到通道失败，不能自动重放。导入只校验凭据格式，实际有效性在远程握手和新调用时验证；设置失败保留旧配置。目标 `doctor` 使用与实际调用相同的身份凭据，不能匿名探测后冒充账号访问成功。
+
+凭据文件损坏时 Runtime 仍启动本机恢复入口，所有需要该凭据的远程连接明确失败；只有成功重新导入或明确清除后才恢复调用，不自动按匿名方式访问。
 
 `status.result.build`：version、revision、built_at、dirty、protocol、os、arch、path、sha256、pid。path/hash 在进程启动时采集，表示正在运行的制品，不把升级后的磁盘文件冒充当前进程。远程 info 的 build 不包含本机 path/hash/pid。
 

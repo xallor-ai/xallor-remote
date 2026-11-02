@@ -45,6 +45,8 @@ v0 **不**在一条 client 连接上多路复用多个目标。多 peer = 多条
 
 hello 失败：Relay 关连接，不登记。成功：回一条 `hello_ok`（实现可把字段放进现有心跳前的第一条下行）。之后双方按 [protocol.md](protocol.md) 发 `heartbeat`；超时 → 连接死，走 §7。
 
+若 hello 带账号凭据，Relay 先从签发存储解析可信调用身份，再验证目标共享授权；两者均通过才登记 client。账号身份固定在该连接上，不能通过后续 invoke 改换。
+
 控制面消息（`grant_rotate` / `revoke` / `inbound_set`）只走 **device** 连接，见 [credentials.md](credentials.md)。本文只覆盖 invoke / 事件。
 
 ---
@@ -73,16 +75,18 @@ A 在已 hello 成功的 client 连接上发：
 Relay 收到 `invoke`（`op != cancel`）严格按序，失败即停、发 `invoke_nack`、**不**建 inflight：
 
 ```text
-1. 这条连接是已鉴权的 client
+1. 这条连接是已鉴权的 client；带账号时在路由锁外重新验证凭据、成员启用状态及版本
 2. 目标 device_id 存在，否则 unknown_device
 3. 该连接 hello 验证得到的设备 UID + 授权 ID 仍匹配当前绑定，否则 unauthorized
 4. 目标有活着且内部 UID 匹配的 device 连接，否则 device_offline
 5. 目标 inbound 开，否则 inbound_disabled
 6. 该设备 inflight 数 < 并发上限，否则 quota_exceeded（不排队）
 7. exec_id 未占用
-8. 登记 inflight[exec_id] = { device_id, client_conn }
-9. 原样把 invoke 转给 B 的 device 连接（Relay 不改 command）
+8. 登记 inflight[exec_id]，保留目标、client 连接及可信调用身份
+9. 去除仅供 hello 使用的账号凭据，把 invoke 转给 B 的 device 连接（Relay 不改 command）
 ```
+
+账号验证以本次数据库读取为判定时点，与随后进入路由锁不是跨模块原子事务。与撤销同时发生且已通过验证的请求可能继续准入；撤销完成后开始验证的新请求会失败。取消与输出帧不查询账号数据库，原连接仍可取消已经登记的任务。成员恢复递增版本，旧连接必须重新握手才能恢复使用；认证等待有期限并随连接断开取消。此阶段不提供撤销即终止后台任务的承诺。
 
 B 收到后：校验请求形状 → [runtime.md](runtime.md) 策略。deny / 审批失败 → B 发 `invoke_nack`，Relay 转给 A 并 **删除 inflight**。allow 且 `exec` → Popen，**不再** nack。
 

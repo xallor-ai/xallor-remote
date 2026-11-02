@@ -11,7 +11,7 @@ func TestInvoke_should_rejectExistingClient_whenGrantRotated(t *testing.T) {
 	dev, client := &recSender{}, &recSender{}
 	h.RegisterDevice("123456789", "secret", true, dev)
 	h.Handle(dev, protocol.RoleDevice, "123456789", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("old")})
-	if code := h.RegisterClient("123456789", "old", client); code != "" {
+	if code := h.RegisterClient("123456789", "old", "", client); code != "" {
 		t.Fatal(code)
 	}
 	h.Handle(dev, protocol.RoleDevice, "123456789", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("new")})

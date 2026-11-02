@@ -25,7 +25,7 @@ func setTestAccess(t *testing.T, s DeviceStore, id, grant string, inbound bool) 
 func authorizeTestClient(t *testing.T, h *Hub, dev, client Sender) {
 	t.Helper()
 	h.Handle(dev, protocol.RoleDevice, "dev_a", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("test")})
-	if code := h.RegisterClient("dev_a", "test", client); code != "" {
+	if code := h.RegisterClient("dev_a", "test", "", client); code != "" {
 		t.Fatal(code)
 	}
 }

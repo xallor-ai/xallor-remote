@@ -24,7 +24,7 @@ JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本
 | type | 谁可发 | 必带 | 含义 |
 | --- | --- | --- | --- |
 | `hello_device` | device | device_id, secret, os, arch, agent_version, workspace, inbound | 上线 |
-| `hello_client` | client | target_device_id, grant | 我要控这台 |
+| `hello_client` | client | target_device_id, grant, account_token? | 连接目标；可携带调用者身份凭据 |
 | `hello_ok` | Relay | role | hello 成功，此后可 heartbeat / invoke |
 | `heartbeat` | 双向 | — | 保活 |
 | `invoke` | client | exec_id, op, payload | op 见下；目标取自该 client 连接的 hello |
@@ -34,6 +34,8 @@ JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本
 | `inbound_set` | **仅 device** | device_id, inbound | 开/关入站 |
 
 client 连接上出现 `revoke` / `grant_rotate` / `inbound_set` → 忽略或 nack `unauthorized`，**不得执行**。
+
+`account_token` 仅用于 client hello：缺省为无账号共享访问；非空时必须通过签发方校验，失败返回 `unauthorized`，存储故障返回 `relay_error`，不能降级为无账号访问。目标 grant 仍然必需。主体、空间、成员版本和到期时间由 Relay 从凭据推导，不接受客户端自报身份。凭据不转发给目标，也不写入调用记录。当前凭据有效期由本机运维设置为 1 分钟至 90 天，默认 24 小时。
 
 `reset` 不是协议消息：CLI 清空本机数据目录，并发送 `revoke`。
 

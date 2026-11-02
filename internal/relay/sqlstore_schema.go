@@ -15,15 +15,16 @@ func (s *SQLStore) migrate() error {
 	if err := tx.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		return err
 	}
-	if version > 3 {
+	if version > 4 {
 		return fmt.Errorf("unsupported Relay database version %d", version)
 	}
-	if version == 3 {
+	if version == 4 {
 		return tx.Commit()
 	}
-	// Normalize earlier development schemas in one transaction. Runtime queries
-	// use only the final shape; the display ID, credentials and inbound state survive.
-	_, err = tx.Exec(`
+	if version < 3 {
+		// Normalize earlier development schemas in one transaction. Runtime queries
+		// use only the final shape; the display ID, credentials and inbound state survive.
+		_, err = tx.Exec(`
 CREATE TABLE IF NOT EXISTS devices (
   id TEXT PRIMARY KEY, secret_hash TEXT NOT NULL, grant_hash TEXT NOT NULL DEFAULT '',
   inbound INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0
@@ -51,7 +52,11 @@ DROP TABLE devices;
 ALTER TABLE devices_next RENAME TO devices;
 PRAGMA user_version=3;
 `)
-	if err != nil {
+		if err != nil {
+			return err
+		}
+	}
+	if err := migratePrincipals(tx); err != nil {
 		return err
 	}
 	return tx.Commit()

@@ -57,8 +57,12 @@ func (d *Daemon) diagnose(device string) diagnostics.Report {
 		return r
 	}
 	r.Set("peer", "ok", "", "")
-	_, _, _, _, relay, _, _ := d.store.Snapshot()
-	diagnostics.Probe(d.ctx, relay, device, peer.Grant, &r)
+	relay, token, err := d.store.Credentials()
+	if err != nil {
+		r.Set("peer", "fail", protocol.Unauthorized, err.Error())
+		return r
+	}
+	diagnostics.Probe(d.ctx, relay, device, peer.Grant, token, &r)
 	for _, check := range r.Checks {
 		if check.State == "fail" || check.State == "unknown" {
 			r.OK = false

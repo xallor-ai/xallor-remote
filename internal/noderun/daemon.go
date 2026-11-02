@@ -47,7 +47,6 @@ var errMsgTooLarge = errStr(protocol.TooLarge)
 
 type clientLink struct {
 	target  string
-	grant   string
 	ws      *wsConn
 	cancel  context.CancelFunc
 	mu      sync.Mutex
@@ -60,15 +59,16 @@ type Daemon struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu        sync.Mutex
-	device    *wsConn
-	clients   map[string]*clientLink
-	ensuring  map[string]chan struct{}
-	local     map[string]context.CancelFunc
-	remote    map[string]*remoteExec
-	approvals *approvalHub
-	activity  *activity.Log
-	handoffs  *handoff.Manager
+	mu                sync.Mutex
+	device            *wsConn
+	clients           map[clientKey]*clientLink
+	ensuring          map[clientKey]chan struct{}
+	accountGeneration uint64
+	local             map[string]context.CancelFunc
+	remote            map[string]*remoteExec
+	approvals         *approvalHub
+	activity          *activity.Log
+	handoffs          *handoff.Manager
 }
 
 type remoteExec struct {
@@ -82,8 +82,8 @@ func New(store *identity.Store, log *slog.Logger) *Daemon {
 	ctx, cancel := context.WithCancel(context.Background())
 	d := &Daemon{
 		log: log, store: store, ctx: ctx, cancel: cancel,
-		clients:   map[string]*clientLink{},
-		ensuring:  map[string]chan struct{}{},
+		clients:   map[clientKey]*clientLink{},
+		ensuring:  map[clientKey]chan struct{}{},
 		local:     map[string]context.CancelFunc{},
 		remote:    map[string]*remoteExec{},
 		approvals: newApprovalHub(),
@@ -240,16 +240,19 @@ func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
 
 func (d *Daemon) dropClient(id string, inst *clientLink) {
 	d.mu.Lock()
-	cur := d.clients[id]
-	if inst != nil && cur != inst {
-		d.mu.Unlock()
-		inst.closeConn()
-		return
+	var removed []*clientLink
+	for key, cl := range d.clients {
+		if key.target == id && (inst == nil || cl == inst) {
+			delete(d.clients, key)
+			removed = append(removed, cl)
+		}
 	}
-	delete(d.clients, id)
 	d.mu.Unlock()
-	if cur != nil {
-		cur.closeConn()
+	for _, cl := range removed {
+		cl.closeConn()
+	}
+	if inst != nil && len(removed) == 0 {
+		inst.closeConn()
 	}
 }
 

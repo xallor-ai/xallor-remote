@@ -40,7 +40,7 @@ func TestIdentity_should_publishCommittedGrant_whenCancellationFollowsCommit(t *
 		t.Fatal("committed change was lost on cancellation")
 	}
 	h.Drop(device, protocol.RoleDevice, "device")
-	if code := h.RegisterClient("device", "committed", &recSender{}); code != "" {
+	if code := h.RegisterClient("device", "committed", "", &recSender{}); code != "" {
 		t.Fatal(code)
 	}
 }

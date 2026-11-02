@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -64,12 +65,23 @@ func (h *Hub) RegisterDevice(id, secret string, inbound bool, conn Sender) strin
 	return ""
 }
 
-func (h *Hub) RegisterClient(targetID, grant string, conn Sender) string {
+func (h *Hub) RegisterClient(targetID, grant, accountToken string, conn Sender) string {
 	ctx, release, err := h.beginIdentity(conn, targetID)
 	if err != nil {
 		return identityErrorCode(err)
 	}
 	defer release()
+	var identity principal.Identity
+	if accountToken != "" {
+		auth, ok := h.store.(principal.Authenticator)
+		if !ok {
+			return protocol.Unauthorized
+		}
+		identity, err = auth.Authenticate(ctx, accountToken)
+		if err != nil {
+			return principalErrorCode(err)
+		}
+	}
 	want := protocol.SHA256Hex(grant)
 	var record access.Device
 	if h.store != nil {
@@ -96,7 +108,7 @@ func (h *Hub) RegisterClient(targetID, grant string, conn Sender) string {
 		return protocol.RelayError
 	}
 	h.access[targetID] = record.Binding()
-	h.clients[conn] = clientSlot{targetID: targetID, access: record.Binding()}
+	h.clients[conn] = clientSlot{targetID: targetID, access: record.Binding(), identity: identity}
 	return ""
 }
 

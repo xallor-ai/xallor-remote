@@ -38,7 +38,7 @@ func TestIdentity_should_rejectRegistrationAndClient_whenStoreFails(t *testing.T
 	if code := h.RegisterDevice("existing", "other", true, &recSender{}); code != protocol.RelayError {
 		t.Fatalf("registration: %s", code)
 	}
-	if code := h.RegisterClient("existing", "grant", &recSender{}); code != protocol.RelayError {
+	if code := h.RegisterClient("existing", "grant", "", &recSender{}); code != protocol.RelayError {
 		t.Fatalf("cached authorization bypassed outage: %s", code)
 	}
 	if h.devices["existing"].conn != dev {

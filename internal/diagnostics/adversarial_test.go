@@ -59,7 +59,7 @@ func TestProbe_should_rejectMisleadingResponses(t *testing.T) {
 			}))
 			defer srv.Close()
 			r := New("123456789")
-			Probe(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http"), "123456789", "grant", &r)
+			Probe(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http"), "123456789", "grant", "", &r)
 			if r.OK {
 				t.Fatalf("misleading response accepted: %s", scenario)
 			}

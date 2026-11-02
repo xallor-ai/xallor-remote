@@ -91,7 +91,7 @@ func TestAccess_should_requireMatchingDeviceUID_whenRoutingSnapshotIsOld(t *test
 	}
 	setTestAccess(t, s, "number", protocol.SHA256Hex("new-grant"), true)
 	client := &recSender{}
-	if code := h.RegisterClient("number", "new-grant", client); code != "" {
+	if code := h.RegisterClient("number", "new-grant", "", client); code != "" {
 		t.Fatal(code)
 	}
 	h.Handle(client, protocol.RoleClient, "number", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "new-identity"})

@@ -197,12 +197,14 @@ jobs:
         working-directory: packages/mcp
       - run: python scripts/build-release.py --platform ${{ matrix.platform }}
       - run: python tests/cross_layer_e2e.py
+      - run: python tests/principal_e2e.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: cross-layer-${{ matrix.os }}
           path: |
             dist/verification/cross-layer.json
+            dist/verification/principal.json
             dist/release/**/manifest.json
 
   # Single required status for branch protection.

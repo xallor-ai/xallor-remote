@@ -34,7 +34,7 @@ func TestIdentity_should_isolateRouting_whenStoreLookupBlocks(t *testing.T) {
 		t.Fatal(code)
 	}
 	finished := make(chan struct{})
-	go func() { h.RegisterClient("blocked", "grant", &recSender{}); close(finished) }()
+	go func() { h.RegisterClient("blocked", "grant", "", &recSender{}); close(finished) }()
 	waitSignal(t, s.entered)
 	queried := make(chan bool, 1)
 	go func() { queried <- h.DeviceOnline("healthy") }()

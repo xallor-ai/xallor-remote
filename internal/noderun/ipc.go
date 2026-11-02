@@ -1,16 +1,9 @@
 package noderun
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
-	"time"
-
-	"github.com/coder/websocket"
-	"github.com/coder/websocket/wsjson"
 
 	"github.com/xallor-ai/xallor-remote/internal/activity"
-	"github.com/xallor-ai/xallor-remote/internal/identity"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -23,7 +16,7 @@ func (d *Daemon) serveIPC(c *ipc.Conn) {
 		if err != nil {
 			return
 		}
-		if d.handleObservation(c, req) || d.handleHeadState(c, req) || d.handleHandoffIPC(c, req) || d.handleLocal(c, req) {
+		if d.handleAccount(c, req) || d.handleObservation(c, req) || d.handleHeadState(c, req) || d.handleHandoffIPC(c, req) || d.handleLocal(c, req) {
 			continue
 		}
 		switch req.Method {
@@ -175,99 +168,6 @@ func (d *Daemon) forwardInvoke(c *ipc.Conn, reqID, deviceID string, link *wsConn
 		}
 	}
 	d.consumeClient(c, reqID, execID, deviceID, link, w, stream)
-}
-
-func (d *Daemon) runClientReader(deviceID string, cl *clientLink) {
-	for {
-		var msg protocol.Message
-		if err := wsjson.Read(cl.ws.ctx, cl.ws.conn, &msg); err != nil {
-			cl.failWaiters()
-			d.dropClient(deviceID, cl)
-			return
-		}
-		cl.dispatch(msg)
-	}
-}
-
-func (d *Daemon) ensureClient(peer identity.Peer) (*wsConn, *clientLink, error) {
-	for {
-		d.mu.Lock()
-		if cl, ok := d.clients[peer.DeviceID]; ok && cl.ws != nil {
-			if cl.grant != peer.Grant {
-				delete(d.clients, peer.DeviceID)
-				d.mu.Unlock()
-				cl.closeConn()
-				continue
-			}
-			d.mu.Unlock()
-			return cl.ws, cl, nil
-		}
-		if wait, ok := d.ensuring[peer.DeviceID]; ok {
-			d.mu.Unlock()
-			<-wait
-			continue
-		}
-		done := make(chan struct{})
-		d.ensuring[peer.DeviceID] = done
-		d.mu.Unlock()
-
-		link, cl, err := d.dialClient(peer)
-		d.mu.Lock()
-		delete(d.ensuring, peer.DeviceID)
-		if err == nil {
-			d.clients[peer.DeviceID] = cl
-		}
-		close(done)
-		d.mu.Unlock()
-		return link, cl, err
-	}
-}
-
-func (d *Daemon) dialClient(peer identity.Peer) (*wsConn, *clientLink, error) {
-	_, _, _, _, relay, _, _ := d.store.Snapshot()
-	ctx, cancel := context.WithCancel(d.ctx)
-	conn, _, err := websocket.Dial(ctx, relay, nil)
-	if err != nil {
-		cancel()
-		return nil, nil, err
-	}
-	conn.SetReadLimit(int64(protocol.MaxWSMessageBytes))
-	link := &wsConn{ctx: ctx, conn: conn}
-	hello := protocol.Message{Type: protocol.TypeHelloClient, TargetID: peer.DeviceID, Grant: peer.Grant}
-	if err := link.send(hello); err != nil {
-		cancel()
-		return nil, nil, err
-	}
-	var ack protocol.Message
-	if err := wsjson.Read(ctx, conn, &ack); err != nil {
-		cancel()
-		return nil, nil, err
-	}
-	if ack.Type != protocol.TypeHelloOK {
-		cancel()
-		return nil, nil, fmt.Errorf("%s", ack.Code)
-	}
-	cl := &clientLink{target: peer.DeviceID, grant: peer.Grant, ws: link, cancel: cancel, waiters: map[string]*execWaiter{}}
-	go d.runClientReader(peer.DeviceID, cl)
-	go func() {
-		t := time.NewTicker(protocol.HeartbeatEvery)
-		defer t.Stop()
-		for {
-			select {
-			case <-d.ctx.Done():
-				d.dropClient(peer.DeviceID, cl)
-				return
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				if err := link.send(protocol.Message{Type: protocol.TypeHeartbeat}); err != nil {
-					d.dropClient(peer.DeviceID, cl)
-					return
-				}
-			}
-		}
-	}()
-	return link, cl, nil
 }
 
 func (d *Daemon) consumeClient(ipcConn *ipc.Conn, reqID, execID, deviceID string, link *wsConn, w *execWaiter, stream bool) {

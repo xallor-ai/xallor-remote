@@ -24,7 +24,7 @@ func TestAccess_should_requireFreshBinding_whenCredentialValueReused(t *testing.
 				h.Handle(dev, protocol.RoleDevice, "123456789", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex(hash)})
 			}
 			rotate("shared")
-			if code := h.RegisterClient("123456789", "shared", stale); code != "" {
+			if code := h.RegisterClient("123456789", "shared", "", stale); code != "" {
 				t.Fatal(code)
 			}
 			if recreate {
@@ -42,7 +42,7 @@ func TestAccess_should_requireFreshBinding_whenCredentialValueReused(t *testing.
 				t.Fatalf("stale connection regained access: %+v", stale.last())
 			}
 			fresh := &recSender{}
-			if code := h.RegisterClient("123456789", "shared", fresh); code != "" {
+			if code := h.RegisterClient("123456789", "shared", "", fresh); code != "" {
 				t.Fatal(code)
 			}
 			h.Handle(fresh, protocol.RoleClient, "123456789", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "fresh"})

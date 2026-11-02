@@ -69,7 +69,7 @@ func (s *Store) SetConfig(relayURL, workspace, shell string) error {
 func (s *Store) Wipe() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, name := range []string{"identity.json", "device_secret", "grant", "peers.json", "config.json"} {
+	for _, name := range []string{"identity.json", "device_secret", "grant", "peers.json", "config.json", "account.json"} {
 		_ = os.Remove(filepath.Join(s.Dir, name))
 	}
 	s.DeviceID = ""
@@ -78,5 +78,7 @@ func (s *Store) Wipe() error {
 	s.Inbound = false
 	s.Peers = nil
 	s.Config = Config{}
+	s.account = accountCredential{}
+	s.accountErr = nil
 	return nil
 }

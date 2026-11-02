@@ -60,7 +60,7 @@ func TestProbe_should_classify_and_never_executeCommands(t *testing.T) {
 			}))
 			defer srv.Close()
 			r := New("123456789")
-			Probe(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http"), "123456789", "test-grant", &r)
+			Probe(context.Background(), "ws"+strings.TrimPrefix(srv.URL, "http"), "123456789", "test-grant", "", &r)
 			for _, check := range r.Checks {
 				if check.Layer == tc.layer && (check.State != tc.state || check.Code != tc.code) {
 					t.Fatalf("%+v", r)
@@ -89,7 +89,7 @@ func TestProbe_should_boundSilentRelay_and_notClaimAuthorized(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	r := New("123456789")
-	Probe(ctx, "ws"+strings.TrimPrefix(srv.URL, "http"), "123456789", "test-grant", &r)
+	Probe(ctx, "ws"+strings.TrimPrefix(srv.URL, "http"), "123456789", "test-grant", "", &r)
 	if r.OK {
 		t.Fatal("silent relay reported healthy")
 	}

@@ -50,7 +50,7 @@ func TestOutbox_should_isolateSlowConsumer_and_preserveTruncatedExit(t *testing.
 		t.Fatal("register")
 	}
 	h.Handle(a, protocol.RoleDevice, "a", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("grant")})
-	if h.RegisterClient("a", "grant", b) != "" {
+	if h.RegisterClient("a", "grant", "", b) != "" {
 		t.Fatal("client")
 	}
 	h.Handle(b, protocol.RoleClient, "a", protocol.Message{Type: protocol.TypeInvoke, ExecID: "exec", Op: protocol.OpExec})
@@ -182,7 +182,7 @@ func TestOutbox_should_greetBeforeInvoke_whenDeviceBecomesRoutable(t *testing.T)
 	}
 	h.Handle(b, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("grant")})
 	client := &recSender{}
-	if h.RegisterClient("device", "grant", client) != "" {
+	if h.RegisterClient("device", "grant", "", client) != "" {
 		t.Fatal("client")
 	}
 	h.Handle(client, protocol.RoleClient, "device", protocol.Message{Type: protocol.TypeInvoke, ExecID: "exec", Op: protocol.OpExec})

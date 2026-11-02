@@ -1,0 +1,41 @@
+package relay
+
+import (
+	"context"
+	"errors"
+
+	"github.com/xallor-ai/xallor-remote/internal/principal"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
+)
+
+// A new invocation revalidates the authority-issued credential and membership.
+// This database wait is outside the routing mutex and is never on output frames.
+// Cancellation remains available to the original connection even after revocation.
+func (h *Hub) verifyPrincipal(from Sender) string {
+	h.mu.Lock()
+	client, ok := h.clients[from]
+	h.mu.Unlock()
+	if !ok {
+		return protocol.Unauthorized
+	}
+	if client.identity.PrincipalID == "" {
+		return ""
+	}
+	auth, ok := h.store.(principal.Authenticator)
+	if !ok {
+		return protocol.Unauthorized
+	}
+	ctx, cancel := context.WithTimeout(from.Context(), protocol.RelayIdentityTimeout)
+	defer cancel()
+	if err := auth.Verify(ctx, client.identity); err != nil {
+		return principalErrorCode(err)
+	}
+	return ""
+}
+
+func principalErrorCode(err error) string {
+	if errors.Is(err, principal.ErrUnauthorized) {
+		return protocol.Unauthorized
+	}
+	return protocol.RelayError
+}

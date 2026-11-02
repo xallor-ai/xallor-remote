@@ -27,7 +27,7 @@ func Execute() error {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(cmdRelay(), cmdStart(), cmdEnsure(), cmdStop(), cmdStatus(), cmdDoctor(), cmdGrant(), cmdInbound(), cmdRevoke(), cmdReset(), cmdPeer(), cmdExec(), cmdApprove(), cmdTUI(), cmdMCP(), cmdVersion(), cmdRuntime(), cmdIPCBridge(), cmdHandoff())
+	root.AddCommand(cmdRelay(), cmdStart(), cmdEnsure(), cmdStop(), cmdStatus(), cmdDoctor(), cmdGrant(), cmdInbound(), cmdRevoke(), cmdReset(), cmdPeer(), cmdExec(), cmdApprove(), cmdTUI(), cmdMCP(), cmdVersion(), cmdRuntime(), cmdIPCBridge(), cmdHandoff(), cmdAccount())
 	return root.Execute()
 }
 
@@ -50,7 +50,8 @@ func cmdRelay() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&listen, "listen", ":8443", "监听地址")
-	c.Flags().StringVar(&data, "data", "", "数据目录")
+	c.PersistentFlags().StringVar(&data, "data", "", "数据目录")
+	c.AddCommand(cmdRelayPrincipal(&data))
 	c.Flags().BoolVar(&quota, "quota", false, "启用源 IP 限额")
 	return c
 }

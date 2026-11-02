@@ -110,7 +110,7 @@ func serveConn(parent context.Context, hub *Hub, c *websocket.Conn, log *slog.Lo
 		if hello.TargetID == "" || hello.Grant == "" {
 			return
 		}
-		if code := hub.RegisterClient(hello.TargetID, hello.Grant, s); code != "" {
+		if code := hub.RegisterClient(hello.TargetID, hello.Grant, hello.AccountToken, s); code != "" {
 			_ = s.Enqueue(protocol.Message{Type: protocol.TypeError, Code: code})
 			return
 		}

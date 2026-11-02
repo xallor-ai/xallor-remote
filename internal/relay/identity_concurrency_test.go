@@ -73,7 +73,7 @@ func TestIdentity_should_cancelLookup_whenConnectionCancelled(t *testing.T) {
 	defer cancel()
 	client := &contextSender{ctx: ctx}
 	result := make(chan string, 1)
-	go func() { result <- h.RegisterClient("blocked", "grant", client) }()
+	go func() { result <- h.RegisterClient("blocked", "grant", "", client) }()
 	waitSignal(t, s.entered)
 	cancel()
 	select {
@@ -126,7 +126,7 @@ func TestIdentity_should_serializeReplacementWithRotation_whenDeviceDrops(t *tes
 	registered := make(chan string, 1)
 	go func() { registered <- h.RegisterDevice("device", "secret", true, replacement) }()
 	authenticated := make(chan string, 1)
-	go func() { authenticated <- h.RegisterClient("device", "original", &recSender{}) }()
+	go func() { authenticated <- h.RegisterClient("device", "original", "", &recSender{}) }()
 	waitCondition(t, func() bool {
 		h.identities.mu.Lock()
 		defer h.identities.mu.Unlock()
@@ -144,7 +144,7 @@ func TestIdentity_should_serializeReplacementWithRotation_whenDeviceDrops(t *tes
 	if !h.DeviceOnline("device") {
 		t.Fatal("old device revoked replacement")
 	}
-	if code := h.RegisterClient("device", "rotated", &recSender{}); code != "" {
+	if code := h.RegisterClient("device", "rotated", "", &recSender{}); code != "" {
 		t.Fatal(code)
 	}
 }

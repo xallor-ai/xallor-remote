@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -25,6 +26,7 @@ type deviceSlot struct {
 type clientSlot struct {
 	targetID string
 	access   access.Binding
+	identity principal.Identity
 }
 
 type inflight struct {
@@ -32,6 +34,7 @@ type inflight struct {
 	client   Sender
 	outBytes int
 	trunc    bool
+	identity principal.Identity
 }
 
 // Hub is the in-memory router. Identity persistence is owned by DeviceStore.
@@ -104,6 +107,10 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 		h.handleCancel(from, msg.ExecID)
 		return
 	}
+	if code := h.verifyPrincipal(from); code != "" {
+		_ = from.Enqueue(protocol.Nack(msg.ExecID, code))
+		return
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	binding, ok := h.clients[from]
@@ -145,7 +152,9 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 	if from.Context().Err() != nil {
 		return
 	}
-	h.inflight[msg.ExecID] = &inflight{deviceID: targetID, client: from}
+	h.inflight[msg.ExecID] = &inflight{deviceID: targetID, client: from, identity: binding.identity}
+	// Credentials belong only to the hello. Never forward caller-supplied secrets.
+	msg.AccountToken = ""
 	if err := dev.conn.Enqueue(msg); err != nil {
 		h.failDeviceLocked(targetID, protocol.DeviceOffline)
 		dev.conn.Close()

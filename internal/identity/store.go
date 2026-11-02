@@ -25,14 +25,16 @@ type Config struct {
 }
 
 type Store struct {
-	mu       sync.Mutex
-	Dir      string
-	DeviceID string
-	Secret   string
-	Grant    string
-	Inbound  bool
-	Config   Config
-	Peers    []Peer
+	mu         sync.Mutex
+	Dir        string
+	DeviceID   string
+	Secret     string
+	Grant      string
+	Inbound    bool
+	Config     Config
+	Peers      []Peer
+	account    accountCredential
+	accountErr error
 }
 
 func Load() (*Store, error) {
@@ -112,6 +114,8 @@ func LoadFrom(dir string) (*Store, error) {
 	if err := os.MkdirAll(s.Config.Workspace, 0o700); err != nil {
 		return nil, err
 	}
+	// Keep local recovery available while Credentials fails closed on bad data.
+	s.accountErr = s.loadAccount()
 	return s, nil
 }
 
