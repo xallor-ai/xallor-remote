@@ -69,7 +69,8 @@ def launch_tree(index):
 try:
     suffix=".exe" if os.name=="nt" else ""
     tree,agent=cluster.root/("tree"+suffix),cluster.root/("agent"+suffix)
-    for path,source in ((tree,"process-tree"),(agent,"cursor-cli")):
+    reservations=cluster.root/("reservations"+suffix)
+    for path,source in ((tree,"process-tree"),(agent,"cursor-cli"),(reservations,"job-reservations")):
         subprocess.run([args.go,"build","-o",str(path),"./tests/fixtures/"+source],cwd=root,check=True,timeout=180)
     cluster.start()
     target=cluster.add("target")
@@ -77,6 +78,27 @@ try:
     cluster.cli("target","inbound","on")
     grant=(cluster.root/"target/grant").read_text(encoding="utf-8")
     cluster.cli("controller","peer","add","--id",target,"--grant",grant)
+    cluster.stop("target")
+    ready=cluster.root/"reservations-ready.json"
+    reserver=subprocess.Popen([str(reservations),str(cluster.root/"target"),str(ready)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    controllers.append(reserver)
+    def reserved():
+        if reserver.poll() is not None:
+            raise AssertionError(f"reservation fixture failed: {reserver.communicate()!r}")
+        try:
+            return json.loads(ready.read_text(encoding="utf-8"))
+        except (FileNotFoundError,PermissionError):
+            return None
+    records=wait(reserved,"reservation fixture never published readiness")
+    assert len(records)==4 and all(r["state"]=="reserved" for r in records),records
+    owned(reserver.pid).close()
+    reserver.communicate(timeout=10)
+    cluster.cli("target","ensure")
+    wait(lambda:cluster.cli("controller","doctor","--device",target,"--json",check=False).returncode==0,"Runtime did not reconnect after lost reservations",45)
+    recovered=cluster.cli("controller","exec","--device",target,"--","echo reservation-recovered")
+    assert "reservation-recovered" in recovered.stdout,recovered
+    assert jobs()=={},jobs()
+    results.append("killed_reservation_owner_recovers_capacity_without_replaying_work")
     workspace=cluster.root/"workspaces/target"
     def git(*values):
         return subprocess.run(["git","-C",str(workspace),*values],check=True,capture_output=True,encoding="utf-8",errors="replace").stdout.strip()

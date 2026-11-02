@@ -91,6 +91,9 @@ func TestOwner_should_failClosed_whenReleasePersistenceFails(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if err := l.prepareStart(o.ID()); err != nil {
+				t.Fatal(err)
+			}
 			write := l.write
 			l.write = func(path string, b []byte) error {
 				if committed {
@@ -125,7 +128,8 @@ func TestOwner_should_failClosed_whenReleasePersistenceFails(t *testing.T) {
 }
 
 // Closing the shared ledger invalidates an unused launch capability without
-// erasing its reservation; a subsequent Runtime must retain it as uncertain.
+// erasing its reservation in place; a new Runtime can recover this never-started
+// reservation, but the old Owner must remain invalid after the lock is released.
 func TestOwner_should_refuseStart_whenLedgerClosed(t *testing.T) {
 	dir := t.TempDir()
 	l := New(dir)
@@ -145,7 +149,7 @@ func TestOwner_should_refuseStart_whenLedgerClosed(t *testing.T) {
 	reopened := New(dir)
 	defer reopened.Close()
 	rows, err := reopened.Snapshot()
-	if err != nil || len(rows) != 1 || rows[0].State != "uncertain" {
+	if err != nil || len(rows) != 0 {
 		t.Fatal(rows, err)
 	}
 }

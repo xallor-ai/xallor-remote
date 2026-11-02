@@ -73,7 +73,11 @@ func TestLedger_should_keepOccupancy_whenRuntimeRestarts(t *testing.T) {
 	dir := t.TempDir()
 	l := New(dir)
 	for i := 0; i < Capacity; i++ {
-		if _, err := l.Reserve(testScope, "exec", strconv.Itoa(i)); err != nil {
+		o, err := l.Reserve(testScope, "exec", strconv.Itoa(i))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := l.prepareStart(o.ID()); err != nil {
 			t.Fatal(err)
 		}
 	}

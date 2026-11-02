@@ -21,9 +21,9 @@ SSOT：本机执行、策略、workspace、本地数据。CLI 见 [clients.md](c
 
 `internal/job` 管理前台 exec、后台 handoff（包括预检）的共享容量。启动进程前，在 profile 的 `jobs.json` 原子持久化占用，OS 文件锁 `jobs.lock` 保证同一 profile 只有一个账本写入者；写入失败不授予启动能力。所有进程统一通过该作业的 Owner 启动，真实监督回收完成并持久更新后才释放。容量和大小见 [protocol.md](protocol.md)。
 
-账本只含随机内部作业 ID、Relay 推导的稳定 scope、作业种类、内部关联键和 occupied/uncertain；不保存命令、提示、路径、凭据或输出。前台内部关联键为本次路由 ID，handoff 为会话 UUID。交接回执继续负责结果和请求去重，不能拿它的 completed/failed/unknown 推断资源占用。非零退出但回收确认可以释放；回收或释放持久化未确认时，前台返回错误，handoff 为 unknown/job_release_unconfirmed。
+账本只含随机内部作业 ID、Relay 推导的稳定 scope、作业种类、内部关联键和 reserved/occupied/uncertain；不保存命令、提示、路径、凭据或输出。预留为 reserved，也计入容量；Owner 首次启动任意进程（包括预检）之前必须成功持久写为 occupied，写入失败或结果不明则不启动。后续同作业进程继续占用，直到 Finish 确认回收并持久释放。前台内部关联键为本次路由 ID，handoff 为会话 UUID。交接回执继续负责结果和请求去重，不能拿它的 completed/failed/unknown 推断资源占用。非零退出但回收确认可以释放；回收或释放持久化未确认时，前台返回错误，handoff 为 unknown/job_release_unconfirmed。
 
-Runtime 重启把遗留占用标为 uncertain，保留额度，不重放任务；不会因为原父进程不在或回执已标 unknown 就清除占用。同一受信作用域的未确认交接会话不能换 request_id 再次启动。当前没有自动核实/解除不确定占用的恢复入口，不能手工删除 jobs.json 来宣称已确认清理；后续需真实 OS 作业恢复与授权恢复操作。正常停止会等待前台与交接收尾，再释放账本文件锁。
+Runtime 重启取得独占文件锁后，仅回收仍为 reserved 的记录：该状态证明原 Owner 尚未跨过任何进程的启动边界。其余遗留占用标为 uncertain，保留额度，不重放任务；不会因为原父进程不在或回执已标 unknown 就清除占用。恢复结果必须成功持久化后才允许新准入；失败保持账本不可用。已经跨过启动边界的同一受信作用域未确认交接会话不能换 request_id 再次启动。当前没有自动核实/解除 uncertain 占用的恢复入口，不能手工删除 jobs.json 来宣称已确认清理；后续需真实 OS 作业恢复与授权恢复操作。正常停止会等待前台与交接收尾，再释放账本文件锁。
 
 这是本机执行容量，不是会员权益、租户全局配额或 Relay 租约；此阶段尚无费用归属或计量。升级前需停止旧 Runtime 并确认其任务已结束，不能从旧回执猜测补造占用。OS 监督边界见 [os.md](os.md)。
 

@@ -26,8 +26,11 @@ func (o *Owner) ID() string { return o.id }
 func (o *Owner) Start(ctx context.Context, cmd *exec.Cmd) (*process.Child, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.closed || o.uncertain || !o.ledger.mayStart(o.id) {
+	if o.closed || o.uncertain {
 		return nil, ErrUnavailable
+	}
+	if err := o.ledger.prepareStart(o.id); err != nil {
+		return nil, err
 	}
 	child, err := process.Start(ctx, cmd)
 	if err != nil {

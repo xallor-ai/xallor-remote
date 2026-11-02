@@ -112,11 +112,16 @@ func (l *Ledger) initializeLocked() error {
 			l.err = ErrUnavailable
 			return l.err
 		}
+		// Start must persist occupied before it can launch any child. A reserved
+		// record therefore proves that this lost owner never started a process.
+		if r.State == "reserved" {
+			continue
+		}
 		// Prior process disappearance is not evidence that its descendants died.
 		r.State = "uncertain"
 		l.jobs[id] = r
 	}
-	if len(l.jobs) > 0 {
+	if len(disk.Jobs) > 0 {
 		return l.saveLocked(l.jobs)
 	}
 	return nil
@@ -126,7 +131,7 @@ func validRecord(id string, r Record) bool {
 	b, err := hex.DecodeString(id)
 	return err == nil && len(b) == 16 && hex.EncodeToString(b) == id && id == r.ID && r.Scope.Valid() &&
 		(r.Kind == "exec" || r.Kind == "handoff") && len(r.Key) > 0 && len(r.Key) <= 128 &&
-		(r.State == "occupied" || r.State == "uncertain")
+		(r.State == "reserved" || r.State == "occupied" || r.State == "uncertain")
 }
 
 func (l *Ledger) saveLocked(jobs map[string]Record) error {
@@ -148,12 +153,6 @@ func (l *Ledger) copyLocked() map[string]Record {
 		jobs[id] = r
 	}
 	return jobs
-}
-
-func (l *Ledger) mayStart(id string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return !l.closed && l.err == nil && l.jobs[id].State == "occupied"
 }
 
 // Reserve persists occupancy before any child can start. Active and uncertain
@@ -188,7 +187,7 @@ func (l *Ledger) Reserve(scope invocation.Scope, kind, key string) (*Owner, erro
 		return nil, ErrUnavailable
 	}
 	jobs := l.copyLocked()
-	jobs[id] = Record{ID: id, Scope: scope, Kind: kind, Key: key, State: "occupied"}
+	jobs[id] = Record{ID: id, Scope: scope, Kind: kind, Key: key, State: "reserved"}
 	if err := l.saveLocked(jobs); err != nil {
 		return nil, err
 	}
