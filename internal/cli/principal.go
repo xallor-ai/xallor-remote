@@ -8,13 +8,14 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/xallor-ai/xallor-remote/internal/account"
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/relay"
 )
 
 func cmdRelayPrincipal(data *string) *cobra.Command {
 	c := &cobra.Command{Use: "principal", Short: "管理中转上的调用身份（需本机数据目录权限）"}
-	run := func(cmd *cobra.Command, action func(context.Context, *relay.SQLStore) (any, error)) error {
+	run := func(cmd *cobra.Command, action func(context.Context, *account.Service) (any, error)) error {
 		if *data == "" {
 			return fmt.Errorf("需要 --data 指定中转数据目录")
 		}
@@ -25,7 +26,7 @@ func cmdRelayPrincipal(data *string) *cobra.Command {
 		defer s.Close()
 		ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 		defer cancel()
-		result, err := action(ctx, s)
+		result, err := action(ctx, account.New(s))
 		if err != nil {
 			return err
 		}
@@ -35,8 +36,8 @@ func cmdRelayPrincipal(data *string) *cobra.Command {
 	var ttl time.Duration
 	create := &cobra.Command{Use: "create", Short: "创建调用身份并签发凭据", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return run(cmd, func(ctx context.Context, s *relay.SQLStore) (any, error) {
-				return s.EnrollPrincipal(ctx, name, kind, tenant, ttl)
+			return run(cmd, func(ctx context.Context, service *account.Service) (any, error) {
+				return service.CreatePrincipal(ctx, account.CreatePrincipalRequest{Name: name, Kind: kind, TenantID: tenant, TTL: ttl})
 			})
 		}}
 	create.Flags().StringVar(&name, "name", "", "名称")
@@ -46,8 +47,8 @@ func cmdRelayPrincipal(data *string) *cobra.Command {
 	var credential string
 	revoke := &cobra.Command{Use: "revoke", Short: "撤销身份凭据", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return run(cmd, func(ctx context.Context, s *relay.SQLStore) (any, error) {
-				return map[string]bool{"revoked": true}, s.RevokeCredential(ctx, credential)
+			return run(cmd, func(ctx context.Context, service *account.Service) (any, error) {
+				return map[string]bool{"revoked": true}, service.RevokeCredential(ctx, credential)
 			})
 		}}
 	revoke.Flags().StringVar(&credential, "credential", "", "凭据 ID")
@@ -56,8 +57,8 @@ func cmdRelayPrincipal(data *string) *cobra.Command {
 	var active bool
 	member := &cobra.Command{Use: "membership", Short: "启用或停用成员身份", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return run(cmd, func(ctx context.Context, s *relay.SQLStore) (any, error) {
-				return map[string]bool{"active": active}, s.SetMembershipActive(ctx, membership, active)
+			return run(cmd, func(ctx context.Context, service *account.Service) (any, error) {
+				return map[string]bool{"active": active}, service.SetMembershipActive(ctx, membership, active)
 			})
 		}}
 	member.Flags().StringVar(&membership, "membership", "", "成员关系 ID")
@@ -67,15 +68,15 @@ func cmdRelayPrincipal(data *string) *cobra.Command {
 	var organizationName, issueMember string
 	var issueTTL time.Duration
 	organization := &cobra.Command{Use: "space", Short: "创建团队空间", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		return run(cmd, func(ctx context.Context, s *relay.SQLStore) (any, error) {
-			id, err := s.CreateOrganization(ctx, organizationName)
+		return run(cmd, func(ctx context.Context, service *account.Service) (any, error) {
+			id, err := service.CreateOrganization(ctx, organizationName)
 			return map[string]string{"tenant_id": id}, err
 		})
 	}}
 	organization.Flags().StringVar(&organizationName, "name", "", "空间名称")
 	issue := &cobra.Command{Use: "issue", Short: "为现有成员签发新凭据", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		return run(cmd, func(ctx context.Context, s *relay.SQLStore) (any, error) {
-			return s.IssueCredential(ctx, issueMember, issueTTL)
+		return run(cmd, func(ctx context.Context, service *account.Service) (any, error) {
+			return service.IssueCredential(ctx, account.IssueCredentialRequest{MembershipID: issueMember, TTL: issueTTL})
 		})
 	}}
 	issue.Flags().StringVar(&issueMember, "membership", "", "成员关系 ID")
