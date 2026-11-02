@@ -55,6 +55,10 @@ client 连接上出现 `revoke` / `grant_rotate` / `inbound_set` → 忽略或 n
 
 `invoke` 的 `op`：`exec` / `read` / `write` / `processes` / `info` / `cancel` / `handoff.submit` / `handoff.get`。
 
+Relay 在通过准入后重新构造发往 device 的非 cancel `invoke`，只保留 `exec_id,op,payload`，添加服务端推导的 `scope`，不转发客户端的身份或凭据字段。`scope` 为 `{authority,device_uid,ownership_id?,grant_id?,principal_id?,tenant_id?}`；所有 ID 为 32 位小写十六进制。`ownership_id` 与 `grant_id` 恰有一个：已认领设备使用归属实例并要求主体/租户；未认领使用共享授权实例，账号主体/租户可同时存在或同时缺省。authority 来自当前 Relay 的持久身份。客户端自报 scope 被覆盖，目标仅信任已认证 Relay 连接。
+
+scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据续签、成员代次或重新签发同主体分享不改变它；新的设备 UID、归属实例或未认领共享授权实例会改变它。每次新调用仍独立完成现有认证和操作授权。handoff 收到缺失或非法 scope 返回 `unauthorized`，不回退设备级查询。原连接的 cancel 仍按 inflight 归属路由，不需要客户端传 scope。
+
 `info` 的 JSON 结果包含 `build`：version、revision、built_at（可省略）、dirty、protocol（当前为 1）、os、arch；用于区分运行制品与代码版本。未知 revision 为 `unknown`，不猜测提交。Relay health 返回同形构建身份。
 
 - `exec`：`command`（字符串）、`cwd?`、`timeout_ms?`

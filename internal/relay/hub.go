@@ -163,8 +163,10 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 		return
 	}
 	h.inflight[msg.ExecID] = &inflight{deviceID: targetID, client: from, identity: binding.identity}
-	// Credentials belong only to the hello. Never forward caller-supplied secrets.
-	msg.AccountToken = ""
+	// Reconstruct the invoke: credentials, forged scopes and unrelated envelope
+	// fields never reach the device. Cancel is separately bound to its connection.
+	scope := h.invocationScope(binding)
+	msg = protocol.Message{Type: protocol.TypeInvoke, ExecID: msg.ExecID, Op: msg.Op, Payload: msg.Payload, Scope: &scope}
 	if err := dev.conn.Enqueue(msg); err != nil {
 		h.failDeviceLocked(targetID, protocol.DeviceOffline)
 		dev.conn.Close()

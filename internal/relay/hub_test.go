@@ -19,6 +19,8 @@ func newMemStore() *memStore {
 	return &memStore{rows: map[string]access.Device{}}
 }
 
+func (m *memStore) Authority() string { return strings.Repeat("a", 32) }
+
 func (m *memStore) LoadDevice(ctx context.Context, id string) (access.Device, error) {
 	if err := ctx.Err(); err != nil {
 		return access.Device{}, err

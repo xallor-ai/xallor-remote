@@ -11,7 +11,8 @@ import (
 )
 
 type SQLStore struct {
-	db *sql.DB
+	db        *sql.DB
+	authority string
 }
 
 func OpenSQLStore(dir string) (*SQLStore, error) {
@@ -39,8 +40,14 @@ func OpenSQLStore(dir string) (*SQLStore, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if err := db.QueryRow(`SELECT id FROM authority WHERE singleton=1`).Scan(&s.authority); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return s, nil
 }
+
+func (s *SQLStore) Authority() string { return s.authority }
 
 func (s *SQLStore) Close() error {
 	return s.db.Close()

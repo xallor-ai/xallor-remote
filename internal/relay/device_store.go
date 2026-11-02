@@ -16,6 +16,8 @@ var (
 // atomically creates an absent identity or authenticates the existing one.
 // Operational errors must never be returned as ErrDeviceNotFound.
 type DeviceStore interface {
+	// Authority is immutable, loaded when the store opens; it must not perform I/O.
+	Authority() string
 	RegisterDevice(ctx context.Context, id, secretHash string, inbound bool) (access.Device, error)
 	LoadDevice(ctx context.Context, id string) (access.Device, error)
 	UpdateDevice(ctx context.Context, id string, record access.Device) (access.Device, error)

@@ -8,15 +8,15 @@ import (
 	"time"
 )
 
-func (m *Manager) run(r Request, root string) {
+func (m *Manager) run(key string, r Request, root string) {
 	ctx, cancel := context.WithTimeout(m.ctx, time.Duration(r.TimeoutSeconds)*time.Second)
 	defer cancel()
 	cfg, version, workspace, err := m.preflight(ctx, r, root)
 	if err != nil {
-		_ = m.update(r.ID, "failed", err.Error(), "", "", false)
+		_ = m.update(key, "failed", err.Error(), "", "", false)
 		return
 	}
-	if m.update(r.ID, "accepted", "", version, "", false) != nil {
+	if m.update(key, "accepted", "", version, "", false) != nil {
 		return
 	}
 	args := append([]string{}, cfg.Prefix...)
@@ -36,12 +36,12 @@ func (m *Manager) run(r Request, root string) {
 	cmd.Stderr = io.Discard
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		_ = m.update(r.ID, "failed", "cli_start_failed", version, "", false)
+		_ = m.update(key, "failed", "cli_start_failed", version, "", false)
 		return
 	}
 	kill, wait, err := m.start(ctx, cmd)
 	if err != nil {
-		_ = m.update(r.ID, "failed", "cli_start_failed", version, "", false)
+		_ = m.update(key, "failed", "cli_start_failed", version, "", false)
 		return
 	}
 	// Unblock reads even if a descendant escapes the supervised process group.
@@ -53,7 +53,7 @@ func (m *Manager) run(r Request, root string) {
 		case <-readDone:
 		}
 	}()
-	result, parseErr := readCursor(stdout, r.Session, workspace, func() error { return m.update(r.ID, "running", "", version, "", false) })
+	result, parseErr := readCursor(stdout, r.Session, workspace, func() error { return m.update(key, "running", "", version, "", false) })
 	close(readDone)
 	if parseErr != nil {
 		kill()
@@ -69,5 +69,5 @@ func (m *Manager) run(r Request, root string) {
 	} else if waitErr != nil {
 		state, code = "unknown", "cli_exit_nonzero"
 	}
-	_ = m.update(r.ID, state, code, version, result.text, result.truncated)
+	_ = m.update(key, state, code, version, result.text, result.truncated)
 }
