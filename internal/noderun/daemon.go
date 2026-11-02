@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"os/exec"
 	stdruntime "runtime"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/xallor-ai/xallor-remote/internal/activity"
 	"github.com/xallor-ai/xallor-remote/internal/buildinfo"
+	"github.com/xallor-ai/xallor-remote/internal/handoff"
 	"github.com/xallor-ai/xallor-remote/internal/identity"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
@@ -66,6 +68,7 @@ type Daemon struct {
 	remote    map[string]*remoteExec
 	approvals *approvalHub
 	activity  *activity.Log
+	handoffs  *handoff.Manager
 }
 
 type remoteExec struct {
@@ -77,7 +80,7 @@ type remoteExec struct {
 
 func New(store *identity.Store, log *slog.Logger) *Daemon {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Daemon{
+	d := &Daemon{
 		log: log, store: store, ctx: ctx, cancel: cancel,
 		clients:   map[string]*clientLink{},
 		ensuring:  map[string]chan struct{}{},
@@ -86,11 +89,14 @@ func New(store *identity.Store, log *slog.Logger) *Daemon {
 		approvals: newApprovalHub(),
 		activity:  activity.Open(store.Dir),
 	}
+	d.handoffs = handoff.New(ctx, store.Dir, handoff.Hooks{Prepare: func(cmd *exec.Cmd) { cmd.SysProcAttr = procAttr() }, Watch: startJob})
+	return d
 }
 
 func (d *Daemon) Stop() { d.cancel() }
 
 func (d *Daemon) Run() error {
+	defer d.handoffs.Close()
 	_ = buildinfo.Running()
 	ln, err := ipc.Listen()
 	if err != nil {
@@ -214,6 +220,9 @@ func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
 			return
 		}
 		d.recordActivity(activity.Entry{ExecID: msg.ExecID, Direction: "inbound", DeviceID: d.store.DeviceID, Op: msg.Op, Stage: "requested"})
+		if d.handleHandoffInvoke(link, msg) {
+			return
+		}
 		switch msg.Op {
 		case protocol.OpExec:
 			d.startLocalExec(link, msg)

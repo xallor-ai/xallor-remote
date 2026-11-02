@@ -37,7 +37,7 @@ jobs:
 
       - name: Race detection
         if: runner.os == 'Linux'
-        run: go test -race ./internal/relay ./internal/noderun ./internal/release
+        run: go test -race ./internal/relay ./internal/noderun ./internal/release ./internal/handoff
 
       - name: Build
         shell: bash
@@ -206,9 +206,26 @@ jobs:
             dist/release/**/manifest.json
 
   # Single required status for branch protection.
+  handoff:
+    name: Cursor handoff contract (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build -o dist/handoff-runtime.exe ./cmd/xallor-remote
+      - run: python -m unittest discover -s tests -p test_cursor_session.py
+      - run: python tests/handoff_e2e.py --binary dist/handoff-runtime.exe
+
   pr-check:
     name: pr-check
-    needs: [go, mcp, gui, gui-e2e, release-lifecycle, integration]
+    needs: [go, mcp, gui, gui-e2e, release-lifecycle, integration, handoff]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -223,3 +240,4 @@ jobs:
           test "${{ needs.gui-e2e.result }}" = "success"
           test "${{ needs.release-lifecycle.result }}" = "success"
           test "${{ needs.integration.result }}" = "success"
+          test "${{ needs.handoff.result }}" = "success"

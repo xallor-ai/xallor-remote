@@ -88,6 +88,7 @@ CLI `doctor [--device ID] [--json]` 不调用 ensure，也不创建数据目录�
 | `exec` | invoke op=exec |
 | `exec.cancel` | 仅取消 **这条 IPC 连接** 发起的 exec（Runtime 再映射到自己的 client 连接） |
 | `read` / `write` / `processes` / `info` | 对应 op |
+| `handoff.submit` / `handoff.get` | 对应 op，`params.device_id` 必填，载荷见 [protocol.md](protocol.md#cursor-交接载荷与回执)。非流式 `result.content` 为 JSON 回执/错误，外层成功仅表示提交或查询已返回 |
 
 `exec` / `read` 等若本机配了多 peer，`params.device_id` 必填；只有一个 peer 时可省。
 
