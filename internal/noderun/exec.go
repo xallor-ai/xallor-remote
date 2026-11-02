@@ -11,7 +11,7 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
-func (d *Daemon) runLocalExec(link *wsConn, msg protocol.Message) {
+func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Message) {
 	p, err := protocol.ParseExecPayload(msg.Payload)
 	if err != nil {
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.AgentError))
@@ -31,7 +31,7 @@ func (d *Daemon) runLocalExec(link *wsConn, msg protocol.Message) {
 		if len(preview) > 200 {
 			preview = preview[:200] + "…"
 		}
-		allow, code := d.approvals.ask(msg.ExecID, preview)
+		allow, code := d.approvals.ask(ctx, msg.ExecID, preview)
 		if !allow {
 			if code == "" {
 				code = protocol.PolicyDeny
@@ -49,29 +49,22 @@ func (d *Daemon) runLocalExec(link *wsConn, msg protocol.Message) {
 		}
 		cwd = resolved
 	}
-	ctx := d.ctx
 	if p.TimeoutMS > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(p.TimeoutMS)*time.Millisecond)
 		defer cancel()
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	d.mu.Lock()
-	d.local[msg.ExecID] = cancel
-	d.mu.Unlock()
-	defer func() {
-		cancel()
-		d.mu.Lock()
-		delete(d.local, msg.ExecID)
-		d.mu.Unlock()
-	}()
+	if ctx.Err() != nil {
+		_ = link.send(protocol.Nack(msg.ExecID, protocol.Cancelled))
+		return
+	}
 
 	cmd := buildCmd(ctx, p.Command, cwd)
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	start := time.Now()
 	if err := cmd.Start(); err != nil {
-		_ = link.send(protocol.Nack(msg.ExecID, protocol.AgentError))
+		_ = link.send(protocol.Nack(msg.ExecID, startFailureCode(ctx)))
 		return
 	}
 	kill, closeJob := startJob(cmd.Process)
@@ -143,6 +136,17 @@ func (d *Daemon) runLocalExec(link *wsConn, msg protocol.Message) {
 		Type: protocol.TypeExit, ExecID: msg.ExecID, ExitCode: &code,
 		DurationMS: &dur, Truncated: protocol.Bool(trunc), Status: status,
 	})
+}
+
+// Cancellation can win between the pre-start check and os/exec.Start.
+func startFailureCode(ctx context.Context) string {
+	if ctx.Err() == context.Canceled {
+		return protocol.Cancelled
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		return protocol.ExecTimeout
+	}
+	return protocol.AgentError
 }
 
 func buildCmd(ctx context.Context, command, cwd string) *exec.Cmd {

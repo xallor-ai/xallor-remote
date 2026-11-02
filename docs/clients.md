@@ -38,6 +38,7 @@ xallor-remote inbound on | off
 xallor-remote revoke
 xallor-remote peer add --id … --grant …
 xallor-remote peer list
+xallor-remote peer rename --id … --name …
 xallor-remote exec --device … -- <command>
 xallor-remote approve
 xallor-remote mcp print-config
@@ -58,7 +59,7 @@ xallor-remote reset --yes
 
 ## 5. GUI（v0.1）
 
-**Tauri 2**，调本机 Runtime。5 分钟路径在「连接」一屏完成：看见本机 ID、签发/分享授权码、开关入站、添加对方。会话里对流式执行。左栏：连接 / 会话 / 审批 / 审计 / 设置。Relay 不对用户展示；workspace 在设置里改。不做键鼠。不做 Electron。
+**Tauri 2**，调本机 Runtime。「连接」完成查看本机 ID、主动显示/复制授权码、开关入站、添加对方、保存设备备注和逐设备诊断。左栏：连接 / 任务 / 审批 / 审计 / 设置。任务保留流式输出和明确终态，可跨页取消；审批显示真实待确认操作；审计显示本机记录。授权码默认隐藏，显示 30 秒后或窗口失焦时自动隐藏。workspace 在设置里改。不做键鼠。不做 Electron。
 
 工程：`apps/gui`。本机需 Rust + MSVC；开发 `npm run tauri:dev`，发行物 `xallor-remote-gui.exe`（先有本机 Runtime）。
 

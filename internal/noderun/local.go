@@ -9,6 +9,20 @@ import (
 
 func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
 	switch req.Method {
+	case "peer.rename":
+		var p struct {
+			DeviceID string  `json:"device_id"`
+			Name     *string `json:"name"`
+		}
+		if json.Unmarshal(req.Params, &p) != nil || p.DeviceID == "" || p.Name == nil {
+			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "需要设备 ID 与备注。"))
+			return true
+		}
+		if err := d.store.RenamePeer(p.DeviceID, *p.Name); err != nil {
+			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, err.Error()))
+			return true
+		}
+		_ = c.WriteFrame(ipc.OK(req.ID, map[string]bool{"ok": true}))
 	case "grant.rotate":
 		g, err := d.store.RotateGrant()
 		if err != nil {

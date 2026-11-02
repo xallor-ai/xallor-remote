@@ -1,133 +1,82 @@
-type Status = {
-  device_id?: string;
-  workspace?: string;
-  relay?: string;
-  inbound?: boolean;
-  has_grant?: boolean;
-  online?: boolean;
-  version?: string;
+export type Frame = {
+  id: string; event?: string; data?: string; exec_id?: string;
+  ok?: boolean; result?: unknown; code?: string; message?: string;
 };
-
-type Config = {
-  relay_url?: string;
-  workspace?: string;
-};
-
-function inTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
-async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<T>(cmd, args);
-}
-
-async function http<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+type Pending = { resolve: (f: Frame) => void; reject: (e: Error) => void; event?: (f: Frame) => void };
+const native = "__TAURI_INTERNALS__" in window;
+async function transport<T>(action: string, args: Record<string, unknown> = {}): Promise<T> {
+  if (native) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<T>(`session_${action}`, args);
+  }
+  const res = await fetch(`/__ipc/${action}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(args),
+    signal: AbortSignal.timeout(30_000),
   });
-  const j = (await res.json()) as { ok?: boolean; result?: T; message?: string };
-  if (!res.ok || j.ok === false) throw new Error(j.message || "失败。");
-  return j.result as T;
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.message || "连接失败。");
+  return body.result as T;
 }
 
-export async function status(): Promise<Status> {
-  if (inTauri()) return invoke<Status>("status");
-  return http<Status>("/__ipc", { method: "status" });
-}
-
-export async function grantShow(): Promise<string> {
-  if (inTauri()) return invoke<string>("grant_show");
-  const r = await http<{ grant?: string }>("/__ipc", { method: "grant.show" });
-  return r.grant || "";
-}
-
-export async function grantIssue(): Promise<string> {
-  if (inTauri()) return invoke<string>("grant_issue");
-  const r = await http<{ grant?: string }>("/__ipc", { method: "grant.issue" });
-  return r.grant || "";
-}
-
-export async function grantRotate(): Promise<string> {
-  if (inTauri()) return invoke<string>("grant_rotate");
-  const r = await http<{ grant?: string }>("/__ipc", { method: "grant.rotate" });
-  return r.grant || "";
-}
-
-export async function inboundSet(enabled: boolean): Promise<void> {
-  if (inTauri()) {
-    await invoke("inbound_set", { enabled });
-    return;
+class Connection {
+  private pending = new Map<string, Pending>();
+  private opening?: Promise<string>;
+  private session?: string;
+  private listeners = new Set<() => void>();
+  error = "";
+  onChange(fn: () => void) { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; }
+  private notify() { this.listeners.forEach(fn => fn()); }
+  private async open(): Promise<string> {
+    if (this.session) return this.session;
+    if (this.opening) return this.opening;
+    this.opening = transport<string>("open").then(id => {
+      this.session = id; this.error = ""; void this.poll(id); this.notify(); return id;
+    }).catch(e => { this.error = e instanceof Error ? e.message : "连接失败。"; this.notify(); throw e; }).finally(() => { this.opening = undefined; });
+    return this.opening;
   }
-  await http("/__ipc", { method: "inbound.set", params: { enabled } });
-}
-
-export async function peerList(): Promise<string[]> {
-  if (inTauri()) return invoke<string[]>("peer_list");
-  const r = await http<{ peers?: string[] }>("/__ipc", { method: "peer.list" });
-  return r.peers || [];
-}
-
-export async function peerAdd(deviceId: string, grant: string): Promise<void> {
-  if (inTauri()) {
-    await invoke("peer_add", { device_id: deviceId, grant });
-    return;
+  private fail(id: string, error: Error) {
+    if (this.session !== id) return;
+    this.session = undefined; this.error = error.message;
+    for (const p of this.pending.values()) p.reject(error);
+    this.pending.clear(); this.notify();
+    void transport("close", { session: id }).catch(() => {});
   }
-  await http("/__ipc", { method: "peer.add", params: { device_id: deviceId, grant } });
-}
-
-export async function peerRemove(deviceId: string): Promise<void> {
-  if (inTauri()) {
-    await invoke("peer_remove", { device_id: deviceId });
-    return;
-  }
-  await http("/__ipc", { method: "peer.remove", params: { device_id: deviceId } });
-}
-
-export async function configGet(): Promise<Config> {
-  if (inTauri()) return invoke<Config>("config_get");
-  return http<Config>("/__ipc", { method: "config.get" });
-}
-
-export async function configSetWorkspace(workspace: string): Promise<void> {
-  if (inTauri()) {
-    await invoke("config_set_workspace", { workspace });
-    return;
-  }
-  await http("/__ipc", { method: "config.set", params: { workspace } });
-}
-
-export async function execCommand(
-  command: string,
-  deviceId: string,
-  onChunk: (s: string) => void,
-): Promise<void> {
-  if (inTauri()) {
-    const { listen } = await import("@tauri-apps/api/event");
-    const un = await listen<string>("exec-out", (e) => onChunk(e.payload));
+  private async poll(id: string) {
     try {
-      await invoke("exec_cmd", { command, device_id: deviceId });
-    } finally {
-      un();
-    }
-    return;
+      while (this.session === id) {
+        const { frames, error } = await transport<{ frames: Frame[]; error?: string }>("poll", { session: id });
+        for (const frame of frames) {
+          if (frame.event === "approval") { this.notify(); continue; }
+          const p = this.pending.get(frame.id);
+          if (!p) continue;
+          if (frame.event) p.event?.(frame);
+          else { this.pending.delete(frame.id); p.resolve(frame); }
+        }
+        if (error) throw new Error(error);
+        await new Promise(resolve => setTimeout(resolve, 80));
+      }
+    } catch (e) { this.fail(id, e instanceof Error ? e : new Error("连接已断开。")); }
   }
-  const res = await fetch("/__ipc/exec", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ command, device_id: deviceId }),
-  });
-  if (!res.ok || !res.body) {
-    const j = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(j.message || "失败。");
+  async request(method: string, params: Record<string, unknown> = {}, event?: (f: Frame) => void): Promise<Frame> {
+    // Failed sessions require explicit reconnect. Never replay a request.
+    if (this.error) throw new Error(this.error);
+    const session = await this.open(), id = crypto.randomUUID();
+    return new Promise<Frame>((resolve, reject) => {
+      const timer = setTimeout(() => this.fail(session, new Error("等待结果超时；任务结果待确认。")), method === "exec" ? 150_000 : 30_000);
+      this.pending.set(id, { resolve: frame => { clearTimeout(timer); resolve(frame); }, reject: e => { clearTimeout(timer); reject(e); }, event });
+      void transport("send", { session, frame: { id, method, params } }).catch(e => this.fail(session, e));
+    });
   }
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    onChunk(dec.decode(value));
+  async rpc<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    const frame = await this.request(method, params);
+    if (frame.ok !== true) throw new Error(frame.message || frame.code || "操作失败。");
+    return frame.result as T;
   }
+  async reconnect() { this.error = ""; await this.rpc("approval.subscribe"); this.notify(); }
+  close() { if (this.session) this.fail(this.session, new Error("连接已关闭。")); }
 }
+export const connection = new Connection();
+export const rpc = connection.rpc.bind(connection);
+window.addEventListener("pagehide", () => connection.close());
+export type Peer = { device_id: string; name?: string };
+export type Status = { device_id: string; workspace: string; online: boolean; inbound: boolean; has_grant: boolean; version: string; peers: Peer[] };

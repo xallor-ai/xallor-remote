@@ -1,6 +1,7 @@
 package noderun
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ func (s *testSink) WriteFrame(f ipc.Frame) error {
 func TestShouldPolicyDenyWhenNoSubscriber(t *testing.T) {
 	h := newApprovalHub()
 	start := time.Now()
-	allow, code := h.ask("ex_1", "shutdown now")
+	allow, code := h.ask(context.Background(), "ex_1", "shutdown now")
 	if allow || code != protocol.PolicyDeny {
 		t.Fatalf("allow=%v code=%s", allow, code)
 	}
@@ -43,7 +44,7 @@ func TestShouldAllowWhenSubscriberRespondsTrue(t *testing.T) {
 	var allow bool
 	var code string
 	go func() {
-		allow, code = h.ask("ex_2", "Stop-Computer")
+		allow, code = h.ask(context.Background(), "ex_2", "Stop-Computer")
 		close(done)
 	}()
 	fr := <-s.ch

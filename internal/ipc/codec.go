@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 )
 
 type Request struct {
@@ -27,9 +28,10 @@ type Frame struct {
 }
 
 type Conn struct {
-	c  net.Conn
-	mu sync.Mutex
-	rd *bufio.Reader
+	c      net.Conn
+	mu     sync.Mutex
+	rd     *bufio.Reader
+	closed atomic.Bool
 }
 
 func NewConn(c net.Conn) *Conn {
@@ -71,7 +73,12 @@ func (c *Conn) WriteFrame(f Frame) error {
 	return err
 }
 
-func (c *Conn) Close() error { return c.c.Close() }
+func (c *Conn) Close() error {
+	c.closed.Store(true)
+	return c.c.Close()
+}
+
+func (c *Conn) Closed() bool { return c.closed.Load() }
 
 func OK(id string, result any) Frame {
 	raw, _ := json.Marshal(result)

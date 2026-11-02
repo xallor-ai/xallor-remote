@@ -9,21 +9,21 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
+	"github.com/xallor-ai/xallor-remote/internal/activity"
 	"github.com/xallor-ai/xallor-remote/internal/identity"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 func (d *Daemon) serveIPC(c *ipc.Conn) {
-	defer c.Close()
+	defer func() { _ = c.Close(); d.cancelAllForConn(c) }()
 	defer d.approvals.unsubscribe(c)
-	defer d.cancelAllForConn(c)
 	for {
 		req, err := c.ReadRequest()
 		if err != nil {
 			return
 		}
-		if d.handleObservation(c, req) || d.handleLocal(c, req) {
+		if d.handleObservation(c, req) || d.handleHeadState(c, req) || d.handleLocal(c, req) {
 			continue
 		}
 		switch req.Method {
@@ -58,14 +58,15 @@ func (d *Daemon) serveIPC(c *ipc.Conn) {
 			_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
 		case "approval.respond":
 			var p struct {
-				Allow *bool `json:"allow"`
+				Allow      *bool  `json:"allow"`
+				ApprovalID string `json:"approval_id"`
 			}
 			_ = json.Unmarshal(req.Params, &p)
-			if p.Allow == nil {
-				_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "需要 allow"))
+			if p.Allow == nil || p.ApprovalID == "" {
+				_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "需要 approval_id 与 allow"))
 				continue
 			}
-			if !d.approvals.respond(req.ID, *p.Allow) {
+			if !d.approvals.respond(p.ApprovalID, *p.Allow) {
 				_ = c.WriteFrame(ipc.Fail(req.ID, protocol.UnknownExec, ipc.Human(protocol.UnknownExec)))
 				continue
 			}
@@ -144,23 +145,36 @@ func (d *Daemon) ipcOp(c *ipc.Conn, req ipc.Request, op string) {
 }
 
 func (d *Daemon) forwardInvoke(c *ipc.Conn, reqID, deviceID string, link *wsConn, cl *clientLink, op, execID string, payload json.RawMessage, stream bool) {
-	d.trackRemote(execID, link, c)
+	r := d.trackRemote(execID, link, c)
+	if r == nil {
+		return
+	}
+	d.recordActivity(activity.Entry{ExecID: execID, Direction: "outbound", DeviceID: deviceID, Op: op, Stage: "requested"})
 	defer d.untrackRemote(execID)
 	w := cl.subscribe(execID)
 	defer cl.unsubscribe(execID)
-	if err := link.send(protocol.Message{Type: protocol.TypeInvoke, ExecID: execID, Op: op, Payload: payload}); err != nil {
+	err := link.send(protocol.Message{Type: protocol.TypeInvoke, ExecID: execID, Op: op, Payload: payload})
+	r.sent = err == nil
+	r.mu.Unlock()
+	if err != nil {
 		if err == errMsgTooLarge {
+			d.recordTerminal("outbound", deviceID, protocol.Nack(execID, protocol.TooLarge))
 			_ = c.WriteFrame(ipc.Fail(reqID, protocol.TooLarge, ipc.Human(protocol.TooLarge)))
 			return
 		}
+		d.recordTerminal("outbound", deviceID, protocol.Err(execID, protocol.RelayError))
 		d.dropClient(deviceID, cl)
 		_ = c.WriteFrame(ipc.Fail(reqID, protocol.RelayError, ipc.Human(protocol.RelayError)))
 		return
 	}
 	if stream {
-		_ = c.WriteFrame(ipc.Frame{ID: reqID, Event: "stdout", ExecID: execID})
+		if c.WriteFrame(ipc.Frame{ID: reqID, Event: "stdout", ExecID: execID}) != nil {
+			d.recordTerminal("outbound", deviceID, protocol.Err(execID, protocol.RelayError))
+			cancelRemote(r, execID)
+			return
+		}
 	}
-	d.consumeClient(c, reqID, execID, link, w, stream)
+	d.consumeClient(c, reqID, execID, deviceID, link, w, stream)
 }
 
 func (d *Daemon) runClientReader(deviceID string, cl *clientLink) {
@@ -256,14 +270,16 @@ func (d *Daemon) dialClient(peer identity.Peer) (*wsConn, *clientLink, error) {
 	return link, cl, nil
 }
 
-func (d *Daemon) consumeClient(ipcConn *ipc.Conn, reqID, execID string, link *wsConn, w *execWaiter, stream bool) {
+func (d *Daemon) consumeClient(ipcConn *ipc.Conn, reqID, execID, deviceID string, link *wsConn, w *execWaiter, stream bool) {
 	var collected string
 	for {
 		msg, ok := w.next()
 		if !ok {
+			d.recordTerminal("outbound", deviceID, protocol.Err(execID, protocol.RelayError))
 			_ = ipcConn.WriteFrame(ipc.Fail(reqID, protocol.RelayError, ipc.Human(protocol.RelayError)))
 			return
 		}
+		d.recordTerminal("outbound", deviceID, msg)
 		switch msg.Type {
 		case protocol.TypeStdout:
 			if stream {
@@ -282,10 +298,6 @@ func (d *Daemon) consumeClient(ipcConn *ipc.Conn, reqID, execID string, link *ws
 				}
 			}
 		case protocol.TypeExit:
-			code := 0
-			if msg.ExitCode != nil {
-				code = *msg.ExitCode
-			}
 			dur := int64(0)
 			if msg.DurationMS != nil {
 				dur = *msg.DurationMS
@@ -295,7 +307,7 @@ func (d *Daemon) consumeClient(ipcConn *ipc.Conn, reqID, execID string, link *ws
 				trunc = *msg.Truncated
 			}
 			res := map[string]any{
-				"exit_code": code, "duration_ms": dur, "truncated": trunc,
+				"exit_code": msg.ExitCode, "duration_ms": dur, "truncated": trunc,
 				"status": msg.Status, "exec_id": execID,
 			}
 			if !stream {
@@ -307,49 +319,5 @@ func (d *Daemon) consumeClient(ipcConn *ipc.Conn, reqID, execID string, link *ws
 			_ = ipcConn.WriteFrame(ipc.Fail(reqID, msg.Code, ipc.Human(msg.Code)))
 			return
 		}
-	}
-}
-
-func (d *Daemon) trackRemote(execID string, link *wsConn, c *ipc.Conn) {
-	d.mu.Lock()
-	d.remote[execID] = &remoteExec{link: link, ipc: c}
-	d.mu.Unlock()
-}
-
-func (d *Daemon) untrackRemote(execID string) {
-	d.mu.Lock()
-	delete(d.remote, execID)
-	d.mu.Unlock()
-}
-
-func (d *Daemon) ipcCancel(c *ipc.Conn, req ipc.Request) {
-	var p struct {
-		ExecID string `json:"exec_id"`
-	}
-	_ = json.Unmarshal(req.Params, &p)
-	d.mu.Lock()
-	r := d.remote[p.ExecID]
-	d.mu.Unlock()
-	if r == nil || r.ipc != c {
-		_ = c.WriteFrame(ipc.Fail(req.ID, protocol.UnknownExec, ipc.Human(protocol.UnknownExec)))
-		return
-	}
-	_ = r.link.send(protocol.Message{Type: protocol.TypeInvoke, ExecID: p.ExecID, Op: protocol.OpCancel})
-	_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
-}
-
-func (d *Daemon) cancelAllForConn(c *ipc.Conn) {
-	d.mu.Lock()
-	var pending []*remoteExec
-	var ids []string
-	for id, r := range d.remote {
-		if r.ipc == c {
-			pending = append(pending, r)
-			ids = append(ids, id)
-		}
-	}
-	d.mu.Unlock()
-	for i, r := range pending {
-		_ = r.link.send(protocol.Message{Type: protocol.TypeInvoke, ExecID: ids[i], Op: protocol.OpCancel})
 	}
 }
