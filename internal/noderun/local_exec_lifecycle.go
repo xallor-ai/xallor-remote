@@ -10,9 +10,16 @@ import (
 func (d *Daemon) startLocalExec(link *wsConn, msg protocol.Message) {
 	ctx, cancel := context.WithCancel(d.ctx)
 	d.mu.Lock()
+	if d.ctx.Err() != nil {
+		d.mu.Unlock()
+		cancel()
+		return
+	}
 	d.local[msg.ExecID] = cancel
+	d.localWG.Add(1)
 	d.mu.Unlock()
 	go func() {
+		defer d.localWG.Done()
 		defer func() {
 			cancel()
 			d.mu.Lock()
@@ -21,4 +28,13 @@ func (d *Daemon) startLocalExec(link *wsConn, msg protocol.Message) {
 		}()
 		d.runLocalExec(ctx, link, msg)
 	}()
+}
+
+// Serialize shutdown with admission, then wait for real process cleanup. The
+// Runtime process must not exit while foreground job owners are still running.
+func (d *Daemon) waitLocalExecs() {
+	d.mu.Lock()
+	d.cancel()
+	d.mu.Unlock()
+	d.localWG.Wait()
 }

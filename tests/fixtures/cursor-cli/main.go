@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -13,6 +14,13 @@ import (
 
 func main() {
 	args := os.Args[1:]
+	if len(args) == 2 && args[0] == "--descendant" {
+		if os.WriteFile(args[1], nil, 0600) != nil {
+			os.Exit(2)
+		}
+		time.Sleep(60 * time.Second)
+		return
+	}
 	if len(args) == 1 && args[0] == "--help" {
 		fmt.Println("--resume --workspace --mode --print --output-format stream-json")
 		return
@@ -62,6 +70,31 @@ func main() {
 		session = "00000000-0000-0000-0000-000000000000"
 	}
 	emit(map[string]string{"type": "system", "subtype": "init", "session_id": session, "cwd": workspace})
+	if strings.Contains(prompt, "TEST_DESCENDANT") {
+		ready := filepath.Join(os.Getenv("XALLOR_REMOTE_DATA_DIR"), "fixture-descendant-ready")
+		child := exec.Command(os.Args[0], "--descendant", ready)
+		child.Stdout, child.Stderr = os.Stdout, os.Stderr
+		if err := child.Start(); err != nil {
+			panic(err)
+		}
+		pidFile := filepath.Join(os.Getenv("XALLOR_REMOTE_DATA_DIR"), "fixture-descendant-pid")
+		if err := os.WriteFile(pidFile+".tmp", []byte(strconv.Itoa(child.Process.Pid)), 0600); err != nil {
+			panic(err)
+		}
+		if err := os.Rename(pidFile+".tmp", pidFile); err != nil {
+			panic(err)
+		}
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			if _, err := os.Stat(ready); err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				panic("descendant did not start")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
 	if strings.Contains(prompt, "TEST_WAIT") {
 		time.Sleep(60 * time.Second)
 	}

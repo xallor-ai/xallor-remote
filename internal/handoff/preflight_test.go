@@ -36,14 +36,11 @@ func TestPreflight_should_allowColdCLI_and_honorCallerCancellation(t *testing.T)
 	r.Revision = git("rev-parse", "HEAD")
 	for _, interrupt := range []bool{false, true} {
 		ctx, cancel := context.WithCancel(context.Background())
-		m := New(context.Background(), t.TempDir(), Hooks{Prepare: func(cmd *exec.Cmd) {
-			if cmd.Path == os.Args[0] {
-				cmd.Env = append(os.Environ(), "XR_PREFLIGHT_COLD_HELPER=1")
-				if interrupt {
-					cancel()
-				}
-			}
-		}})
+		t.Setenv("XR_PREFLIGHT_COLD_HELPER", "1")
+		m := New(context.Background(), t.TempDir())
+		if interrupt {
+			cancel()
+		}
 		if err := Configure(m.dir, Config{Executable: os.Args[0], Prefix: []string{"-test.run=^TestPreflight_should_allowColdCLI_and_honorCallerCancellation$", "--"}}); err != nil {
 			t.Fatal(err)
 		}
@@ -71,7 +68,7 @@ func TestPreflight_should_preserveInterruptionCause(t *testing.T) {
 			code = "preflight_timeout_git_root"
 		}
 		cancel()
-		m := New(context.Background(), t.TempDir(), Hooks{})
+		m := New(context.Background(), t.TempDir())
 		workspace := t.TempDir()
 		_, _, _, err := m.preflight(ctx, testRequest(workspace), workspace)
 		m.Close()

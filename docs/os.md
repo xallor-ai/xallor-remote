@@ -43,6 +43,16 @@ Workspace 默认：`%USERPROFILE%\XallorRemote\workspace` / `~/XallorRemote/work
 
 Windows：当前用户可见进程，pid + name。Linux：`/proc` 或 `ps`，pid + comm/cmdline 截断。不要求系统服务全家桶。
 
+### 执行所有权
+
+`internal/process` 统一拥有前台命令、交接 CLI 及其预检进程。父进程正常退出也要回收受监督子进程；取消、超时和 Runtime 正常停止同样等待回收。不能把父进程退出码 0 当作全部进程已结束。需要持续后台执行的任务应有明确的独立生命周期，不能依赖前台命令留下孤儿进程。
+
+Windows 先创建带 `KILL_ON_JOB_CLOSE` 的 Job，暂停启动根进程，纳入 Job 后才恢复运行；监督建立失败则终止并回收根进程，不降级为 taskkill 或只杀父进程。终止后查询 Job 的活动进程数，确认清空。Runtime 崩溃会关闭其已持有的 Job；创建暂停进程到加入 Job 之间的崩溃恢复尚未实现，不能承诺任意时点崩溃均无遗留。
+
+Linux 创建独立进程组，先用 `waitid(WNOWAIT)` 观察父进程退出但不回收，保留组 ID；终止进程组并检查 `/proc` 中不再有该组的活进程，再回收父进程。僵尸不再执行，由其 OS 父进程回收。`/proc` 无法读取或组未在期限内清空均视为回收未确认。此机制不能约束主动 `setsid/setpgid` 脱组、通过外部服务创建进程或 Runtime 崩溃后的任意进程；严格隔离需 cgroup/独立执行环境。macOS 执行监督尚未实现。
+
+前台回收未确认返回执行错误；后台交接标记 `unknown`，不报告完成。该进程组/Job 边界不是 OS 沙箱，尚不构成持久作业租约或会员额度释放凭证。OS 文档：[Windows Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)。
+
 ---
 
 ## 6. 默认 denylist（策略在 Runtime）

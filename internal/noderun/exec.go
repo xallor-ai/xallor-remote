@@ -2,12 +2,14 @@ package noderun
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"sync"
 	"time"
 
+	"github.com/xallor-ai/xallor-remote/internal/process"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -59,28 +61,30 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		return
 	}
 
-	cmd := buildCmd(ctx, p.Command, cwd)
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
+	cmd := buildCmd(p.Command, cwd)
+	stdout, stdoutWrite, err := os.Pipe()
+	if err != nil {
+		_ = link.send(protocol.Nack(msg.ExecID, protocol.AgentError))
+		return
+	}
+	defer stdout.Close()
+	defer stdoutWrite.Close()
+	stderr, stderrWrite, err := os.Pipe()
+	if err != nil {
+		_ = link.send(protocol.Nack(msg.ExecID, protocol.AgentError))
+		return
+	}
+	defer stderr.Close()
+	defer stderrWrite.Close()
+	cmd.Stdout, cmd.Stderr = stdoutWrite, stderrWrite
 	start := time.Now()
-	if err := cmd.Start(); err != nil {
+	child, err := process.Start(ctx, cmd)
+	_ = stdoutWrite.Close()
+	_ = stderrWrite.Close()
+	if err != nil {
 		_ = link.send(protocol.Nack(msg.ExecID, startFailureCode(ctx)))
 		return
 	}
-	kill, closeJob := startJob(cmd.Process)
-	defer closeJob()
-	done := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			select {
-			case <-done:
-			default:
-				kill()
-			}
-		case <-done:
-		}
-	}()
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	sent := 0
@@ -114,12 +118,25 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 	wg.Add(2)
 	go pump(stdout, protocol.TypeStdout)
 	go pump(stderr, protocol.TypeStderr)
-	err = cmd.Wait()
-	close(done)
-	wg.Wait()
+	err = child.Wait()
+	drained := make(chan struct{})
+	go func() { wg.Wait(); close(drained) }()
+	select {
+	case <-drained:
+	case <-time.After(time.Second):
+		_ = stdout.Close()
+		_ = stderr.Close()
+		<-drained
+		trunc = true
+	}
+	if errors.Is(err, process.ErrCleanup) {
+		_ = link.send(protocol.Err(msg.ExecID, protocol.AgentError))
+		return
+	}
 	code := 0
 	if err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
 			code = ee.ExitCode()
 		} else {
 			code = 1
@@ -149,15 +166,14 @@ func startFailureCode(ctx context.Context) string {
 	return protocol.AgentError
 }
 
-func buildCmd(ctx context.Context, command, cwd string) *exec.Cmd {
+func buildCmd(command, cwd string) *exec.Cmd {
 	var cmd *exec.Cmd
 	if osName() == "windows" {
-		cmd = exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", wrapCommand(command))
+		cmd = exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", wrapCommand(command))
 	} else {
-		cmd = exec.CommandContext(ctx, "bash", "-lc", wrapCommand(command))
+		cmd = exec.Command("bash", "-lc", wrapCommand(command))
 	}
 	cmd.Dir = cwd
 	cmd.Env = os.Environ()
-	cmd.SysProcAttr = procAttr()
 	return cmd
 }

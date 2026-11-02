@@ -3,9 +3,13 @@ package handoff
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"os"
 	"os/exec"
 	"time"
+
+	"github.com/xallor-ai/xallor-remote/internal/process"
 )
 
 func (m *Manager) run(key string, r Request, root string) {
@@ -13,7 +17,11 @@ func (m *Manager) run(key string, r Request, root string) {
 	defer cancel()
 	cfg, version, workspace, err := m.preflight(ctx, r, root)
 	if err != nil {
-		_ = m.update(key, "failed", err.Error(), "", "", false)
+		state, code := "failed", err.Error()
+		if errors.Is(err, process.ErrCleanup) {
+			state, code = "unknown", "process_cleanup_unconfirmed"
+		}
+		_ = m.update(key, state, code, "", "", false)
 		return
 	}
 	if m.update(key, "accepted", "", version, "", false) != nil {
@@ -34,12 +42,15 @@ func (m *Manager) run(key string, r Request, root string) {
 	cmd := exec.Command(cfg.Executable, args...)
 	cmd.Dir = workspace
 	cmd.Stderr = io.Discard
-	stdout, err := cmd.StdoutPipe()
+	stdout, output, err := os.Pipe()
 	if err != nil {
 		_ = m.update(key, "failed", "cli_start_failed", version, "", false)
 		return
 	}
-	kill, wait, err := m.start(ctx, cmd)
+	defer stdout.Close()
+	cmd.Stdout = output
+	child, err := process.Start(ctx, cmd)
+	_ = output.Close()
 	if err != nil {
 		_ = m.update(key, "failed", "cli_start_failed", version, "", false)
 		return
@@ -56,11 +67,13 @@ func (m *Manager) run(key string, r Request, root string) {
 	result, parseErr := readCursor(stdout, r.Session, workspace, func() error { return m.update(key, "running", "", version, "", false) })
 	close(readDone)
 	if parseErr != nil {
-		kill()
+		_ = child.Stop()
 	}
-	waitErr := wait()
+	waitErr := child.Wait()
 	state, code := "completed", ""
-	if ctx.Err() != nil {
+	if errors.Is(waitErr, process.ErrCleanup) {
+		state, code = "unknown", "process_cleanup_unconfirmed"
+	} else if ctx.Err() != nil {
 		state, code = "unknown", "interrupted"
 	} else if parseErr != nil {
 		state, code = "unknown", parseErr.Error()

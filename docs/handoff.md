@@ -35,7 +35,7 @@ xallor-remote handoff get --device 123456789 --request-id review-001
 
 ## 结果含义
 
-`received` 表示请求已持久化；`accepted` 表示仓库、附件与 CLI 检查通过；`running` 只在 CLI 返回匹配的初始化事件后出现。只有匹配会话与 workspace 的初始化、匹配会话的成功结果事件以及进程正常退出，才记为 `completed`。这是 CLI 回执，不验证答案正确性或承诺修改已合入。
+`received` 表示请求已持久化；`accepted` 表示仓库、附件与 CLI 检查通过；`running` 只在 CLI 返回匹配的初始化事件后出现。只有匹配会话与 workspace 的初始化、匹配会话的成功结果事件、进程正常退出以及受监督进程回收确认，才记为 `completed`。回收未确认记为 `unknown` / `process_cleanup_unconfirmed`，进程边界见 [os.md](os.md)。这是 CLI 回执，不验证答案正确性或承诺修改已合入。
 
 检查失败或明确错误结果为 `failed`；缺失终态、会话不匹配、超时或执行中断为 `unknown`。Runtime 重启将未结束回执标为 `unknown`，绝不恢复执行。关闭控制端连接仅结束提交/查询，不取消已持久化的交接；目标 Runtime 停止或请求超时才终止它负责的 CLI 进程树。
 

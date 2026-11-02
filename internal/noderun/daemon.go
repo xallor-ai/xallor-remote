@@ -3,7 +3,6 @@ package noderun
 import (
 	"context"
 	"log/slog"
-	"os/exec"
 	stdruntime "runtime"
 	"sync"
 	"time"
@@ -40,6 +39,7 @@ type Daemon struct {
 	accountGeneration uint64
 	accessRequests    accessRequests
 	local             map[string]context.CancelFunc
+	localWG           sync.WaitGroup
 	remote            map[string]*remoteExec
 	approvals         *approvalHub
 	activity          *activity.Log
@@ -64,7 +64,7 @@ func New(store *identity.Store, log *slog.Logger) *Daemon {
 		approvals: newApprovalHub(),
 		activity:  activity.Open(store.Dir),
 	}
-	d.handoffs = handoff.New(ctx, store.Dir, handoff.Hooks{Prepare: func(cmd *exec.Cmd) { cmd.SysProcAttr = procAttr() }, Watch: startJob})
+	d.handoffs = handoff.New(ctx, store.Dir)
 	return d
 }
 
@@ -72,6 +72,7 @@ func (d *Daemon) Stop() { d.cancel() }
 
 func (d *Daemon) Run() error {
 	defer d.handoffs.Close()
+	defer d.waitLocalExecs()
 	_ = buildinfo.Running()
 	ln, err := ipc.Listen()
 	if err != nil {

@@ -3,8 +3,6 @@ package handoff
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -13,12 +11,6 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/invocation"
 )
 
-// Runtime supplies its existing OS process-tree supervision, avoiding a second
-// Windows Job / Unix process-group implementation in the Cursor adapter.
-type Hooks struct {
-	Prepare func(*exec.Cmd)
-	Watch   func(*os.Process) (func(), func())
-}
 type Manager struct {
 	mu     sync.Mutex
 	ctx    context.Context
@@ -28,12 +20,11 @@ type Manager struct {
 	items  map[string]record
 	active map[string]bool
 	err    error
-	hooks  Hooks
 }
 
-func New(parent context.Context, dir string, hooks Hooks) *Manager {
+func New(parent context.Context, dir string) *Manager {
 	ctx, cancel := context.WithCancel(parent)
-	m := &Manager{ctx: ctx, cancel: cancel, dir: dir, hooks: hooks, items: map[string]record{}, active: map[string]bool{}}
+	m := &Manager{ctx: ctx, cancel: cancel, dir: dir, items: map[string]record{}, active: map[string]bool{}}
 	m.err = m.load()
 	return m
 }
