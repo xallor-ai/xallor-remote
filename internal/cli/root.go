@@ -217,29 +217,6 @@ func cmdPeer() *cobra.Command {
 	return c
 }
 
-func cmdExec() *cobra.Command {
-	var device string
-	c := &cobra.Command{
-		Use:   "exec -- [command]",
-		Short: "在对方设备执行",
-		Args:  cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := ensureRuntime(); err != nil {
-				return err
-			}
-			command := args[0]
-			if len(args) > 1 {
-				for _, a := range args[1:] {
-					command += " " + a
-				}
-			}
-			return streamExec(device, command)
-		},
-	}
-	c.Flags().StringVar(&device, "device", "", "对方设备 ID（仅一台时可省）")
-	return c
-}
-
 func printBanner(st *identity.Store) {
 	id, _, grant, ws, relay, inbound, _ := st.Snapshot()
 	fmt.Printf("Relay:     %s\n", relay)

@@ -3,21 +3,27 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/xallor-ai/xallor-remote/internal/ipc"
-	"github.com/xallor-ai/xallor-remote/internal/protocol"
 	"io"
 	"os"
 	"time"
+
+	"github.com/xallor-ai/xallor-remote/internal/execution"
+	"github.com/xallor-ai/xallor-remote/internal/ipc"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
-func streamExec(device, command string) error {
+func streamExec(device string, request execution.Request) error {
 	raw, err := ipc.Dial(2 * time.Second)
 	if err != nil {
 		return err
 	}
 	defer raw.Close()
 	c := ipc.NewConn(raw)
-	if err := ipc.Call(c, "e1", "exec", map[string]any{"device_id": device, "command": command}); err != nil {
+	params := struct {
+		DeviceID string `json:"device_id,omitempty"`
+		execution.Request
+	}{DeviceID: device, Request: request}
+	if err := ipc.Call(c, "e1", "exec", params); err != nil {
 		return err
 	}
 	return consumeExec(c.ReadFrame, os.Stdout, os.Stderr)

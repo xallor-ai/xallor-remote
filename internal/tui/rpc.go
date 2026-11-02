@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/xallor-ai/xallor-remote/internal/execution"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 )
 
@@ -43,7 +44,7 @@ func streamExec(command string, onOut func(string)) error {
 	}
 	defer raw.Close()
 	c := ipc.NewConn(raw)
-	if err := ipc.Call(c, "e1", "exec", map[string]any{"command": command}); err != nil {
+	if err := ipc.Call(c, "e1", "exec", execution.Request{Script: &execution.Script{Text: command}}); err != nil {
 		return err
 	}
 	for {

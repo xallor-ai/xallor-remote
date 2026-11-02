@@ -67,7 +67,7 @@ A 在已 hello 成功的 client 连接上发：
   "exec_id": "ex_01J…",
   "op": "exec",
   "payload": {
-    "command": "python train.py",
+    "program": {"executable": "python", "args": ["train.py"]},
     "cwd": "project",
     "timeout_ms": 600000
   }
@@ -87,7 +87,7 @@ Relay 收到 `invoke`（`op != cancel`）严格按序，失败即停、发 `invo
 6. 该设备 inflight 数 < 并发上限，否则 quota_exceeded（不排队）
 7. 连接 context 尚未取消；已断开的请求停止准入
 8. 分配随机内部调用ID，原子登记 requests[(client连接,客户端exec_id)] → 内部ID 及 inflight[内部ID]，保留客户端原值、目标、client连接及可信调用身份
-9. 从已验证的连接绑定推导稳定 scope，重建 invoke 并转给 B 的 device 连接；客户端身份、凭据及无关字段不透传，payload 内 command 不改写。scope 字段见协议，后台交接的消费与留存见 handoff.md。
+9. 从已验证的连接绑定推导稳定 scope，重建 invoke 并转给 B 的 device 连接；客户端身份、凭据及无关字段不透传，payload 内执行输入不改写。scope 字段见协议，后台交接的消费与留存见 handoff.md。
 ```
 
 账号及分享验证以本次数据库读取为判定时点，与随后进入路由锁不是跨模块原子事务。与撤销同时发生且已通过验证的请求可能继续准入；撤销完成后开始验证的新请求会失败。归属变更还会在路由锁内使旧绑定失效。取消与输出帧不查询账号数据库，原连接仍可取消已经登记的任务。成员恢复递增版本，旧连接必须重新握手才能恢复使用；认证等待有期限并随连接断开取消。此阶段不提供撤销或转移即确认后台任务终止的承诺。

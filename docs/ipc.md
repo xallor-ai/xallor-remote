@@ -23,7 +23,7 @@ SSOT：命名管道 / Unix socket 上的报文与 ensure。路径与权限见 [d
 请求：
 
 ```json
-{"id":"c1","method":"exec","params":{"device_id":"dev_B","command":"whoami"}}
+{"id":"c1","method":"exec","params":{"device_id":"dev_B","program":{"executable":"whoami","args":[]}}}
 ```
 
 后续与之关联的事件 / 结果带同一个 `id`：
@@ -94,7 +94,7 @@ CLI `doctor [--device ID] [--json]` 不调用 ensure，也不创建数据目录�
 
 | method | 对应 |
 | --- | --- |
-| `exec` | invoke op=exec |
+| `exec` | invoke op=exec；params 为 [protocol.md](protocol.md) 的 script/program 输入，另带 device_id |
 | `exec.cancel` | 仅取消 **这条 IPC 连接** 发起的 exec（Runtime 再映射到自己的 client 连接） |
 | `read` / `write` / `processes` / `info` | 对应 op |
 | `handoff.submit` / `handoff.get` | 对应 op，`params.device_id` 必填，载荷见 [protocol.md](protocol.md#cursor-交接载荷与回执)。非流式 `result.content` 为 JSON 回执/错误，外层成功仅表示提交或查询已返回 |

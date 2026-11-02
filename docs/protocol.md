@@ -63,10 +63,17 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 
 `info.shell` 为 `{configured,selected?,available:[],code?}`：configured 为目标配置名或 auto，selected 是当前能找到的解释器名，available 是本系统受支持且可找到的名字；不能解析选择时返回 code，不伪造 selected。只探测可执行文件，不包含路径、版本或远程凭据。可选解释器及执行语义见 [os.md](os.md)。
 
-- `exec`：`command`（字符串）、`cwd?`、`timeout_ms?`
+- `exec`：`script: {text, shell?}` 或 `program: {executable, args?}` 二选一，另有 `cwd?`、`timeout_ms?`。`text` / `executable` 必须非空；args 为字符串数组，省略时无参数。script.shell 省略时使用目标配置，显式 auto 使用目标自动选择。cwd、程序路径及 PATH 均属于目标设备；文本、参数不得含 NUL 或非法 Unicode，未知字段与非法形状返回 `invalid_execution`。可选字段应省略，不使用 null。CLI、IPC 和 MCP 使用同一输入形状，IPC/MCP 另带路由字段 device_id。脚本不跨语言翻译，程序参数不拼接成脚本。具体目标系统约束见 [os.md](os.md)。
 - `cancel`：`exec_id`。只取消**本条 client 连接**登记的 inflight；对别人的或未知 id 一律 `unknown_exec`（不区分「存在但是别人的」）
 - `read`：路径 + `head`/`tail`（行）或 offset/limit（字节）
 - `write`：路径 + **完整** `content`。覆盖；无 append、无 patch
+
+`info.execution_modes` 返回 `["script","program"]`，供 Agent 选择输入方式。示例：
+
+```json
+{"script":{"text":"Get-Location","shell":"powershell"},"timeout_ms":30000}
+{"program":{"executable":"git","args":["status","--short"]},"cwd":"repo"}
+```
 
 ---
 
@@ -108,11 +115,14 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 | `truncated` | 与 `exit` 同时出现的标志，不是单独终态。read 因默认窗口或上限少给的内容也标 true |
 | `relay_error` | 中转故障或重启丢 inflight |
 | `agent_error` | Runtime 内部失败 |
+| `invalid_execution` | 执行输入形状、文本或参数无效 |
+| `program_unavailable` | 目标无法安全找到指定程序；不回退到 Shell |
+| `unsupported_program` | Windows program 模式选择了批处理文件或 cmd.exe，须改为显式脚本调用 |
 | `unsupported_shell` | 目标系统不支持配置的解释器名 |
 | `shell_unavailable` | 目标无法安全找到所选解释器；不会换壳重试 |
 | `quota_exceeded` | Relay 或目标 Runtime 的资源上限已满（如分享数、在途请求或本机作业容量） |
 | `workspace_missing` | workspace 目录不可用 |
-| `too_large` | write/read 超过硬上限 |
+| `too_large` | write/read、执行输入或目标命令行超过硬上限 |
 
 MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 
@@ -136,7 +146,10 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 | **write 上限** | **1 MiB**（解码后）；整包 marshal 超 WSS 读上限则 `too_large`，不落盘 |
 | 每设备并发 exec | **4** |
 | Runtime 本机作业占用 | 前台 exec 与后台 handoff 合计 **4**；其中 handoff 最多 **2**，不确定占用也计入；独立于 Relay inflight |
-| Windows 命令行 | 编码后的解释器启动命令预估长度必须小于 **32767 UTF-16 单元**，否则启动前返回 `too_large`；OS 的实际启动限制仍有效 |
+| exec 输入 | 解码后的 cwd、脚本文本及 shell 名，或 cwd、程序名及全部参数，合计最多 **64 KiB UTF-8**；最多 **256** 个程序参数；超则 `too_large` |
+| exec JSON | 最多 `6 × 64 KiB + 8 KiB`，包含 IPC 路由字段；超则 `too_large` |
+| exec timeout_ms | 整数 **0–3600000**；0 或省略不设执行期限；非法值 `invalid_execution` |
+| Windows 命令行 | 解释器启动命令预估长度必须小于 **32767 UTF-16 单元**；原生程序经参数转义后连同结尾 NUL 不得超过此上限，否则启动前返回 `too_large`；OS 的实际启动限制仍有效 |
 | 本机作业账本 | jobs.json 最多 **16 KiB**；内部关联键最多 **128 字节**；仅保存仍占用或不确定记录 |
 | 排队 | 不排队，超额 `quota_exceeded` |
 | heartbeat | 30s 发一拍；60s 无任何帧 → 连接死 |

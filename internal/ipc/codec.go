@@ -118,6 +118,12 @@ func Call(c *Conn, id, method string, params any) error {
 
 func Human(code string) string {
 	switch code {
+	case "invalid_execution":
+		return "执行参数无效，请选择脚本或程序并检查参数。"
+	case "program_unavailable":
+		return "目标程序不可用，请检查对方的安装路径和 PATH。"
+	case "unsupported_program":
+		return "该程序需要通过脚本模式显式调用。"
 	case "unauthorized":
 		return "当前身份或授权不可用，请检查身份凭据和设备访问权限。"
 	case "unknown_device":

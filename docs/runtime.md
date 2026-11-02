@@ -72,6 +72,10 @@ on disconnect: 退避重连；不恢复旧子进程
 
 ## 5. exec
 
+`internal/execution` 统一校验 script/program 输入并构造尚未启动的命令，`internal/job` 是启动与资源所有权入口。CLI / GUI / TUI / MCP 只映射输入，不选择远端 OS、不拼接原生参数；Relay 仍只鉴权和路由。输入合同见 [protocol.md](protocol.md)。
+
+现有文本策略对脚本检查原文，对程序检查程序 basename 与参数的可读预览；预览只供保守匹配和本机提示，绝不作为执行文本。它可能误判，也无法拦截所有等效调用，不提供沙箱保证。
+
 禁止 `run()` 完再整包发送。必须 Popen，按行/块推 `stdout`/`stderr`，最后一条 `exit`。管道要持续读。帧大小、截断、cancel、断线杀进程见 [dataplane.md](dataplane.md)。
 
 - Windows：Job Object 杀树。Linux：process group。

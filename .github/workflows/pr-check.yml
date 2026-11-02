@@ -37,7 +37,7 @@ jobs:
 
       - name: Race detection
         if: runner.os == 'Linux'
-        run: go test -race ./internal/relay ./internal/noderun ./internal/release ./internal/handoff ./internal/process ./internal/job
+        run: go test -race ./internal/relay ./internal/noderun ./internal/release ./internal/handoff ./internal/process ./internal/job ./internal/execution
 
       - name: Build
         shell: bash
@@ -202,6 +202,7 @@ jobs:
       - run: python tests/process_lifetime_e2e.py
       - run: python tests/job_lifecycle_e2e.py
       - run: python tests/shell_adapter_e2e.py
+      - run: python tests/execution_input_e2e.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -213,6 +214,7 @@ jobs:
             dist/verification/process-lifetime.json
             dist/verification/job-lifecycle.json
             dist/verification/shell-adapter.json
+            dist/verification/execution-input.json
             dist/release/**/manifest.json
 
   # Single required status for branch protection.

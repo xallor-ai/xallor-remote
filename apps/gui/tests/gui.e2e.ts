@@ -66,12 +66,12 @@ test("connect, stream, cancel, approve and inspect actual history", async ({ pag
 
     await page.getByRole("button", { name: /^审批/ }).click();
     // The policy matches shutdown inside an inert echo. No power operation is run.
-    const denied = incoming.call("exec", { device_id: controller, command: "echo shutdown", timeout_ms: 5000 });
+    const denied = incoming.call("exec", { device_id: controller, script: { text: "echo shutdown" }, timeout_ms: 5000 });
     await expect(page.getByRole("button", { name: "拒绝", exact: true })).toBeVisible({ timeout: 15_000 });
     await page.getByRole("button", { name: "拒绝", exact: true }).click();
     expect((await denied).code).toBe("policy_deny");
     await expect(page.locator("#pending")).toContainText("当前没有等待确认", { timeout: 10_000 });
-    const allowed = incoming.call("exec", { device_id: controller, command: "echo shutdown", timeout_ms: 5000 });
+    const allowed = incoming.call("exec", { device_id: controller, script: { text: "echo shutdown" }, timeout_ms: 5000 });
     await expect(page.getByRole("button", { name: "允许执行", exact: true })).toBeVisible({ timeout: 15_000 });
     await page.getByRole("button", { name: "允许执行", exact: true }).click();
     expect((await allowed).result.exit_code).toBe(0);

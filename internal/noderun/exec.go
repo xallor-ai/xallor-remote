@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xallor-ai/xallor-remote/internal/execution"
 	"github.com/xallor-ai/xallor-remote/internal/job"
 	"github.com/xallor-ai/xallor-remote/internal/process"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
@@ -16,9 +17,9 @@ import (
 )
 
 func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Message) {
-	p, err := protocol.ParseExecPayload(msg.Payload)
+	p, err := execution.Decode(msg.Payload)
 	if err != nil {
-		_ = link.send(protocol.Nack(msg.ExecID, protocol.AgentError))
+		_ = link.send(protocol.Nack(msg.ExecID, executionErrorCode(err)))
 		return
 	}
 	_, _, _, _, _, inbound, _ := d.store.Snapshot()
@@ -28,12 +29,13 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.InboundDisabled))
 		return
 	}
-	if hardDenyCommand(p.Command) {
+	policyText := executionPolicyText(p)
+	if hardDenyCommand(policyText) {
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.PolicyDeny))
 		return
 	}
-	if needsApprovalCommand(p.Command) {
-		preview := p.Command
+	if needsApprovalCommand(policyText) {
+		preview := policyText
 		if len(preview) > 200 {
 			preview = preview[:200] + "…"
 		}
@@ -69,19 +71,9 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.Unauthorized))
 		return
 	}
-	cmd, err := shell.Build(cfg.Shell, p.Command, cwd)
+	cmd, err := execution.Build(p, cfg.Shell, cwd)
 	if err != nil {
-		code := protocol.AgentError
-		if errors.Is(err, shell.ErrUnsupported) {
-			code = protocol.UnsupportedShell
-		}
-		if errors.Is(err, shell.ErrUnavailable) {
-			code = protocol.ShellUnavailable
-		}
-		if errors.Is(err, shell.ErrTooLarge) {
-			code = protocol.TooLarge
-		}
-		_ = link.send(protocol.Nack(msg.ExecID, code))
+		_ = link.send(protocol.Nack(msg.ExecID, executionErrorCode(err)))
 		return
 	}
 	owner, err := d.jobs.Reserve(*msg.Scope, "exec", msg.ExecID)
@@ -185,6 +177,25 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		Type: protocol.TypeExit, ExecID: msg.ExecID, ExitCode: &code,
 		DurationMS: &dur, Truncated: protocol.Bool(trunc), Status: status,
 	})
+}
+
+func executionErrorCode(err error) string {
+	switch {
+	case errors.Is(err, execution.ErrInvalid):
+		return protocol.InvalidExecution
+	case errors.Is(err, shell.ErrUnsupported):
+		return protocol.UnsupportedShell
+	case errors.Is(err, shell.ErrUnavailable):
+		return protocol.ShellUnavailable
+	case errors.Is(err, shell.ErrTooLarge), errors.Is(err, execution.ErrTooLarge):
+		return protocol.TooLarge
+	case errors.Is(err, execution.ErrProgramUnavailable):
+		return protocol.ProgramUnavailable
+	case errors.Is(err, execution.ErrUnsupportedProgram):
+		return protocol.UnsupportedProgram
+	default:
+		return protocol.AgentError
+	}
 }
 
 // Cancellation can win between the pre-start check and os/exec.Start.

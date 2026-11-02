@@ -17,14 +17,12 @@ export async function verifyTree(root, targetID, mode) {
   const dir = path.join(root, "tree-" + mode);
   fs.mkdirSync(dir);
   const binary = path.join(root, process.platform === "win32" ? "tree.exe" : "tree");
-  const quote = text => process.platform === "win32" ? "'" + text.replaceAll("'", "''") + "'" : "'" + text.replaceAll("'", "'\\''") + "'";
-  const command = (process.platform === "win32" ? "& " : "") + quote(binary) + " parent " + quote(dir);
   process.env.XALLOR_REMOTE_DATA_DIR = path.join(root, "controller");
   const ipc = new RuntimeIpc(); await ipc.connect();
   let id, pids, terminal, settled;
   let startupOutput="";
   try {
-    terminal = ipc.stream("exec", { device_id: targetID, command, ...(mode === "timeout" ? { timeout_ms: 10000 } : {}) }, f => {
+    terminal = ipc.stream("exec", { device_id: targetID, program: { executable: binary, args: ["parent", dir] }, ...(mode === "timeout" ? { timeout_ms: 10000 } : {}) }, f => {
       if (f.exec_id) id = f.exec_id;
       if(f.data) startupOutput=(startupOutput+f.data).slice(-4096);
     });

@@ -47,7 +47,7 @@ try {
   await info("ok");
   assert.equal((await call("read", { path: "shared.txt" })).result.content, "allowed-read");
   assert.equal((await call("write", { path: "forbidden.txt", content: "no" })).code, "unauthorized");
-  assert.equal((await client.stream("exec", { device_id: target, command: "echo forbidden" }, () => {})).code, "unauthorized");
+  assert.equal((await client.stream("exec", { device_id: target, script: { text: "echo forbidden" } }, () => {})).code, "unauthorized");
   assert.equal((await call("handoff.submit", { request: {} })).code, "unauthorized");
   assert(!fs.existsSync(path.join(root, "workspaces/target/forbidden.txt")));
   pass("cross_tenant_share_allows_only_explicit_operations");

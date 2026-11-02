@@ -35,12 +35,6 @@ type Message struct {
 	Status       string            `json:"status,omitempty"`
 }
 
-type ExecPayload struct {
-	Command   string `json:"command"`
-	Cwd       string `json:"cwd,omitempty"`
-	TimeoutMS int    `json:"timeout_ms,omitempty"`
-}
-
 type ReadPayload struct {
 	Path   string `json:"path"`
 	Head   int    `json:"head,omitempty"`
@@ -67,20 +61,6 @@ func Parse(b []byte) (Message, error) {
 		return Message{}, fmt.Errorf("missing type")
 	}
 	return m, nil
-}
-
-func ParseExecPayload(raw json.RawMessage) (ExecPayload, error) {
-	var p ExecPayload
-	if len(raw) == 0 {
-		return p, fmt.Errorf("empty payload")
-	}
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return p, err
-	}
-	if p.Command == "" {
-		return p, fmt.Errorf("missing command")
-	}
-	return p, nil
 }
 
 func Bool(v bool) *bool { return &v }

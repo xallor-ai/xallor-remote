@@ -31,12 +31,12 @@ try {
       ? `[IO.File]::WriteAllText(${quote(path.join(root,"workspaces/target",filename))}, ${quote(literal)});\nWrite-Output ${quote(literal)}\nexit 7`
       : `printf '%s' ${quote(literal)} > ${quote(filename)}\nprintf '%s\\n' ${quote(literal)}\nexit 7`;
     let output="";
-    const result=ok(await bounded(controller.stream("exec",{device_id:device,command:script},f=>{output+=f.data||"";})));
+    const result=ok(await bounded(controller.stream("exec",{device_id:device,script:{text:script}},f=>{output+=f.data||"";})));
     assert.equal(result.exit_code,7); assert.equal(result.status,"completed");
     assert(output.includes(literal),output);
     assert.equal(ok(await bounded(controller.call("read",{device_id:device,path:filename}))).content,literal);
     let errors="";
-    const failed=ok(await bounded(controller.stream("exec",{device_id:device,command:powershell?"Write-Error '中文 error'":"printf '中文 error' >&2; exit 1"},f=>{if(f.event==="stderr")errors+=f.data||"";})));
+    const failed=ok(await bounded(controller.stream("exec",{device_id:device,script:{text:powershell?"Write-Error '中文 error'":"printf '中文 error' >&2; exit 1"}},f=>{if(f.event==="stderr")errors+=f.data||"";})));
     assert.equal(failed.exit_code,1); assert(errors.includes("中文 error"),errors); assert(!errors.includes("CLIXML"),errors);
     results.push({name,status:"pass"});
   }
@@ -49,7 +49,7 @@ try {
     const unavailable=await info();
     assert.equal(unavailable.shell.code,"shell_unavailable");
     assert.equal(unavailable.shell.selected,undefined);
-    const denied=await bounded(controller.stream("exec",{device_id:device,command:"echo must-not-run"},()=>{throw Error("missing shell produced output");}));
+    const denied=await bounded(controller.stream("exec",{device_id:device,script:{text:"echo must-not-run"}},()=>{throw Error("missing shell produced output");}));
     assert.equal(denied.code,"shell_unavailable");
     results.push({name:"explicit_missing_interpreter_does_not_fallback",status:"pass"});
   }

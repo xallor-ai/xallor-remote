@@ -48,7 +48,7 @@ Cursor 等 spawn 的短驻 stdio 进程：全局安装后的 `xallor-remote-mcp`
 | --- | --- |
 | `remote.devices` | peers + 在线状态 |
 | `remote.device_info` | 单台；只配一台可省 id |
-| `remote.exec` | **流式**；cwd 默认对方 workspace |
+| `remote.exec` | **流式**；script / program 二选一，cwd 默认对方 workspace；输入见 [protocol.md](protocol.md) |
 | `remote.exec_cancel` | exec_id，幂等 |
 | `remote.read` / `remote.write` | 路径原样传递 |
 | `remote.processes` | 只读 |
