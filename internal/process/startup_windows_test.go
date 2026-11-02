@@ -3,6 +3,7 @@
 package process
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +25,9 @@ func TestJob_should_reclaimChild_whenOwnerDiesBeforeAttachment(t *testing.T) {
 	case "owner":
 		cmd := exec.Command(os.Args[0], "-test.run=^TestJob_should_reclaimChild_whenOwnerDiesBeforeAttachment$")
 		cmd.Env = append(os.Environ(), "XR_STARTUP_CRASH_ROLE=child")
+		if os.Getenv("XR_STARTUP_CRASH_COPY") == "1" {
+			cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
+		}
 		g, err := prepare(cmd)
 		if err != nil {
 			os.Exit(2)
@@ -38,9 +42,16 @@ func TestJob_should_reclaimChild_whenOwnerDiesBeforeAttachment(t *testing.T) {
 		time.Sleep(time.Minute)
 		os.Exit(5)
 	}
-	dir = t.TempDir()
+	for _, generic := range []string{"0", "1"} {
+		t.Run("generic-streams-"+generic, func(t *testing.T) { checkStartupCrash(t, generic) })
+	}
+}
+
+func checkStartupCrash(t *testing.T, generic string) {
+	t.Helper()
+	dir := t.TempDir()
 	owner := exec.Command(os.Args[0], "-test.run=^TestJob_should_reclaimChild_whenOwnerDiesBeforeAttachment$")
-	owner.Env = append(os.Environ(), "XR_STARTUP_CRASH_ROLE=owner", "XR_STARTUP_CRASH_DIR="+dir)
+	owner.Env = append(os.Environ(), "XR_STARTUP_CRASH_ROLE=owner", "XR_STARTUP_CRASH_DIR="+dir, "XR_STARTUP_CRASH_COPY="+generic)
 	if err := owner.Start(); err != nil {
 		t.Fatal(err)
 	}
