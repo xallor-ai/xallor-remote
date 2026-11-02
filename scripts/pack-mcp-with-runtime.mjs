@@ -5,30 +5,47 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const mcp = path.join(root, "packages", "mcp");
 const release = path.join(root, "dist", "release");
+const revision = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+const dirty = !!execFileSync("git", ["status", "--porcelain", "--untracked-files=normal"], { cwd: root, encoding: "utf8" }).trim();
 
 const copies = [
   {
     from: path.join(release, "windows-amd64", "xallor-remote.exe"),
     to: path.join(mcp, "vendor", "win32-x64", "xallor-remote.exe"),
+    platform: "windows",
   },
   {
     from: path.join(release, "linux-amd64", "xallor-remote"),
     to: path.join(mcp, "vendor", "linux-x64", "xallor-remote"),
+    platform: "linux",
   },
 ];
 
-for (const { from, to } of copies) {
+for (const { from, to, platform } of copies) {
   if (!fs.existsSync(from)) {
     console.error("缺少二进制，先构建:", from);
     process.exit(1);
   }
+  const manifestPath = path.join(path.dirname(from), "manifest.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const pkg = JSON.parse(fs.readFileSync(path.join(mcp, "package.json"), "utf8"));
+  const bytes = fs.readFileSync(from);
+  if (manifest.schema !== 1 || manifest.build.version !== pkg.version ||
+      manifest.build.revision !== revision || manifest.build.dirty !== dirty ||
+      manifest.build.os !== platform || manifest.build.arch !== "amd64" || manifest.build.protocol !== 1 ||
+      manifest.artifact.filename !== path.basename(from) || manifest.artifact.size !== bytes.length ||
+      manifest.artifact.sha256 !== createHash("sha256").update(bytes).digest("hex")) {
+    throw new Error("Release manifest does not match artifact: " + from);
+  }
   fs.mkdirSync(path.dirname(to), { recursive: true });
   fs.copyFileSync(from, to);
+  fs.copyFileSync(manifestPath, path.join(path.dirname(to), "manifest.json"));
   if (process.platform !== "win32" || to.endsWith("xallor-remote")) {
     try {
       fs.chmodSync(to, 0o755);
@@ -38,6 +55,11 @@ for (const { from, to } of copies) {
   }
   console.log("vendor", path.relative(root, to), fs.statSync(to).size);
 }
+
+fs.writeFileSync(path.join(mcp, "build.json"), JSON.stringify({
+  version: JSON.parse(fs.readFileSync(path.join(mcp, "package.json"), "utf8")).version,
+  revision, dirty, built_at: new Date().toISOString(), protocol: 1
+}, null, 2));
 
 const build = spawnSync("npm", ["run", "build"], { cwd: mcp, stdio: "inherit", shell: true });
 if (build.status !== 0) process.exit(build.status ?? 1);

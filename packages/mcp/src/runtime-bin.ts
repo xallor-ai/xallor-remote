@@ -6,7 +6,7 @@
 import { spawn } from "node:child_process";
 import { findBinary, INSTALL_HINT } from "./ensure.js";
 
-const bin = findBinary();
+const bin = findBinary(process.env, { managed: process.argv[2] !== "runtime" });
 if (!bin) {
   console.error(INSTALL_HINT);
   process.exit(1);

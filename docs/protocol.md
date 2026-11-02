@@ -39,6 +39,8 @@ client 连接上出现 `revoke` / `grant_rotate` / `inbound_set` → 忽略或 n
 
 `invoke` 的 `op`：`exec` / `read` / `write` / `processes` / `info` / `cancel`。
 
+`info` 的 JSON 结果包含 `build`：version、revision、built_at（可省略）、dirty、protocol（当前为 1）、os、arch；用于区分运行制品与代码版本。未知 revision 为 `unknown`，不猜测提交。Relay health 返回同形构建身份。
+
 - `exec`：`command`（字符串）、`cwd?`、`timeout_ms?`
 - `cancel`：`exec_id`。只取消**本条 client 连接**登记的 inflight；对别人的或未知 id 一律 `unknown_exec`（不区分「存在但是别人的」）
 - `read`：路径 + `head`/`tail`（行）或 offset/limit（字节）

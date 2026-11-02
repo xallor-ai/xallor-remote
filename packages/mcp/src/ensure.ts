@@ -1,9 +1,15 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { managedRuntime } from "./managed-runtime.js";
 
 export function dataDir(env: NodeJS.ProcessEnv = process.env): string {
+	if (env.XALLOR_REMOTE_DATA_DIR) {
+		if (!path.isAbsolute(env.XALLOR_REMOTE_DATA_DIR)) throw new Error("XALLOR_REMOTE_DATA_DIR must be absolute");
+		return path.resolve(env.XALLOR_REMOTE_DATA_DIR);
+	}
   if (process.platform === "win32") {
     const base = env.APPDATA || env.AppData || path.join(os.homedir(), "AppData", "Roaming");
     return path.join(base, "XallorRemote");
@@ -15,6 +21,14 @@ export function dataDir(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 export function ipcPath(env: NodeJS.ProcessEnv = process.env): string {
+	if (env.XALLOR_REMOTE_DATA_DIR) {
+		const dir = dataDir(env);
+		if (process.platform === "win32") {
+			const sum = createHash("sha256").update(dir.toLowerCase()).digest("hex").slice(0, 16);
+			return "\\\\.\\pipe\\XallorRemote-" + sum;
+		}
+		return path.join(dir, "ipc.sock");
+	}
   if (process.platform === "win32") {
     return "\\\\.\\pipe\\XallorRemote";
   }
@@ -59,6 +73,7 @@ export function bundledBinary(root = packageRoot()): string | undefined {
 
 export type FindBinaryOpts = {
   packageRoot?: string;
+  managed?: boolean;
 };
 
 export function findBinary(env = process.env, opts: FindBinaryOpts = {}): string | undefined {
@@ -66,6 +81,10 @@ export function findBinary(env = process.env, opts: FindBinaryOpts = {}): string
   const candidates: string[] = [];
   if (env.XALLOR_REMOTE_BIN) {
     candidates.push(env.XALLOR_REMOTE_BIN);
+  }
+  if (!env.XALLOR_REMOTE_BIN && opts.managed !== false) {
+    const managed = managedRuntime(dataDir(env));
+    if (managed) return managed;
   }
   const bundled = bundledBinary(opts.packageRoot ?? packageRoot());
   if (bundled) candidates.push(bundled);

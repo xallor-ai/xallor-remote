@@ -6,7 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -28,7 +27,7 @@ func Execute() error {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(cmdRelay(), cmdStart(), cmdEnsure(), cmdStop(), cmdStatus(), cmdGrant(), cmdInbound(), cmdRevoke(), cmdReset(), cmdPeer(), cmdExec(), cmdApprove(), cmdTUI(), cmdMCP())
+	root.AddCommand(cmdRelay(), cmdStart(), cmdEnsure(), cmdStop(), cmdStatus(), cmdGrant(), cmdInbound(), cmdRevoke(), cmdReset(), cmdPeer(), cmdExec(), cmdApprove(), cmdTUI(), cmdMCP(), cmdVersion(), cmdRuntime())
 	return root.Execute()
 }
 
@@ -61,6 +60,11 @@ func cmdStart() *cobra.Command {
 		Use:   "start",
 		Short: "前台运行 Runtime",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			unlock, err := lockRuntime()
+			if err != nil {
+				return err
+			}
+			defer unlock()
 			st, err := identity.Load()
 			if err != nil {
 				return err
@@ -270,37 +274,13 @@ func printStatus() error {
 	return nil
 }
 
-func ensureRuntime() error {
-	if _, err := ipc.Dial(500 * time.Millisecond); err == nil {
-		return nil
-	}
-	self, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(self, "start")
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	if err := detach(cmd); err != nil {
-		return err
-	}
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if c, err := ipc.Dial(200 * time.Millisecond); err == nil {
-			_ = c.Close()
-			return nil
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	return fmt.Errorf("无法拉起 Runtime。找不到二进制或 IPC 未就绪。")
-}
-
 func rpc(method string, params map[string]any) (map[string]any, error) {
 	raw, err := ipc.Dial(2 * time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("Runtime 未运行，请先 xallor-remote start 或 ensure")
 	}
 	defer raw.Close()
+	_ = raw.SetDeadline(time.Now().Add(10 * time.Second))
 	c := ipc.NewConn(raw)
 	if err := ipc.Call(c, "1", method, params); err != nil {
 		return nil, err
@@ -368,4 +348,3 @@ func streamExec(device, command string) error {
 		}
 	}
 }
-

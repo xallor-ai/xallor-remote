@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/xallor-ai/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/buildinfo"
 )
 
 func writeHealth(w http.ResponseWriter, _ *http.Request) {
@@ -12,6 +12,7 @@ func writeHealth(w http.ResponseWriter, _ *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"ok":      true,
 		"service": "relay",
-		"version": protocol.Version,
+		"version": buildinfo.Version(),
+		"build":   buildinfo.Current(),
 	})
 }

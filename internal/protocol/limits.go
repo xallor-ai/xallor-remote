@@ -19,6 +19,5 @@ const (
 )
 
 const (
-	Version     = "0.1.0-dev"
 	GrantPrefix = "xr_grant_"
 )

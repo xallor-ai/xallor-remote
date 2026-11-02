@@ -11,6 +11,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
+	"github.com/xallor-ai/xallor-remote/internal/buildinfo"
 	"github.com/xallor-ai/xallor-remote/internal/identity"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
@@ -80,12 +81,14 @@ func New(store *identity.Store, log *slog.Logger) *Daemon {
 func (d *Daemon) Stop() { d.cancel() }
 
 func (d *Daemon) Run() error {
-	go d.keepDevice()
+	_ = buildinfo.Running()
 	ln, err := ipc.Listen()
 	if err != nil {
 		return err
 	}
 	defer ln.Close()
+	go func() { <-d.ctx.Done(); _ = ln.Close() }()
+	go d.keepDevice()
 	d.log.Info("runtime ipc up", "device", d.store.DeviceID)
 	for {
 		c, err := ln.Accept()
@@ -128,7 +131,7 @@ func (d *Daemon) connectDevice() error {
 	inb := inbound && grant != ""
 	hello := protocol.Message{
 		Type: protocol.TypeHelloDevice, DeviceID: id, Secret: secret,
-		OS: stdruntime.GOOS, Arch: stdruntime.GOARCH, AgentVersion: protocol.Version,
+		OS: stdruntime.GOOS, Arch: stdruntime.GOARCH, AgentVersion: buildinfo.Version(),
 		Workspace: ws, Inbound: protocol.Bool(inb),
 	}
 	if err := link.send(hello); err != nil {
@@ -143,7 +146,7 @@ func (d *Daemon) connectDevice() error {
 	}
 	if grant != "" {
 		_ = link.send(protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex(grant)})
-		_ = link.send(protocol.Message{Type: protocol.TypeInboundSet, Inbound: protocol.Bool(true)})
+		_ = link.send(protocol.Message{Type: protocol.TypeInboundSet, Inbound: protocol.Bool(inb)})
 	}
 	d.mu.Lock()
 	d.device = link

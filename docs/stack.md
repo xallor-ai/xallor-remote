@@ -68,10 +68,16 @@ docs/
 | --- | --- |
 | GitHub Releases | `xallor-remote` 各平台文件 + SHA256SUMS（纯 Go / 无 Node 场景） |
 | npm | **`xallor-remote-mcp` 一个包**：MCP 头 + 嵌入的本平台 Runtime（`vendor/`）；`bin` 含 `xallor-remote-mcp` 与 `xallor-remote` |
-| 查找顺序 | `XALLOR_REMOTE_BIN` → **npm 包内 `vendor/<platform>/`** → `PATH` → 数据目录 `bin/` |
+| 查找顺序 | `XALLOR_REMOTE_BIN` → 已校验的安装版本 → **npm 包内 `vendor/<platform>/`** → `PATH` → 数据目录 `bin/` |
 | 找不到 | 报错 + 安装说明，**禁止静默联网下载** |
 
 打 npm 包时用仓库脚本把已构建二进制拷进 `vendor/` 再 `npm pack`。以后可再拆 `optionalDependencies` 平台包并校验 checksum。不要把 secret 打进包。
+
+构建入口：`python scripts/build-release.py`，默认拒绝未提交源码；本地验证可显式 `--allow-dirty`，制品的 dirty 标志会保留。版本源为 `internal/buildinfo/version.txt`，构建会检查 npm 元数据一致；Git SHA、构建时间和 dirty 标志写入 Runtime。每个平台目录包含二进制和 `manifest.json`，zip 另附 SHA-256。manifest 证明内容完整性，不代替发行来源认证。打包脚本校验 manifest 后才复制进 vendor。GitHub 工作流生成可下载制品；版本标签另外生成待确认的 draft release，不部署 Relay 或自动发布 npm。
+
+本机安装：`xallor-remote runtime install --bundle <解压目录>`。先校验平台、协议、大小、hash 与制品自报构建信息，再复制到数据目录下独立版本目录；保存 pending 状态后停止旧 Runtime、验证新进程的 PID/hash，最后原子切换版本记录。启动失败时恢复已验证的旧版本。设备身份、授权码、peers、workspace 和入站选择不属于升级文件。
+
+`runtime rollback` 恢复前一版本；`runtime status` 同时返回安装记录与实际运行制品。`version --json` 查看所调用程序，`ensure` 优先启动已选版本。升级中断后执行 rollback，不自动重试候选版本。历史 0.1.x Runtime 没有可验证的运行制品信息：首次迁移须先停止旧服务，再从新包安装，数据目录保持原样；此首次迁移没有自动保存旧二进制的保证。已纳管版本支持验证后升级和回滚。
 
 MCP 与 Runtime **主版本必须一致**（IPC `status` 里带 `runtime_version`）。大版本不匹配则拒绝干活，避免半套协议。
 

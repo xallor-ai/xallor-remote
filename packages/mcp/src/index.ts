@@ -8,13 +8,16 @@ import { bindHostCancel, execToolText, newExecProgress, type ToolCtx } from "./e
 import { readToolText } from "./read-result.js";
 import { failText, RuntimeIpc, type Frame } from "./ipc.js";
 import { MCP_VERSION, versionsMatch } from "./version.js";
+import { packageBuild } from "./buildinfo.js";
 
 let session: RuntimeIpc | undefined;
 
 async function ensureRuntime(): Promise<RuntimeIpc> {
-  if (session) {
+  if (session?.isConnected) {
     return session;
   }
+  session?.close();
+  session = undefined;
   const ipc = new RuntimeIpc();
   try {
     await ipc.connect(400);
@@ -111,6 +114,8 @@ function createServer(): McpServer {
             device_id: f.result?.device_id,
             online: f.result?.online,
             version: f.result?.version,
+            build: f.result?.build,
+            mcp_build: packageBuild(),
             workspace: f.result?.workspace,
             peers,
           },
