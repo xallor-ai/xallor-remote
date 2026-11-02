@@ -4,6 +4,7 @@ import {
   bindHostCancel,
   execToolIsError,
   execToolText,
+  execFrameText,
   newExecProgress,
   notifyExecProgress,
   progressTokenOf,
@@ -21,15 +22,35 @@ test("nonzero exit or cancelled/timeout is error", () => {
   assert.equal(execToolIsError("timeout", 0), true);
 });
 
-test("cancelled and timeout keep short user text", () => {
-  assert.deepEqual(execToolText("cancelled", 1, 10, false, "ex", "out", ""), {
-    text: "任务已取消。",
-    isError: true,
-  });
-  assert.deepEqual(execToolText("timeout", 1, 10, false, "ex", "", ""), {
-    text: "执行超时。",
-    isError: true,
-  });
+// Only an explicit completed status with a numeric zero confirms success.
+test("missing or coerced exit values never confirm success", () => {
+  for (const value of [null, undefined, false, "0", "", [], NaN, 0.5]) {
+    assert.equal(execToolIsError("completed", value), true, String(value));
+  }
+  for (const status of ["", "unknown", "running"]) assert.equal(execToolIsError(status, 0), true);
+});
+
+// Cancellation still preserves the observed output, identity and truncation.
+test("cancelled and timeout retain output and terminal metadata", () => {
+  for (const status of ["cancelled", "timeout"]) {
+    const got = execToolText(status, 1, 10, true, "ex", "out", "diagnostic");
+    assert.equal(got.isError, true);
+    for (const expected of ["out", "diagnostic", `status=${status}`, "exec_id=ex", "truncated=true"]) assert(got.text.includes(expected));
+  }
+});
+
+// An untrusted envelope cannot bless even an otherwise successful-looking body.
+test("terminal envelopes and malformed results preserve uncertainty", () => {
+  const result = { status: "completed", exit_code: 0 };
+  for (const frame of [{ result }, { ok: false, result }, { ok: true, result, code: "agent_error" },
+    { ok: true, result, event: "stdout" }, { ok: true, result: { status: "completed", exit_code: null } },
+    { ok: true, result: { exit_code: 0 } }]) {
+    const got = execFrameText(frame, "observed-output", "observed-error", "observed-id");
+    assert.equal(got.isError, true);
+    assert(got.text.includes("observed-output") && got.text.includes("observed-error"));
+  }
+  assert.equal(execFrameText({ok:true,result}, "", "").isError, false);
+  assert(execFrameText({ok:false,code:"relay_error"}, "", "", "observed-id").text.includes("exec_id=observed-id"));
 });
 
 test("completed nonzero still returns protocol exit fields", () => {

@@ -1,12 +1,11 @@
-export function execToolIsError(status: string, exitCode: unknown): boolean {
-  if (status === "cancelled" || status === "timeout") {
-    return true;
-  }
-  return Number(exitCode) !== 0;
+import type { Frame } from "./ipc.js";
+
+export function execToolIsError(status: unknown, exitCode: unknown): boolean {
+  return status !== "completed" || exitCode !== 0;
 }
 
 export function execToolText(
-  status: string,
+  status: unknown,
   exitCode: unknown,
   durationMs: unknown,
   truncated: unknown,
@@ -14,18 +13,30 @@ export function execToolText(
   stdout: string,
   stderr: string,
 ): { text: string; isError: boolean } {
-  if (status === "cancelled") {
-    return { text: "任务已取消。", isError: true };
-  }
-  if (status === "timeout") {
-    return { text: "执行超时。", isError: true };
-  }
+  const knownStatus = status === "completed" || status === "cancelled" || status === "timeout";
+  const knownExit = typeof exitCode === "number" && Number.isSafeInteger(exitCode);
+  const confirmed = knownStatus && (status !== "completed" || knownExit);
+  const summary = !confirmed ? "执行结果未确认。" : status === "cancelled" ? "任务已取消。" : status === "timeout" ? "执行超时。" : "";
   const bits = [
     stdout,
     stderr ? `stderr:\n${stderr}` : "",
-    `exit_code=${exitCode} duration_ms=${durationMs} truncated=${truncated} exec_id=${execId}`,
+    summary,
+    `status=${knownStatus ? status : "unknown"} exit_code=${knownExit ? exitCode : "unknown"} duration_ms=${typeof durationMs === "number" && Number.isSafeInteger(durationMs) && durationMs >= 0 ? durationMs : "unknown"} truncated=${typeof truncated === "boolean" ? truncated : "unknown"} exec_id=${typeof execId === "string" && execId ? execId : "unknown"}`,
   ].filter(Boolean);
   return { text: bits.join("\n"), isError: execToolIsError(status, exitCode) };
+}
+
+// The envelope must explicitly confirm a terminal before its result is trusted.
+// Retain already-observed output even when the operation fails or disconnects.
+export function execFrameText(frame: Frame, stdout: string, stderr: string, observedExecID = ""): { text: string; isError: boolean } {
+  if (frame.ok !== true || frame.event || frame.code) {
+    return {
+      text: [stdout, stderr ? `stderr:\n${stderr}` : "", frame.ok === false ? frame.message || frame.code || "执行失败。" : "执行结果未确认。", observedExecID ? `exec_id=${observedExecID}` : ""].filter(Boolean).join("\n"),
+      isError: true,
+    };
+  }
+  const r = frame.result;
+  return execToolText(r?.status, r?.exit_code, r?.duration_ms, r?.truncated, r?.exec_id, stdout, stderr);
 }
 
 export type ToolCtx = {

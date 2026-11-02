@@ -46,6 +46,10 @@ SSOT：命名管道 / Unix socket 上的报文与 ensure。路径与权限见 [d
 - 流式方法：0..n 条 `event`，**恰好一条**终态（`ok` true/false）。
 - 非流式：没有 `event`，只有一条终态。
 - `code` 与 [protocol.md](protocol.md) 同一套。`exec_id` 由 Runtime 生成（头不要自己编 WSS 用的 id）。
+
+执行头只在收到匹配请求 ID 的明确终态、`ok=true`、`status=completed` 和数值退出码 0 时显示成功。缺失/非法 status、缺失/null/字符串退出码、矛盾的事件与终态字段均不能推断成功；没有终态就断开时显示结果未确认，不重放。`ok=true` 仅表示 Runtime 返回了执行结果，非零退出、cancelled、timeout 仍是任务失败或中断。CLI/TUI 共用 IPC 流解析，MCP 按相同确定性规则解释结果。
+
+已收到的 stdout/stderr 不因非零退出、取消、超时或断线丢弃；已知的截断标志与失败状态同时呈现。MCP 中断回执保留已知任务 ID、状态和输出信息；缺失字段写明 unknown，不合成退出码 0。输出文本仍不是恢复或重复执行的凭据。
 **单帧：** 默认 64 KiB（stdout 块）。`write` 的 `params.content` 允许单条 JSON 最大 1 MiB（与 [protocol.md](protocol.md) write 上限一致）。
 
 `event` 取值：`stdout` / `stderr` / `approval`（可选）。不要在 IPC 上再包一层 WSS 的 `type=invoke`。

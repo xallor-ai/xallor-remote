@@ -4,7 +4,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
 import { findBinary, INSTALL_HINT } from "./ensure.js";
-import { bindHostCancel, execToolText, newExecProgress, type ToolCtx } from "./exec-result.js";
+import { bindHostCancel, execFrameText, newExecProgress, type ToolCtx } from "./exec-result.js";
 import { readToolText } from "./read-result.js";
 import { failText, RuntimeIpc, type Frame } from "./ipc.js";
 import { MCP_VERSION, versionsMatch } from "./version.js";
@@ -165,7 +165,7 @@ function createServer(): McpServer {
       });
       const stdout: string[] = [];
       const stderr: string[] = [];
-      let announced = false;
+      let observedExecID = "";
       const f = await ipc.stream(
         "exec",
         {
@@ -175,8 +175,8 @@ function createServer(): McpServer {
           ...(timeout_ms ? { timeout_ms } : {}),
         },
         (ev) => {
-          if (ev.exec_id && !announced) {
-            announced = true;
+          if (ev.exec_id && !observedExecID) {
+            observedExecID = ev.exec_id;
             onExec(ev.exec_id);
             void report(ev.exec_id);
           }
@@ -189,19 +189,8 @@ function createServer(): McpServer {
             void report(ev.data);
           }
         },
-      );
-      if (f.ok === false) {
-        return textResult(failText(f), true);
-      }
-      const got = execToolText(
-        String(f.result?.status ?? ""),
-        f.result?.exit_code,
-        f.result?.duration_ms,
-        f.result?.truncated,
-        f.result?.exec_id,
-        stdout.join(""),
-        stderr.join(""),
-      );
+      ).catch((): Frame => ({ ok: false, message: "连接已断开，执行结果未确认。" }));
+      const got = execFrameText(f, stdout.join(""), stderr.join(""), observedExecID);
       return textResult(got.text, got.isError);
     },
   );
