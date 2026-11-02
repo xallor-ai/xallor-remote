@@ -2,7 +2,6 @@ package noderun
 
 import (
 	"bytes"
-	"strings"
 	"testing"
 	"unicode/utf8"
 
@@ -144,15 +143,5 @@ func TestReadTooLarge_should_reject_before_read_when_default_whole_file(t *testi
 func TestPathDenied_should_match_os_root_escape(t *testing.T) {
 	if !pathDenied(errStr("openat junc\\secret.txt: path escapes from parent")) {
 		t.Fatal("os.Root escape must be policy_deny")
-	}
-}
-
-func TestWrapCommand_should_only_set_encoding(t *testing.T) {
-	got := wrapCommand("Write-Error \"x\"")
-	if strings.Contains(got, "LASTEXITCODE") {
-		t.Fatalf("wrapper must not promote LASTEXITCODE: %s", got)
-	}
-	if !strings.HasSuffix(got, "Write-Error \"x\"") {
-		t.Fatalf("command not preserved: %s", got)
 	}
 }

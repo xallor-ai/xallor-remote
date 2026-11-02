@@ -48,24 +48,6 @@ func (s *Store) RemovePeer(id string) error {
 	return s.persistPeers()
 }
 
-func (s *Store) SetConfig(relayURL, workspace, shell string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if relayURL != "" {
-		s.Config.RelayURL = relayURL
-	}
-	if workspace != "" {
-		s.Config.Workspace = workspace
-		if err := os.MkdirAll(workspace, 0o700); err != nil {
-			return err
-		}
-	}
-	if shell != "" {
-		s.Config.Shell = shell
-	}
-	return s.persistConfig()
-}
-
 func (s *Store) Wipe() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

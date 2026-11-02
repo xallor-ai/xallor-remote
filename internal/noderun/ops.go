@@ -12,6 +12,7 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/buildinfo"
 	"github.com/xallor-ai/xallor-remote/internal/identity"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/shell"
 )
 
 func (d *Daemon) runLocalRead(link *wsConn, msg protocol.Message) {
@@ -273,6 +274,7 @@ func (d *Daemon) runLocalInfo(link *wsConn, msg protocol.Message) {
 		"version":   buildinfo.Version(),
 		"build":     buildinfo.Current(),
 		"workspace": workspace,
+		"shell":     shell.Describe(d.store.ConfigSnapshot().Shell),
 		"docker":    false,
 		"nvidia":    false,
 	})

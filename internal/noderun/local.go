@@ -2,9 +2,11 @@ package noderun
 
 import (
 	"encoding/json"
+	"errors"
 
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/shell"
 )
 
 func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
@@ -95,17 +97,27 @@ func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
 		d.dropClient(p.DeviceID, nil)
 		_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
 	case "config.get":
-		_, _, _, ws, relay, _, _ := d.store.Snapshot()
-		_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"relay_url": relay, "workspace": ws}))
+		cfg := d.store.ConfigSnapshot()
+		if cfg.Shell == "" {
+			cfg.Shell = "auto"
+		}
+		_ = c.WriteFrame(ipc.OK(req.ID, cfg))
 	case "config.set":
 		var p struct {
 			RelayURL  string `json:"relay_url"`
 			Workspace string `json:"workspace"`
 			Shell     string `json:"shell"`
 		}
-		_ = json.Unmarshal(req.Params, &p)
+		if json.Unmarshal(req.Params, &p) != nil {
+			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "配置格式无效。"))
+			return true
+		}
 		if err := d.store.SetConfig(p.RelayURL, p.Workspace, p.Shell); err != nil {
-			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, err.Error()))
+			code := protocol.AgentError
+			if errors.Is(err, shell.ErrUnsupported) {
+				code = protocol.UnsupportedShell
+			}
+			_ = c.WriteFrame(ipc.Fail(req.ID, code, ipc.Human(code)))
 			return true
 		}
 		_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))

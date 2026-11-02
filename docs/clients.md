@@ -40,6 +40,8 @@ xallor-remote peer add --id … --grant …
 xallor-remote peer list
 xallor-remote peer rename --id … --name …
 xallor-remote exec --device … -- <command>
+xallor-remote config get
+xallor-remote config set --shell auto|powershell|pwsh|bash|sh
 xallor-remote approve
 xallor-remote mcp print-config
 xallor-remote mcp merge-config
@@ -48,6 +50,8 @@ xallor-remote reset --yes
 ```
 
 `inbound off` 保留身份；`revoke` 销毁登记。尚无授权码时 `inbound on` 等同 `grant issue`。`approve`：本机交互确认高危命令；无 TTY 时不要跑。
+
+`config` 修改当前本机 Runtime；要改变对方执行解释器，在对方设备执行。`get` 返回 JSON 配置，`set --shell` 持久保存并用于后续任务，不改变已运行任务。各系统支持项和自动选择规则见 [os.md](os.md)。`auto` 恢复自动选择，空参数不是清除操作。
 
 ---
 

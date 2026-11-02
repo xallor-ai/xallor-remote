@@ -61,6 +61,8 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 
 `info` 的 JSON 结果包含 `build`：version、revision、built_at（可省略）、dirty、protocol（当前为 1）、os、arch；用于区分运行制品与代码版本。未知 revision 为 `unknown`，不猜测提交。Relay health 返回同形构建身份。
 
+`info.shell` 为 `{configured,selected?,available:[],code?}`：configured 为目标配置名或 auto，selected 是当前能找到的解释器名，available 是本系统受支持且可找到的名字；不能解析选择时返回 code，不伪造 selected。只探测可执行文件，不包含路径、版本或远程凭据。可选解释器及执行语义见 [os.md](os.md)。
+
 - `exec`：`command`（字符串）、`cwd?`、`timeout_ms?`
 - `cancel`：`exec_id`。只取消**本条 client 连接**登记的 inflight；对别人的或未知 id 一律 `unknown_exec`（不区分「存在但是别人的」）
 - `read`：路径 + `head`/`tail`（行）或 offset/limit（字节）
@@ -106,6 +108,8 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 | `truncated` | 与 `exit` 同时出现的标志，不是单独终态。read 因默认窗口或上限少给的内容也标 true |
 | `relay_error` | 中转故障或重启丢 inflight |
 | `agent_error` | Runtime 内部失败 |
+| `unsupported_shell` | 目标系统不支持配置的解释器名 |
+| `shell_unavailable` | 目标无法安全找到所选解释器；不会换壳重试 |
 | `quota_exceeded` | Relay 或目标 Runtime 的资源上限已满（如分享数、在途请求或本机作业容量） |
 | `workspace_missing` | workspace 目录不可用 |
 | `too_large` | write/read 超过硬上限 |
@@ -132,6 +136,7 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 | **write 上限** | **1 MiB**（解码后）；整包 marshal 超 WSS 读上限则 `too_large`，不落盘 |
 | 每设备并发 exec | **4** |
 | Runtime 本机作业占用 | 前台 exec 与后台 handoff 合计 **4**；其中 handoff 最多 **2**，不确定占用也计入；独立于 Relay inflight |
+| Windows 命令行 | 编码后的解释器启动命令预估长度必须小于 **32767 UTF-16 单元**，否则启动前返回 `too_large`；OS 的实际启动限制仍有效 |
 | 本机作业账本 | jobs.json 最多 **16 KiB**；内部关联键最多 **128 字节**；仅保存仍占用或不确定记录 |
 | 排队 | 不排队，超额 `quota_exceeded` |
 | heartbeat | 30s 发一拍；60s 无任何帧 → 连接死 |

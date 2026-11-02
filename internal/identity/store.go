@@ -135,11 +135,6 @@ func (s *Store) persistGrant() error {
 	return os.WriteFile(filepath.Join(s.Dir, "grant"), []byte(s.Grant), 0o600)
 }
 
-func (s *Store) persistConfig() error {
-	b, _ := json.MarshalIndent(s.Config, "", "  ")
-	return os.WriteFile(filepath.Join(s.Dir, "config.json"), b, 0o600)
-}
-
 func (s *Store) persistPeers() error {
 	b, _ := json.MarshalIndent(s.Peers, "", "  ")
 	return atomicfile.Write(filepath.Join(s.Dir, "peers.json"), b)

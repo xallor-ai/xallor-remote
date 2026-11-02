@@ -12,6 +12,8 @@ const (
 	Cancelled        = "cancelled"
 	RelayError       = "relay_error"
 	AgentError       = "agent_error"
+	UnsupportedShell = "unsupported_shell"
+	ShellUnavailable = "shell_unavailable"
 	QuotaExceeded    = "quota_exceeded"
 	WorkspaceMissing = "workspace_missing"
 	TooLarge         = "too_large"

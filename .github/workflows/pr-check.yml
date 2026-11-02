@@ -201,6 +201,7 @@ jobs:
       - run: python tests/ownership_e2e.py
       - run: python tests/process_lifetime_e2e.py
       - run: python tests/job_lifecycle_e2e.py
+      - run: python tests/shell_adapter_e2e.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -211,6 +212,7 @@ jobs:
             dist/verification/ownership.json
             dist/verification/process-lifetime.json
             dist/verification/job-lifecycle.json
+            dist/verification/shell-adapter.json
             dist/release/**/manifest.json
 
   # Single required status for branch protection.

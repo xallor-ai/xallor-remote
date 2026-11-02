@@ -144,6 +144,10 @@ func Human(code string) string {
 		return "workspace 目录不可用。"
 	case "quota_exceeded":
 		return "已达到资源上限，请稍后再试。"
+	case "unsupported_shell":
+		return "目标系统不支持所选 Shell，请在目标设备修改配置。"
+	case "shell_unavailable":
+		return "目标设备找不到所选 Shell，请安装或修改配置。"
 	default:
 		if code == "" {
 			return "失败。"

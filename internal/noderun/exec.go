@@ -12,6 +12,7 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/job"
 	"github.com/xallor-ai/xallor-remote/internal/process"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/shell"
 )
 
 func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Message) {
@@ -20,7 +21,9 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.AgentError))
 		return
 	}
-	_, _, _, workspace, _, inbound, _ := d.store.Snapshot()
+	_, _, _, _, _, inbound, _ := d.store.Snapshot()
+	cfg := d.store.ConfigSnapshot()
+	workspace := cfg.Workspace
 	if !inbound {
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.InboundDisabled))
 		return
@@ -66,6 +69,21 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.Unauthorized))
 		return
 	}
+	cmd, err := shell.Build(cfg.Shell, p.Command, cwd)
+	if err != nil {
+		code := protocol.AgentError
+		if errors.Is(err, shell.ErrUnsupported) {
+			code = protocol.UnsupportedShell
+		}
+		if errors.Is(err, shell.ErrUnavailable) {
+			code = protocol.ShellUnavailable
+		}
+		if errors.Is(err, shell.ErrTooLarge) {
+			code = protocol.TooLarge
+		}
+		_ = link.send(protocol.Nack(msg.ExecID, code))
+		return
+	}
 	owner, err := d.jobs.Reserve(*msg.Scope, "exec", msg.ExecID)
 	if err != nil {
 		code := protocol.AgentError
@@ -76,7 +94,6 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		return
 	}
 	defer owner.Finish()
-	cmd := buildCmd(p.Command, cwd)
 	stdout, stdoutWrite, err := os.Pipe()
 	if err != nil {
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.AgentError))
@@ -179,16 +196,4 @@ func startFailureCode(ctx context.Context) string {
 		return protocol.ExecTimeout
 	}
 	return protocol.AgentError
-}
-
-func buildCmd(command, cwd string) *exec.Cmd {
-	var cmd *exec.Cmd
-	if osName() == "windows" {
-		cmd = exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", wrapCommand(command))
-	} else {
-		cmd = exec.Command("bash", "-lc", wrapCommand(command))
-	}
-	cmd.Dir = cwd
-	cmd.Env = os.Environ()
-	return cmd
 }

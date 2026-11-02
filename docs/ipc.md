@@ -65,7 +65,7 @@ SSOT：命名管道 / Unix socket 上的报文与 ensure。路径与权限见 [d
 | `revoke` / `reset` | 人侧头 | reset 须 `params.confirm=true` |
 | `peer.add` / `list` / `remove` | 任一头 | add 会收编 mcp.json 那套 id+grant |
 | `peer.rename` | 任一头 | `{device_id,name}` 修改备注，最多 80 字符；空字符串清除，不改 ID 或授权 |
-| `config.get` / `config.set` | 人侧头 | relay URL、workspace、shell |
+| `config.get` / `config.set` | 人侧头 | get 返回 `{relay_url,workspace,shell}`，未配置 shell 显示 auto；set 接受这三项，省略或空值不更新，shell=auto 恢复自动选择；错误不改变活动配置 |
 | `account.set` | 人侧头 | `{token:string}`；必须明确提供，空字符串表示清除；返回 `{configured:bool}` |
 | `account.status` | 人侧头 | 返回 `{configured:bool}`，不返回凭据或宣称已在线认证 |
 | `device.access` | 人侧头 | 归属/分享管理参数见协议；凭据由 Runtime 获取，头不得传入 token 或设备密钥 |
