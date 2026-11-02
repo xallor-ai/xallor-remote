@@ -5,7 +5,7 @@ import (
 	"errors"
 	"os/exec"
 
-	"github.com/xallor-ai/xallor-remote/internal/process"
+	"github.com/xallor-ai/xallor-remote/internal/job"
 )
 
 type boundedOutput struct {
@@ -23,10 +23,10 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
 	b.data = append(b.data, p...)
 	return n, nil
 }
-func (m *Manager) output(ctx context.Context, cmd *exec.Cmd) (string, error) {
+func (m *Manager) output(ctx context.Context, cmd *exec.Cmd, owner *job.Owner) (string, error) {
 	b := &boundedOutput{}
 	cmd.Stdout = b
-	child, err := process.Start(ctx, cmd)
+	child, err := owner.Start(ctx, cmd)
 	if err != nil {
 		return "", err
 	}

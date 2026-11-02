@@ -70,6 +70,9 @@ func main() {
 		session = "00000000-0000-0000-0000-000000000000"
 	}
 	emit(map[string]string{"type": "system", "subtype": "init", "session_id": session, "cwd": workspace})
+	if strings.Contains(prompt, "TEST_JOB_WAIT") {
+		time.Sleep(300 * time.Second)
+	}
 	if strings.Contains(prompt, "TEST_DESCENDANT") {
 		ready := filepath.Join(os.Getenv("XALLOR_REMOTE_DATA_DIR"), "fixture-descendant-ready")
 		child := exec.Command(os.Args[0], "--descendant", ready)

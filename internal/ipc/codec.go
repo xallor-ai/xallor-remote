@@ -143,7 +143,7 @@ func Human(code string) string {
 	case "workspace_missing":
 		return "workspace 目录不可用。"
 	case "quota_exceeded":
-		return "已超过中转限额，请稍后再试。"
+		return "已达到资源上限，请稍后再试。"
 	default:
 		if code == "" {
 			return "失败。"

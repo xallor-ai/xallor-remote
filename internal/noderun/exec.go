@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xallor-ai/xallor-remote/internal/job"
 	"github.com/xallor-ai/xallor-remote/internal/process"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -61,6 +62,20 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		return
 	}
 
+	if msg.Scope == nil || !msg.Scope.Valid() {
+		_ = link.send(protocol.Nack(msg.ExecID, protocol.Unauthorized))
+		return
+	}
+	owner, err := d.jobs.Reserve(*msg.Scope, "exec", msg.ExecID)
+	if err != nil {
+		code := protocol.AgentError
+		if errors.Is(err, job.ErrCapacity) {
+			code = protocol.QuotaExceeded
+		}
+		_ = link.send(protocol.Nack(msg.ExecID, code))
+		return
+	}
+	defer owner.Finish()
 	cmd := buildCmd(p.Command, cwd)
 	stdout, stdoutWrite, err := os.Pipe()
 	if err != nil {
@@ -78,7 +93,7 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 	defer stderrWrite.Close()
 	cmd.Stdout, cmd.Stderr = stdoutWrite, stderrWrite
 	start := time.Now()
-	child, err := process.Start(ctx, cmd)
+	child, err := owner.Start(ctx, cmd)
 	_ = stdoutWrite.Close()
 	_ = stderrWrite.Close()
 	if err != nil {
@@ -129,7 +144,7 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		<-drained
 		trunc = true
 	}
-	if errors.Is(err, process.ErrCleanup) {
+	if releaseErr := owner.Finish(); releaseErr != nil || errors.Is(err, process.ErrCleanup) {
 		_ = link.send(protocol.Err(msg.ExecID, protocol.AgentError))
 		return
 	}

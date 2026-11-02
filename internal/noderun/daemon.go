@@ -15,6 +15,7 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/handoff"
 	"github.com/xallor-ai/xallor-remote/internal/identity"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
+	"github.com/xallor-ai/xallor-remote/internal/job"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -44,6 +45,7 @@ type Daemon struct {
 	approvals         *approvalHub
 	activity          *activity.Log
 	handoffs          *handoff.Manager
+	jobs              *job.Ledger
 }
 
 type remoteExec struct {
@@ -63,14 +65,16 @@ func New(store *identity.Store, log *slog.Logger) *Daemon {
 		remote:    map[string]*remoteExec{},
 		approvals: newApprovalHub(),
 		activity:  activity.Open(store.Dir),
+		jobs:      job.New(store.Dir),
 	}
-	d.handoffs = handoff.New(ctx, store.Dir)
+	d.handoffs = handoff.New(ctx, store.Dir, d.jobs)
 	return d
 }
 
 func (d *Daemon) Stop() { d.cancel() }
 
 func (d *Daemon) Run() error {
+	defer d.jobs.Close()
 	defer d.handoffs.Close()
 	defer d.waitLocalExecs()
 	_ = buildinfo.Running()

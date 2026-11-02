@@ -37,15 +37,17 @@ func TestPreflight_should_allowColdCLI_and_honorCallerCancellation(t *testing.T)
 	for _, interrupt := range []bool{false, true} {
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Setenv("XR_PREFLIGHT_COLD_HELPER", "1")
-		m := New(context.Background(), t.TempDir())
+		m := newTestManager(context.Background(), t.TempDir())
 		if interrupt {
 			cancel()
 		}
 		if err := Configure(m.dir, Config{Executable: os.Args[0], Prefix: []string{"-test.run=^TestPreflight_should_allowColdCLI_and_honorCallerCancellation$", "--"}}); err != nil {
 			t.Fatal(err)
 		}
-		_, version, _, err := m.preflight(ctx, r, workspace)
+		owner := m.probeOwner(t)
+		_, version, _, err := m.preflight(ctx, r, workspace, owner)
 		cancel()
+		_ = owner.Finish()
 		m.Close()
 		if interrupt {
 			if err == nil || err.Error() != "preflight_interrupted" {
@@ -68,9 +70,11 @@ func TestPreflight_should_preserveInterruptionCause(t *testing.T) {
 			code = "preflight_timeout_git_root"
 		}
 		cancel()
-		m := New(context.Background(), t.TempDir())
+		m := newTestManager(context.Background(), t.TempDir())
 		workspace := t.TempDir()
-		_, _, _, err := m.preflight(ctx, testRequest(workspace), workspace)
+		owner := m.probeOwner(t)
+		_, _, _, err := m.preflight(ctx, testRequest(workspace), workspace, owner)
+		_ = owner.Finish()
 		m.Close()
 		if err == nil || err.Error() != code {
 			t.Fatalf("expected %s, got %v", code, err)

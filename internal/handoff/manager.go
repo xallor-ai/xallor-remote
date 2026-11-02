@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/invocation"
+	"github.com/xallor-ai/xallor-remote/internal/job"
 )
 
 type Manager struct {
@@ -20,11 +21,12 @@ type Manager struct {
 	items  map[string]record
 	active map[string]bool
 	err    error
+	jobs   *job.Ledger
 }
 
-func New(parent context.Context, dir string) *Manager {
+func New(parent context.Context, dir string, jobs *job.Ledger) *Manager {
 	ctx, cancel := context.WithCancel(parent)
-	m := &Manager{ctx: ctx, cancel: cancel, dir: dir, items: map[string]record{}, active: map[string]bool{}}
+	m := &Manager{ctx: ctx, cancel: cancel, dir: dir, jobs: jobs, items: map[string]record{}, active: map[string]bool{}}
 	m.err = m.load()
 	return m
 }
@@ -77,13 +79,18 @@ func (m *Manager) Submit(scope invocation.Scope, r Request, root string) (Receip
 	if !m.ownsSession(scope, key) {
 		return Receipt{}, fmt.Errorf("该会话不能用于当前身份，请使用新会话。")
 	}
-	if len(m.items) >= MaxReceipts || len(m.active) >= 2 || m.active[key] {
+	if len(m.items) >= MaxReceipts || m.active[key] {
 		return Receipt{}, fmt.Errorf("回执或并发交接已达上限；同一会话不能并行交接。")
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
+	owner, err := m.jobs.Reserve(scope, "handoff", r.Session)
+	if err != nil {
+		return Receipt{}, fmt.Errorf("本机作业容量不足或仍有未确认结束的任务。")
+	}
 	receipt := Receipt{ID: r.ID, Fingerprint: hash, Workspace: r.Workspace, Revision: r.Revision, Session: r.Session, Agent: r.Agent, Mode: r.Mode, State: "received", Created: now, Updated: now}
 	stored := record{Scope: scope, Receipt: receipt}
 	if err := m.persist(stored); err != nil {
+		_ = owner.Finish()
 		m.err = err
 		return Receipt{}, fmt.Errorf("回执无法保存，未启动 Agent。")
 	}
@@ -93,7 +100,11 @@ func (m *Manager) Submit(scope invocation.Scope, r Request, root string) (Receip
 	go func() {
 		defer m.wg.Done()
 		defer func() { m.mu.Lock(); delete(m.active, key); m.mu.Unlock() }()
-		m.run(id, r, root)
+		result := m.run(id, r, root, owner)
+		if owner.Finish() != nil {
+			result.state, result.code = "unknown", "job_release_unconfirmed"
+		}
+		_ = m.update(id, result.state, result.code, result.version, result.text, result.truncated)
 	}()
 	return receipt, nil
 }

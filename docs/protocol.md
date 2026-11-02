@@ -106,7 +106,7 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 | `truncated` | 与 `exit` 同时出现的标志，不是单独终态。read 因默认窗口或上限少给的内容也标 true |
 | `relay_error` | 中转故障或重启丢 inflight |
 | `agent_error` | Runtime 内部失败 |
-| `quota_exceeded` | 官方 Relay 硬顶 |
+| `quota_exceeded` | Relay 或目标 Runtime 的资源上限已满（如分享数、在途请求或本机作业容量） |
 | `workspace_missing` | workspace 目录不可用 |
 | `too_large` | write/read 超过硬上限 |
 
@@ -131,6 +131,8 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 | read `offset` | 字节起点，可大于 1 MiB；落在 rune 中间则回退到该 rune 起点 |
 | **write 上限** | **1 MiB**（解码后）；整包 marshal 超 WSS 读上限则 `too_large`，不落盘 |
 | 每设备并发 exec | **4** |
+| Runtime 本机作业占用 | 前台 exec 与后台 handoff 合计 **4**；其中 handoff 最多 **2**，不确定占用也计入；独立于 Relay inflight |
+| 本机作业账本 | jobs.json 最多 **16 KiB**；内部关联键最多 **128 字节**；仅保存仍占用或不确定记录 |
 | 排队 | 不排队，超额 `quota_exceeded` |
 | heartbeat | 30s 发一拍；60s 无任何帧 → 连接死 |
 
