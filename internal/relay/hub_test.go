@@ -6,68 +6,77 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/xallor-ai/xallor-remote/internal/access"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 type memStore struct {
 	mu   sync.Mutex
-	rows map[string]DeviceRecord
+	rows map[string]access.Device
 }
 
 func newMemStore() *memStore {
-	return &memStore{rows: map[string]DeviceRecord{}}
+	return &memStore{rows: map[string]access.Device{}}
 }
 
-func (m *memStore) LoadDevice(ctx context.Context, id string) (DeviceRecord, error) {
+func (m *memStore) LoadDevice(ctx context.Context, id string) (access.Device, error) {
 	if err := ctx.Err(); err != nil {
-		return DeviceRecord{}, err
+		return access.Device{}, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r, ok := m.rows[id]
 	if !ok {
-		return DeviceRecord{}, ErrDeviceNotFound
+		return access.Device{}, ErrDeviceNotFound
 	}
 	return r, nil
 }
 
-func (m *memStore) RegisterDevice(ctx context.Context, id, secretHash string, inbound bool) (DeviceRecord, error) {
+func (m *memStore) RegisterDevice(ctx context.Context, id, secretHash string, inbound bool) (access.Device, error) {
 	if err := ctx.Err(); err != nil {
-		return DeviceRecord{}, err
+		return access.Device{}, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if r, ok := m.rows[id]; ok {
 		if r.SecretHash != secretHash {
-			return DeviceRecord{}, ErrDeviceIdentity
+			return access.Device{}, ErrDeviceIdentity
 		}
 		return r, nil
 	}
-	r := DeviceRecord{SecretHash: secretHash, Inbound: inbound}
+	r, err := access.NewDevice(secretHash, inbound)
+	if err != nil {
+		return access.Device{}, err
+	}
 	m.rows[id] = r
 	return r, nil
 }
 
-func (m *memStore) UpdateDevice(ctx context.Context, id string, r DeviceRecord) error {
+func (m *memStore) UpdateDevice(ctx context.Context, id string, r access.Device) (access.Device, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return access.Device{}, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if old, ok := m.rows[id]; !ok || old.SecretHash != r.SecretHash {
-		return ErrDeviceIdentity
+	old, ok := m.rows[id]
+	if !ok || old.SecretHash != r.SecretHash || old.UID != r.UID {
+		return access.Device{}, ErrDeviceIdentity
+	}
+	r, err := old.WithAccess(r.GrantHash, r.Inbound)
+	if err != nil {
+		return access.Device{}, err
 	}
 	m.rows[id] = r
-	return nil
+	return r, nil
 }
 
-func (m *memStore) DeleteDevice(ctx context.Context, id, secretHash string) error {
+func (m *memStore) DeleteDevice(ctx context.Context, id, uid, secretHash string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if old, ok := m.rows[id]; !ok || old.SecretHash != secretHash {
+	if old, ok := m.rows[id]; !ok || old.SecretHash != secretHash || old.UID != uid {
 		return ErrDeviceIdentity
 	}
 	delete(m.rows, id)
@@ -153,7 +162,7 @@ func TestOversizeStdoutMarksTruncatedOnExit(t *testing.T) {
 	h.RegisterDevice("dev_a", "secret", true, dev)
 	authorizeTestClient(t, h, dev, cli)
 	h.mu.Lock()
-	h.devices["dev_a"].inbound = true
+	h.devices["dev_a"].record.Inbound = true
 	h.mu.Unlock()
 	h.Handle(cli, protocol.RoleClient, "dev_a", protocol.Message{
 		Type: protocol.TypeInvoke, ExecID: "ex_t", Op: protocol.OpExec,
@@ -187,7 +196,7 @@ func TestClientDropSendsCancelToDevice(t *testing.T) {
 	h.RegisterDevice("dev_a", "secret", true, dev)
 	authorizeTestClient(t, h, dev, cli)
 	h.mu.Lock()
-	h.devices["dev_a"].inbound = true
+	h.devices["dev_a"].record.Inbound = true
 	h.mu.Unlock()
 	h.Handle(cli, protocol.RoleClient, "dev_a", protocol.Message{
 		Type: protocol.TypeInvoke, ExecID: "ex_drop", Op: protocol.OpExec,

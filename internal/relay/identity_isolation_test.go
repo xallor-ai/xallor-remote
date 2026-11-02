@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/xallor-ai/xallor-remote/internal/access"
 )
 
 type blockedIdentityStore struct {
@@ -12,13 +14,13 @@ type blockedIdentityStore struct {
 	release chan struct{}
 }
 
-func (s *blockedIdentityStore) LoadDevice(ctx context.Context, id string) (DeviceRecord, error) {
+func (s *blockedIdentityStore) LoadDevice(ctx context.Context, id string) (access.Device, error) {
 	if id == "blocked" {
 		close(s.entered)
 		select {
 		case <-s.release:
 		case <-ctx.Done():
-			return DeviceRecord{}, ctx.Err()
+			return access.Device{}, ctx.Err()
 		}
 	}
 	return s.DeviceStore.LoadDevice(ctx, id)

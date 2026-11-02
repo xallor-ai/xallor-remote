@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/xallor-ai/xallor-remote/internal/access"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -16,15 +17,14 @@ type Sender interface {
 }
 
 type deviceSlot struct {
-	conn       Sender
-	secretHash string
-	inbound    bool
-	online     bool
+	conn   Sender
+	record access.Device
+	online bool
 }
 
 type clientSlot struct {
 	targetID string
-	grantHex string
+	access   access.Binding
 }
 
 type inflight struct {
@@ -38,7 +38,7 @@ type inflight struct {
 type Hub struct {
 	mu         sync.Mutex
 	devices    map[string]*deviceSlot
-	grants     map[string]string // device_id -> grant hash
+	access     map[string]access.Binding
 	clients    map[Sender]clientSlot
 	inflight   map[string]*inflight
 	store      DeviceStore
@@ -48,7 +48,7 @@ type Hub struct {
 func NewHub(store DeviceStore) *Hub {
 	return &Hub{
 		devices:  map[string]*deviceSlot{},
-		grants:   map[string]string{},
+		access:   map[string]access.Binding{},
 		clients:  map[Sender]clientSlot{},
 		inflight: map[string]*inflight{},
 		store:    store,
@@ -106,7 +106,8 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if binding, ok := h.clients[from]; !ok || binding.targetID != targetID || binding.grantHex != h.grants[targetID] {
+	binding, ok := h.clients[from]
+	if !ok || binding.targetID != targetID || !binding.access.Matches(h.access[targetID]) {
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.Unauthorized))
 		return
 	}
@@ -119,14 +120,14 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 		return
 	}
 	dev := h.devices[targetID]
-	if dev == nil || !dev.online || dev.conn == nil {
+	if dev == nil || !dev.online || dev.conn == nil || dev.record.UID != binding.access.DeviceUID {
 		// A live authenticated binding already proves that the identity exists.
 		// Revocation removes its grant before routing can reach this branch.
 		code := protocol.DeviceOffline
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, code))
 		return
 	}
-	if !dev.inbound {
+	if !dev.record.Inbound {
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.InboundDisabled))
 		return
 	}

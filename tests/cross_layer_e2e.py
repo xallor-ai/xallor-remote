@@ -1,6 +1,7 @@
 """Run real IPC/Relay executions, then verify reconnection and actual MCP calls."""
 import argparse
 from contextlib import closing
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -56,9 +57,13 @@ def main():
         # Inspect the real Relay database after exec, files, cancellation, and restart.
         # Operation payloads and output must not acquire a persistence collection.
         with closing(sqlite3.connect((cluster.root / "relay/relay.db").as_uri() + "?mode=ro", uri=True)) as db:
-            assert db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall() == [("devices",)]
-            assert db.execute("PRAGMA user_version").fetchone() == (2,)
+            assert db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall() == [("device_grants",), ("devices",)]
+            assert db.execute("PRAGMA user_version").fetchone() == (3,)
             assert db.execute("SELECT inbound FROM devices WHERE id=?", (target,)).fetchone() == (1,)
+            uid, grant_id, token_hash = db.execute("SELECT d.uid,g.id,g.token_hash FROM devices d JOIN device_grants g ON g.device_uid=d.uid WHERE d.id=?", (target,)).fetchone()
+            assert len(uid) == 32 and len(grant_id) == 32 and uid != target
+            current_grant = (cluster.root / "target/grant").read_text(encoding="utf-8")
+            assert token_hash == hashlib.sha256(current_grant.encode("utf-8")).hexdigest()
         results.append({"name":"relay_persists_identity_without_operation_payloads", "status":"pass"})
     finally:
         cluster.close()

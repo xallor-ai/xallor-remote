@@ -28,7 +28,7 @@ INSERT INTO grants VALUES ('device','stale-mirror',0);`)
 			t.Fatal(err)
 		}
 		r, err := s.LoadDevice(context.Background(), "device")
-		if err != nil || r != (DeviceRecord{SecretHash: "secret", GrantHash: "current-grant", Inbound: true}) {
+		if err != nil || r.SecretHash != "secret" || r.GrantHash != "current-grant" || !r.Inbound || r.UID == "" || r.GrantID == "" {
 			t.Fatalf("identity: %+v %v", r, err)
 		}
 		var count, version int
@@ -38,7 +38,7 @@ INSERT INTO grants VALUES ('device','stale-mirror',0);`)
 		if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 			t.Fatal(err)
 		}
-		if count != 0 || version != 2 {
+		if count != 0 || version != 3 {
 			t.Fatalf("schema count=%d version=%d", count, version)
 		}
 		if err := s.Close(); err != nil {

@@ -38,9 +38,7 @@ func TestFlowWire_should_routeOtherClient_whenSocketConsumerStopsReading(t *test
 	if _, err := s.RegisterDevice(context.Background(), "device", secret, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UpdateDevice(context.Background(), "device", DeviceRecord{SecretHash: secret, GrantHash: grant, Inbound: true}); err != nil {
-		t.Fatal(err)
-	}
+	setTestAccess(t, s, "device", grant, true)
 	h := NewHub(s)
 	// Bound both TCP buffers so the fixture does not depend on OS autotuning
 	// or on JSON parsing being faster than a socket writer.

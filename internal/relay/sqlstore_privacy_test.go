@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+
+	"github.com/xallor-ai/xallor-remote/internal/access"
 )
 
 // Opening a populated schema-1 database removes operation payload storage while
@@ -25,7 +27,8 @@ PRAGMA user_version=1;`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for range 2 {
+	var binding access.Binding
+	for run := range 2 {
 		s, err := OpenSQLStore(dir)
 		if err != nil {
 			t.Fatal(err)
@@ -33,11 +36,16 @@ PRAGMA user_version=1;`)
 		func() {
 			defer s.Close()
 			r, err := s.LoadDevice(context.Background(), "device")
-			if err != nil || r != (DeviceRecord{SecretHash: "secret-hash", GrantHash: "grant-hash", Inbound: true}) {
+			if err != nil || r.SecretHash != "secret-hash" || r.GrantHash != "grant-hash" || !r.Inbound || r.UID == "" || r.GrantID == "" {
 				t.Fatalf("identity changed: %+v %v", r, err)
 			}
+			if run == 0 {
+				binding = r.Binding()
+			} else if !binding.Matches(r.Binding()) {
+				t.Fatal("reopening changed the migrated binding")
+			}
 			var tables string
-			if err := s.db.QueryRow(`SELECT group_concat(name) FROM sqlite_master WHERE type='table'`).Scan(&tables); err != nil || tables != "devices" {
+			if err := s.db.QueryRow(`SELECT group_concat(name) FROM (SELECT name FROM sqlite_master WHERE type='table' ORDER BY name)`).Scan(&tables); err != nil || tables != "device_grants,devices" {
 				t.Fatalf("unexpected persisted collections: %q %v", tables, err)
 			}
 			var indexes, seen, version int
@@ -50,7 +58,7 @@ PRAGMA user_version=1;`)
 			if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 				t.Fatal(err)
 			}
-			if indexes != 0 || seen != 1234 || version != 2 {
+			if indexes != 0 || seen != 1234 || version != 3 {
 				t.Fatalf("unexpected schema/state: indexes=%d last_seen=%d version=%d", indexes, seen, version)
 			}
 		}()

@@ -2,7 +2,6 @@ package relay
 
 import (
 	"database/sql"
-	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -29,7 +28,7 @@ func OpenSQLStore(dir string) (*SQLStore, error) {
 	if !strings.HasPrefix(uriPath, "/") {
 		uriPath = "/" + uriPath
 	}
-	dsn := (&url.URL{Scheme: "file", Path: uriPath, RawQuery: "_pragma=busy_timeout%3D50"}).String()
+	dsn := (&url.URL{Scheme: "file", Path: uriPath, RawQuery: "_pragma=busy_timeout%3D50&_pragma=foreign_keys%3D1"}).String()
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
@@ -41,43 +40,6 @@ func OpenSQLStore(dir string) (*SQLStore, error) {
 		return nil, err
 	}
 	return s, nil
-}
-
-func (s *SQLStore) migrate() error {
-	if _, err := s.db.Exec(`PRAGMA journal_mode=WAL;`); err != nil {
-		return err
-	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	var version int
-	if err := tx.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
-		return err
-	}
-	if version > 2 {
-		return fmt.Errorf("unsupported Relay database version %d", version)
-	}
-	if version == 2 {
-		return tx.Commit()
-	}
-	_, err = tx.Exec(`
-CREATE TABLE IF NOT EXISTS devices (
-  id TEXT PRIMARY KEY,
-  secret_hash TEXT NOT NULL,
-  grant_hash TEXT NOT NULL DEFAULT '',
-  inbound INTEGER NOT NULL DEFAULT 0,
-  last_seen INTEGER NOT NULL DEFAULT 0
-);
-DROP TABLE IF EXISTS grants;
-DROP TABLE IF EXISTS audit;
-PRAGMA user_version=2;
-`)
-	if err != nil {
-		return err
-	}
-	return tx.Commit()
 }
 
 func (s *SQLStore) Close() error {

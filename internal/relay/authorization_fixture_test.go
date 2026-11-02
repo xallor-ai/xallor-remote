@@ -1,9 +1,26 @@
 package relay
 
 import (
-	"github.com/xallor-ai/xallor-remote/internal/protocol"
+	"context"
 	"testing"
+
+	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
+
+func setTestAccess(t *testing.T, s DeviceStore, id, grant string, inbound bool) access.Device {
+	t.Helper()
+	r, err := s.LoadDevice(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.GrantHash, r.Inbound = grant, inbound
+	r, err = s.UpdateDevice(context.Background(), id, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
 
 func authorizeTestClient(t *testing.T, h *Hub, dev, client Sender) {
 	t.Helper()

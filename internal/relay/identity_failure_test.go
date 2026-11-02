@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/xallor-ai/xallor-remote/internal/access"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -75,7 +76,7 @@ func TestIdentity_should_preserveAuthorization_whenMutationFails(t *testing.T) {
 				t.Fatal("failed authorization remained routable during close")
 			}
 			after, err := s.LoadDevice(context.Background(), "device")
-			if err != nil || before != after || h.grants["device"] != before.GrantHash || !h.devices["device"].inbound {
+			if err != nil || before != after || h.access["device"] != before.Binding() || !h.devices["device"].record.Inbound {
 				t.Fatalf("failed mutation changed identity: %+v %v", after, err)
 			}
 		})
@@ -131,10 +132,12 @@ func TestIdentity_should_preserveFirstClaim_whenRegistrationsRace(t *testing.T) 
 	if r.SecretHash == other {
 		other = "two"
 	}
-	if err := b.UpdateDevice(context.Background(), "same-device", DeviceRecord{SecretHash: other}); !errors.Is(err, ErrDeviceIdentity) {
+	wrong := r
+	wrong.SecretHash = other
+	if _, err := b.UpdateDevice(context.Background(), "same-device", wrong); !errors.Is(err, ErrDeviceIdentity) {
 		t.Fatal(err)
 	}
-	if err := b.DeleteDevice(context.Background(), "same-device", other); !errors.Is(err, ErrDeviceIdentity) {
+	if err := b.DeleteDevice(context.Background(), "same-device", r.UID, other); !errors.Is(err, ErrDeviceIdentity) {
 		t.Fatal(err)
 	}
 	if got, err := a.LoadDevice(context.Background(), "same-device"); err != nil || got != r {
@@ -154,10 +157,10 @@ func TestIdentity_should_returnErrors_whenStoreClosed(t *testing.T) {
 	if _, err := s.RegisterDevice(context.Background(), "device", "secret", true); err == nil {
 		t.Fatal("register succeeded")
 	}
-	if err := s.UpdateDevice(context.Background(), "device", DeviceRecord{}); err == nil {
+	if _, err := s.UpdateDevice(context.Background(), "device", access.Device{}); err == nil {
 		t.Fatal("update succeeded")
 	}
-	if err := s.DeleteDevice(context.Background(), "device", "secret"); err == nil {
+	if err := s.DeleteDevice(context.Background(), "device", "uid", "secret"); err == nil {
 		t.Fatal("delete succeeded")
 	}
 }

@@ -16,15 +16,12 @@ func TestSQLStoreDeviceRoundTrip(t *testing.T) {
 	if _, err := s.RegisterDevice(context.Background(), "dev_a", "sec", true); err != nil {
 		t.Fatal(err)
 	}
-	want := DeviceRecord{SecretHash: "sec", GrantHash: "gr", Inbound: true}
-	if err := s.UpdateDevice(context.Background(), "dev_a", want); err != nil {
-		t.Fatal(err)
-	}
+	want := setTestAccess(t, s, "dev_a", "gr", true)
 	got, err := s.LoadDevice(context.Background(), "dev_a")
 	if err != nil || got != want {
 		t.Fatalf("load %+v %v", got, err)
 	}
-	if err := s.DeleteDevice(context.Background(), "dev_a", "sec"); err != nil {
+	if err := s.DeleteDevice(context.Background(), "dev_a", want.UID, "sec"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.LoadDevice(context.Background(), "dev_a"); !errors.Is(err, ErrDeviceNotFound) {

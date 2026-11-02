@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/xallor-ai/xallor-remote/internal/access"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -12,12 +13,13 @@ type cancelAfterCommitStore struct {
 	cancel context.CancelFunc
 }
 
-func (s *cancelAfterCommitStore) UpdateDevice(ctx context.Context, id string, record DeviceRecord) error {
-	if err := s.DeviceStore.UpdateDevice(ctx, id, record); err != nil {
-		return err
+func (s *cancelAfterCommitStore) UpdateDevice(ctx context.Context, id string, record access.Device) (access.Device, error) {
+	committed, err := s.DeviceStore.UpdateDevice(ctx, id, record)
+	if err != nil {
+		return access.Device{}, err
 	}
 	s.cancel()
-	return nil
+	return committed, nil
 }
 
 // A commit that wins the race with cancellation must still invalidate the old cached grant.
@@ -34,7 +36,7 @@ func TestIdentity_should_publishCommittedGrant_whenCancellationFollowsCommit(t *
 	if ctx.Err() == nil {
 		t.Fatal("fixture did not cancel after commit")
 	}
-	if h.grants["device"] != protocol.SHA256Hex("committed") {
+	if h.devices["device"].record.GrantHash != protocol.SHA256Hex("committed") {
 		t.Fatal("committed change was lost on cancellation")
 	}
 	h.Drop(device, protocol.RoleDevice, "device")

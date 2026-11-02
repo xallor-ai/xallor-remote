@@ -75,8 +75,8 @@ Relay 收到 `invoke`（`op != cancel`）严格按序，失败即停、发 `invo
 ```text
 1. 这条连接是已鉴权的 client
 2. 目标 device_id 存在，否则 unknown_device
-3. 该连接 hello 时的 grant 仍匹配当前 grant_hash，否则 unauthorized
-4. 目标有活着的 device 连接，否则 device_offline
+3. 该连接 hello 验证得到的设备 UID + 授权 ID 仍匹配当前绑定，否则 unauthorized
+4. 目标有活着且内部 UID 匹配的 device 连接，否则 device_offline
 5. 目标 inbound 开，否则 inbound_disabled
 6. 该设备 inflight 数 < 并发上限，否则 quota_exceeded（不排队）
 7. exec_id 未占用
@@ -233,7 +233,7 @@ v0 一个 Go 进程即可（与 Runtime/CLI 同一二进制：`xallor-remote rel
 | 状态 | 在哪 | 重启后 |
 | --- | --- | --- |
 | 连接、inflight、待发缓冲 | **仅内存** | 全丢，走 §7 |
-| devices | 磁盘身份与授权状态，见 [relay.md](relay.md) | 还在；设备需重新 hello 才 online |
+| devices / device_grants | 磁盘身份与授权状态，见 [relay.md](relay.md) | 还在；设备需重新 hello 才 online |
 
 建议实现：连接一条 goroutine；`exec_id` 路由一张带锁的 map；不要把 stdout 写成「先收齐再发」。不要在 Relay 里 shell out。不要为 invoke 再开一条 HTTP API。
 

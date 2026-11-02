@@ -27,7 +27,7 @@ func (h *Hub) handleAuth(from Sender, msg protocol.Message) {
 		h.mu.Unlock()
 		return
 	}
-	record := DeviceRecord{SecretHash: d.secretHash, GrantHash: h.grants[id], Inbound: d.inbound}
+	record := d.record
 	h.mu.Unlock()
 	switch msg.Type {
 	case protocol.TypeGrantRotate:
@@ -43,10 +43,12 @@ func (h *Hub) handleAuth(from Sender, msg protocol.Message) {
 	}
 	if h.store != nil {
 		if msg.Type == protocol.TypeRevoke {
-			err = h.store.DeleteDevice(ctx, id, record.SecretHash)
+			err = h.store.DeleteDevice(ctx, id, record.UID, record.SecretHash)
 		} else {
-			err = h.store.UpdateDevice(ctx, id, record)
+			record, err = h.store.UpdateDevice(ctx, id, record)
 		}
+	} else if msg.Type != protocol.TypeRevoke {
+		record, err = d.record.WithAccess(record.GrantHash, record.Inbound)
 	}
 	if err != nil {
 		h.rejectIdentity(from, identityErrorCode(err))
@@ -63,11 +65,11 @@ func (h *Hub) handleAuth(from Sender, msg protocol.Message) {
 		h.failDeviceLocked(id, protocol.DeviceOffline)
 		from.Close()
 		delete(h.devices, id)
-		delete(h.grants, id)
+		delete(h.access, id)
 		return
 	}
-	d.inbound = record.Inbound
-	h.grants[id] = record.GrantHash
+	d.record = record
+	h.access[id] = record.Binding()
 }
 
 func (h *Hub) rejectIdentity(from Sender, code string) {

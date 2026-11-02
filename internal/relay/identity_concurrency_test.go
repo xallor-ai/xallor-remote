@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xallor-ai/xallor-remote/internal/access"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -93,13 +94,13 @@ type rotatingStore struct {
 	entered, release chan struct{}
 }
 
-func (s *rotatingStore) UpdateDevice(ctx context.Context, id string, record DeviceRecord) error {
+func (s *rotatingStore) UpdateDevice(ctx context.Context, id string, record access.Device) (access.Device, error) {
 	if record.GrantHash == protocol.SHA256Hex("rotated") {
 		close(s.entered)
 		select {
 		case <-s.release:
 		case <-ctx.Done():
-			return ctx.Err()
+			return access.Device{}, ctx.Err()
 		}
 	}
 	return s.DeviceStore.UpdateDevice(ctx, id, record)
@@ -154,8 +155,8 @@ func TestSQLIdentity_should_cancelPoolWait_withoutMutatingRows(t *testing.T) {
 	for name, call := range map[string]func(context.Context) error{
 		"register": func(ctx context.Context) error { _, err := s.RegisterDevice(ctx, "device", "secret", true); return err },
 		"load":     func(ctx context.Context) error { _, err := s.LoadDevice(ctx, "device"); return err },
-		"update":   func(ctx context.Context) error { return s.UpdateDevice(ctx, "device", DeviceRecord{}) },
-		"delete":   func(ctx context.Context) error { return s.DeleteDevice(ctx, "device", "secret") },
+		"update":   func(ctx context.Context) error { _, err := s.UpdateDevice(ctx, "device", access.Device{}); return err },
+		"delete":   func(ctx context.Context) error { return s.DeleteDevice(ctx, "device", "uid", "secret") },
 	} {
 		t.Run(name, func(t *testing.T) {
 			held, err := s.db.Conn(context.Background())

@@ -19,9 +19,7 @@ func TestIdentityWire_should_routeAndCancelDisconnectedHello_whenSQLPoolBlocked(
 	if _, err := s.RegisterDevice(context.Background(), "healthy", protocol.SHA256Hex("secret"), true); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UpdateDevice(context.Background(), "healthy", DeviceRecord{SecretHash: protocol.SHA256Hex("secret"), GrantHash: protocol.SHA256Hex("grant"), Inbound: true}); err != nil {
-		t.Fatal(err)
-	}
+	setTestAccess(t, s, "healthy", protocol.SHA256Hex("grant"), true)
 	h := NewHub(s)
 	srv := httptest.NewTLSServer(Handler(h, nil))
 	defer srv.Close()

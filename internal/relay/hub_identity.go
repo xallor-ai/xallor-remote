@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/xallor-ai/xallor-remote/internal/access"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -24,11 +25,16 @@ func (h *Hub) RegisterDevice(id, secret string, inbound bool, conn Sender) strin
 	}
 	defer release()
 	hash := protocol.SHA256Hex(secret)
-	record := DeviceRecord{SecretHash: hash, Inbound: inbound}
+	var record access.Device
 	if h.store != nil {
 		record, err = h.store.RegisterDevice(ctx, id, hash, inbound)
 		if err != nil {
 			return identityErrorCode(err)
+		}
+	} else {
+		record, err = access.NewDevice(hash, inbound)
+		if err != nil {
+			return protocol.RelayError
 		}
 	}
 	h.mu.Lock()
@@ -37,12 +43,11 @@ func (h *Hub) RegisterDevice(id, secret string, inbound bool, conn Sender) strin
 		return protocol.RelayError
 	}
 	if h.store == nil {
-		record.GrantHash = h.grants[id]
 		if old := h.devices[id]; old != nil {
-			if old.secretHash != hash {
+			if old.record.SecretHash != hash {
 				return protocol.Unauthorized
 			}
-			record.Inbound = old.inbound
+			record = old.record
 		}
 	}
 	// Queue the greeting before publishing a routable connection, so an invoke
@@ -54,8 +59,8 @@ func (h *Hub) RegisterDevice(id, secret string, inbound bool, conn Sender) strin
 		h.failDeviceLocked(id, protocol.DeviceOffline)
 		old.conn.Close()
 	}
-	h.grants[id] = record.GrantHash
-	h.devices[id] = &deviceSlot{conn: conn, secretHash: hash, inbound: record.Inbound, online: true}
+	h.access[id] = record.Binding()
+	h.devices[id] = &deviceSlot{conn: conn, record: record, online: true}
 	return ""
 }
 
@@ -66,7 +71,7 @@ func (h *Hub) RegisterClient(targetID, grant string, conn Sender) string {
 	}
 	defer release()
 	want := protocol.SHA256Hex(grant)
-	var record DeviceRecord
+	var record access.Device
 	if h.store != nil {
 		record, err = h.store.LoadDevice(ctx, targetID)
 		if err != nil {
@@ -78,20 +83,20 @@ func (h *Hub) RegisterClient(targetID, grant string, conn Sender) string {
 	if ctx.Err() != nil {
 		return protocol.RelayError
 	}
-	gh := h.grants[targetID]
-	if h.store != nil {
-		gh = record.GrantHash
-		h.grants[targetID] = gh
-	} else if h.devices[targetID] == nil {
-		return protocol.UnknownDevice
+	if h.store == nil {
+		if h.devices[targetID] == nil {
+			return protocol.UnknownDevice
+		}
+		record = h.devices[targetID].record
 	}
-	if gh == "" || gh != want {
+	if record.GrantHash == "" || record.GrantHash != want || record.UID == "" || record.GrantID == "" {
 		return protocol.Unauthorized
 	}
 	if err := conn.Enqueue(protocol.Message{Type: protocol.TypeHelloOK, Role: protocol.RoleClient}); err != nil {
 		return protocol.RelayError
 	}
-	h.clients[conn] = clientSlot{targetID: targetID, grantHex: want}
+	h.access[targetID] = record.Binding()
+	h.clients[conn] = clientSlot{targetID: targetID, access: record.Binding()}
 	return ""
 }
 
