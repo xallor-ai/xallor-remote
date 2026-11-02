@@ -160,5 +160,4 @@ func TestIdentity_should_returnErrors_whenStoreClosed(t *testing.T) {
 	if err := s.DeleteDevice(context.Background(), "device", "secret"); err == nil {
 		t.Fatal("delete succeeded")
 	}
-	s.AppendAudit(AuditEntry{})
 }

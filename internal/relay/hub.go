@@ -112,12 +112,10 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 	}
 	if msg.ExecID == "" {
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.AgentError))
-		h.record(targetID, msg.Op, msg.ExecID, "nack", protocol.AgentError, msg.Payload)
 		return
 	}
 	if _, dup := h.inflight[msg.ExecID]; dup {
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.AgentError))
-		h.record(targetID, msg.Op, msg.ExecID, "nack", protocol.AgentError, msg.Payload)
 		return
 	}
 	dev := h.devices[targetID]
@@ -126,12 +124,10 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 		// Revocation removes its grant before routing can reach this branch.
 		code := protocol.DeviceOffline
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, code))
-		h.record(targetID, msg.Op, msg.ExecID, "nack", code, msg.Payload)
 		return
 	}
 	if !dev.inbound {
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.InboundDisabled))
-		h.record(targetID, msg.Op, msg.ExecID, "nack", protocol.InboundDisabled, msg.Payload)
 		return
 	}
 	n := 0
@@ -142,7 +138,6 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 	}
 	if n >= protocol.MaxConcurrentExec {
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.QuotaExceeded))
-		h.record(targetID, msg.Op, msg.ExecID, "nack", protocol.QuotaExceeded, msg.Payload)
 		return
 	}
 	// Recheck at admission: disconnect can race with waiting for the routing lock.
@@ -150,7 +145,6 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 		return
 	}
 	h.inflight[msg.ExecID] = &inflight{deviceID: targetID, client: from}
-	h.record(targetID, msg.Op, msg.ExecID, "accept", "", msg.Payload)
 	if err := dev.conn.Enqueue(msg); err != nil {
 		h.failDeviceLocked(targetID, protocol.DeviceOffline)
 		dev.conn.Close()
@@ -209,13 +203,6 @@ func (h *Hub) forwardToClient(from Sender, msg protocol.Message) {
 		return
 	}
 	if msg.Type == protocol.TypeExit || msg.Type == protocol.TypeError || msg.Type == protocol.TypeInvokeNack {
-		decision := "exit"
-		code := msg.Status
-		if msg.Type != protocol.TypeExit {
-			decision = "error"
-			code = msg.Code
-		}
-		h.record(inf.deviceID, "", msg.ExecID, decision, code, nil)
 		delete(h.inflight, msg.ExecID)
 	}
 }

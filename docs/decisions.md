@@ -87,7 +87,7 @@ TUI 做进同一 Go 二进制（`xallor-remote tui`），不另发一套 Node TU
 
 1. Grant = bearer capability，不绑控制端。
 2. rotate/revoke/inbound **仅被控机本机**，经 device 连接。
-3. 审计不还原完整命令；只存 preview + digest。
+3. Relay 的身份持久化与载荷不落盘边界见 [relay.md](relay.md)；转发路径不承担命令审计。
 4. Policy 是 workspace + denylist 减伤，不是命令沙箱；无头审批 → deny。
 5. write：整文件、1 MiB、原子覆盖。
 6. Hosted Relay 看得见飞行载荷；不落盘；有每 IP 预算。

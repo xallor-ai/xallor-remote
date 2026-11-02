@@ -233,7 +233,7 @@ v0 一个 Go 进程即可（与 Runtime/CLI 同一二进制：`xallor-remote rel
 | 状态 | 在哪 | 重启后 |
 | --- | --- | --- |
 | 连接、inflight、待发缓冲 | **仅内存** | 全丢，走 §7 |
-| devices / grants / audit | 磁盘，见 [relay.md](relay.md) | 还在；设备需重新 hello 才 online |
+| devices | 磁盘身份与授权状态，见 [relay.md](relay.md) | 还在；设备需重新 hello 才 online |
 
 建议实现：连接一条 goroutine；`exec_id` 路由一张带锁的 map；不要把 stdout 写成「先收齐再发」。不要在 Relay 里 shell out。不要为 invoke 再开一条 HTTP API。
 
