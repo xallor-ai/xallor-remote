@@ -4,73 +4,76 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 )
 
-func (s *SQLStore) ResolveAccess(ctx context.Context, device access.Device, actor principal.Identity) (access.Authorization, error) {
-	if device.OwnershipID == "" {
-		return access.Authorization{}, access.ErrDenied
-	}
-	if err := s.Verify(ctx, actor); err != nil {
-		return access.Authorization{}, err
-	}
-	a := access.Authorization{Binding: device.Binding()}
-	if device.OwnedBy(actor) {
-		a.Permissions = access.AllPermissions()
-		return a, nil
-	}
-	err := s.db.QueryRowContext(ctx, `SELECT id,permissions,expires_at FROM device_shares
-WHERE ownership_id=? AND membership_id=? AND expires_at>?`, device.OwnershipID, actor.MembershipID, time.Now().Unix()).Scan(&a.ShareID, &a.Permissions, &a.ExpiresAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return a, access.ErrDenied
-	}
-	return a, err
+var _ access.Store = (*SQLStore)(nil)
+
+type accessTransaction struct{ tx *sql.Tx }
+
+func (s *SQLStore) ReadAccess(ctx context.Context, operation func(access.Reader) error) error {
+	_, err := storeTransaction(ctx, s.db, func(tx *sql.Tx) (struct{}, error) {
+		return struct{}{}, operation(accessTransaction{tx})
+	})
+	return err
 }
 
-func (s *SQLStore) VerifyAccess(ctx context.Context, actor principal.Identity, expected access.Authorization, operation string) error {
-	current, err := scanDevice(s.db.QueryRowContext(ctx, deviceFields+` WHERE d.uid=?`, expected.Binding.DeviceUID))
+func (s *SQLStore) WriteAccess(ctx context.Context, operation func(access.Transaction) error) error {
+	_, err := storeTransaction(ctx, s.db, func(tx *sql.Tx) (struct{}, error) {
+		return struct{}{}, operation(accessTransaction{tx})
+	})
+	return err
+}
+
+func (t accessTransaction) Principal(ctx context.Context, id string, now int64) (principal.Identity, error) {
+	return scanPrincipal(t.tx.QueryRowContext(ctx, principalQuery+`c.id=?`, now, id))
+}
+
+func (t accessTransaction) DeviceByID(ctx context.Context, id string) (access.Device, error) {
+	return scanDevice(t.tx.QueryRowContext(ctx, selectDevice, id))
+}
+
+func (t accessTransaction) DeviceByUID(ctx context.Context, uid string) (access.Device, error) {
+	device, err := scanDevice(t.tx.QueryRowContext(ctx, deviceFields+` WHERE d.uid=?`, uid))
 	if errors.Is(err, ErrDeviceNotFound) {
-		return access.ErrDenied
+		return access.Device{}, access.ErrDenied
 	}
-	if err != nil {
-		return err
-	}
-	a, err := s.ResolveAccess(ctx, current, actor)
-	if err != nil {
-		return err
-	}
-	if a != expected || !a.Permissions.Allows(operation) {
-		return access.ErrDenied
-	}
-	return nil
+	return device, err
 }
 
-func accessState(ctx context.Context, tx *sql.Tx, device access.Device) (access.State, error) {
-	state := access.State{DeviceUID: device.UID, OwnershipID: device.OwnershipID, OwnerTenant: device.OwnerTenant, OwnerPrincipal: device.OwnerPrincipal, Shares: []access.Share{}}
-	rows, err := tx.QueryContext(ctx, `SELECT id,membership_id,permissions,expires_at FROM device_shares WHERE ownership_id=? ORDER BY id`, device.OwnershipID)
+func (t accessTransaction) Member(ctx context.Context, id string) (access.Member, error) {
+	var member access.Member
+	err := t.tx.QueryRowContext(ctx, `SELECT tenant_id,principal_id,active FROM memberships WHERE id=?`, id).Scan(&member.TenantID, &member.PrincipalID, &member.Active)
+	if errors.Is(err, sql.ErrNoRows) {
+		return access.Member{}, access.ErrDenied
+	}
+	return member, err
+}
+
+func (t accessTransaction) Share(ctx context.Context, ownership, member string) (access.ShareRecord, error) {
+	var share access.ShareRecord
+	err := t.tx.QueryRowContext(ctx, `SELECT id,ownership_id,membership_id,permissions,expires_at FROM device_shares WHERE ownership_id=? AND membership_id=?`, ownership, member).Scan(&share.ID, &share.OwnershipID, &share.MembershipID, &share.Permissions, &share.ExpiresAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return access.ShareRecord{}, access.ErrDenied
+	}
+	return share, err
+}
+
+func (t accessTransaction) Shares(ctx context.Context, ownership string) ([]access.ShareRecord, error) {
+	rows, err := t.tx.QueryContext(ctx, `SELECT id,ownership_id,membership_id,permissions,expires_at FROM device_shares WHERE ownership_id=? ORDER BY id`, ownership)
 	if err != nil {
-		return state, err
+		return nil, err
 	}
 	defer rows.Close()
+	result := []access.ShareRecord{}
 	for rows.Next() {
-		var share access.Share
-		var permissions access.Permissions
-		if err := rows.Scan(&share.ID, &share.MembershipID, &permissions, &share.ExpiresAt); err != nil {
-			return state, err
+		var share access.ShareRecord
+		if err := rows.Scan(&share.ID, &share.OwnershipID, &share.MembershipID, &share.Permissions, &share.ExpiresAt); err != nil {
+			return nil, err
 		}
-		share.Operations = permissions.Names()
-		state.Shares = append(state.Shares, share)
+		result = append(result, share)
 	}
-	return state, rows.Err()
-}
-
-func activeMember(ctx context.Context, tx *sql.Tx, id string) (tenant, person string, err error) {
-	err = tx.QueryRowContext(ctx, `SELECT tenant_id,principal_id FROM memberships WHERE id=? AND active=1`, id).Scan(&tenant, &person)
-	if errors.Is(err, sql.ErrNoRows) {
-		err = access.ErrDenied
-	}
-	return
+	return result, rows.Err()
 }

@@ -42,18 +42,19 @@ type inflight struct {
 
 // Hub is the in-memory router. Identity persistence is owned by DeviceStore.
 type Hub struct {
-	mu         sync.Mutex
-	devices    map[string]*deviceSlot
-	access     map[string]access.Binding
-	clients    map[Sender]clientSlot
-	inflight   map[string]*inflight
-	requests   map[requestKey]string
-	store      DeviceStore
-	identities identityGates
+	mu            sync.Mutex
+	devices       map[string]*deviceSlot
+	access        map[string]access.Binding
+	clients       map[Sender]clientSlot
+	inflight      map[string]*inflight
+	requests      map[requestKey]string
+	store         DeviceStore
+	accessService *access.Service
+	identities    identityGates
 }
 
 func NewHub(store DeviceStore) *Hub {
-	return &Hub{
+	h := &Hub{
 		devices:  map[string]*deviceSlot{},
 		access:   map[string]access.Binding{},
 		clients:  map[Sender]clientSlot{},
@@ -61,6 +62,10 @@ func NewHub(store DeviceStore) *Hub {
 		requests: map[requestKey]string{},
 		store:    store,
 	}
+	if storage, ok := store.(access.Store); ok {
+		h.accessService = access.NewService(storage)
+	}
+	return h
 }
 
 func (h *Hub) Handle(from Sender, role string, targetID string, msg protocol.Message) {

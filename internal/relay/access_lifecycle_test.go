@@ -22,7 +22,7 @@ func enrollment(t *testing.T, s *SQLStore, name, tenant string) principal.Enroll
 
 func manageAccess(t *testing.T, s *SQLStore, device access.Device, p principal.Identity, req access.Request) access.Mutation {
 	t.Helper()
-	r, err := s.ManageAccess(context.Background(), "device", device, p, req)
+	r, err := access.NewService(s).Manage(context.Background(), "device", device, p, req)
 	if err != nil {
 		t.Fatal(req.Action, err)
 	}
@@ -52,43 +52,43 @@ func TestAccess_should_isolatePrincipalsAndRevokeOldBindings_whenSharingChanges(
 		t.Fatal("idempotent claim changed binding")
 	}
 	for _, denied := range []principal.Identity{b.Identity, c.Identity, {}} {
-		if _, err := s.ResolveAccess(ctx, device, denied); err == nil {
+		if _, err := access.NewService(s).Resolve(ctx, device, denied); err == nil {
 			t.Fatal("implicit device access")
 		}
 	}
 	forged := a.Identity
 	forged.TenantID = b.TenantID
-	if _, err := s.ManageAccess(ctx, "device", device, forged, access.Request{Action: "status"}); err == nil {
+	if _, err := access.NewService(s).Manage(ctx, "device", device, forged, access.Request{Action: "status"}); err == nil {
 		t.Fatal("forged tenant accepted")
 	}
 	wrong := device
 	wrong.UID = "recreated"
-	if _, err := s.ManageAccess(ctx, "device", wrong, a.Identity, access.Request{Action: "status"}); err == nil {
+	if _, err := access.NewService(s).Manage(ctx, "device", wrong, a.Identity, access.Request{Action: "status"}); err == nil {
 		t.Fatal("wrong device incarnation accepted")
 	}
 	wrong = device
 	wrong.SecretHash = "stolen-display-number"
-	if _, err := s.ManageAccess(ctx, "device", wrong, a.Identity, access.Request{Action: "status"}); err == nil {
+	if _, err := access.NewService(s).Manage(ctx, "device", wrong, a.Identity, access.Request{Action: "status"}); err == nil {
 		t.Fatal("wrong device proof accepted")
 	}
 	shared := manageAccess(t, s, device, a.Identity, access.Request{Action: "share", MembershipID: b.MembershipID, Operations: []string{"info", "read"}, TTLSeconds: 60})
-	auth, err := s.ResolveAccess(ctx, device, b.Identity)
-	if err != nil || s.VerifyAccess(ctx, b.Identity, auth, "read") != nil || !errors.Is(s.VerifyAccess(ctx, b.Identity, auth, "exec"), access.ErrDenied) {
+	auth, err := access.NewService(s).Resolve(ctx, device, b.Identity)
+	if err != nil || access.NewService(s).Verify(ctx, b.Identity, auth, "read") != nil || !errors.Is(access.NewService(s).Verify(ctx, b.Identity, auth, "exec"), access.ErrDenied) {
 		t.Fatal("permission scope failed", err)
 	}
 	manageAccess(t, s, device, a.Identity, access.Request{Action: "unshare", ShareID: shared.State.Shares[0].ID})
 	manageAccess(t, s, device, a.Identity, access.Request{Action: "share", MembershipID: b.MembershipID, Operations: []string{"info", "read"}, TTLSeconds: 60})
-	if s.VerifyAccess(ctx, b.Identity, auth, "read") == nil {
+	if access.NewService(s).Verify(ctx, b.Identity, auth, "read") == nil {
 		t.Fatal("regrant revived old binding")
 	}
-	fresh, err := s.ResolveAccess(ctx, device, b.Identity)
+	fresh, err := access.NewService(s).Resolve(ctx, device, b.Identity)
 	if err != nil || fresh.ShareID == auth.ShareID {
 		t.Fatal("new grant missing", err)
 	}
 	if _, err := s.db.Exec(`UPDATE device_shares SET expires_at=? WHERE id=?`, time.Now().Unix()-1, fresh.ShareID); err != nil {
 		t.Fatal(err)
 	}
-	if s.VerifyAccess(ctx, b.Identity, fresh, "read") == nil {
+	if access.NewService(s).Verify(ctx, b.Identity, fresh, "read") == nil {
 		t.Fatal("expired grant remained valid")
 	}
 }
@@ -105,7 +105,7 @@ func TestAccess_should_replaceOwnershipAndShares_whenTransferred(t *testing.T) {
 		t.Fatal(err)
 	}
 	device = manageAccess(t, s, device, a.Identity, access.Request{Action: "claim"}).Device
-	old, err := s.ResolveAccess(ctx, device, a.Identity)
+	old, err := access.NewService(s).Resolve(ctx, device, a.Identity)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestAccess_should_replaceOwnershipAndShares_whenTransferred(t *testing.T) {
 	if _, err := s.db.Exec(`CREATE TRIGGER reject_transfer BEFORE INSERT ON device_ownership BEGIN SELECT RAISE(ABORT,'fixture'); END;`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ManageAccess(ctx, "device", device, a.Identity, access.Request{Action: "transfer", MembershipID: b.MembershipID}); err == nil {
+	if _, err := access.NewService(s).Manage(ctx, "device", device, a.Identity, access.Request{Action: "transfer", MembershipID: b.MembershipID}); err == nil {
 		t.Fatal("expected transfer failure")
 	}
 	retained := manageAccess(t, s, device, a.Identity, access.Request{Action: "status"})
@@ -127,14 +127,14 @@ func TestAccess_should_replaceOwnershipAndShares_whenTransferred(t *testing.T) {
 	if transferred.Device.OwnershipID == device.OwnershipID || transferred.Device.OwnerTenant != b.TenantID || len(transferred.State.Shares) != 0 {
 		t.Fatal("transfer retained prior scope")
 	}
-	if s.VerifyAccess(ctx, a.Identity, old, "info") == nil {
+	if access.NewService(s).Verify(ctx, a.Identity, old, "info") == nil {
 		t.Fatal("old owner retained access")
 	}
 	back := manageAccess(t, s, transferred.Device, b.Identity, access.Request{Action: "transfer", MembershipID: a.MembershipID})
-	if back.Device.OwnershipID == device.OwnershipID || s.VerifyAccess(ctx, a.Identity, old, "info") == nil {
+	if back.Device.OwnershipID == device.OwnershipID || access.NewService(s).Verify(ctx, a.Identity, old, "info") == nil {
 		t.Fatal("A-B-A transfer revived binding")
 	}
-	if _, err := s.ResolveAccess(ctx, back.Device, a.Identity); err != nil {
+	if _, err := access.NewService(s).Resolve(ctx, back.Device, a.Identity); err != nil {
 		t.Fatal(err)
 	}
 }

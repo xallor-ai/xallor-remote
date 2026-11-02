@@ -91,11 +91,10 @@ func (h *Hub) RegisterClient(targetID, grant, accountToken string, conn Sender) 
 			return identityErrorCode(err)
 		}
 		if record.OwnershipID != "" {
-			store, ok := h.store.(access.Store)
-			if !ok {
+			if h.accessService == nil {
 				return protocol.Unauthorized
 			}
-			decision, err = store.ResolveAccess(ctx, record, identity)
+			decision, err = h.accessService.Resolve(ctx, record, identity)
 			if err != nil {
 				return accessErrorCode(err)
 			}

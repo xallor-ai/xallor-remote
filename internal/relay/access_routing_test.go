@@ -102,7 +102,7 @@ func TestAccess_should_commitOneOwner_whenClaimsRace(t *testing.T) {
 	for _, actor := range []principal.Identity{a.Identity, b.Identity} {
 		go func() {
 			<-start
-			_, err := s.ManageAccess(ctx, "device", device, actor, access.Request{Action: "claim"})
+			_, err := access.NewService(s).Manage(ctx, "device", device, actor, access.Request{Action: "claim"})
 			results <- err
 		}()
 	}

@@ -26,9 +26,8 @@ func (h *Hub) handleAccess(from Sender, msg protocol.Message) {
 		reply(protocol.AgentError, nil)
 		return
 	}
-	store, ok := h.store.(access.Store)
 	auth, authOK := h.store.(principal.Authenticator)
-	if !ok || !authOK {
+	if h.accessService == nil || !authOK {
 		reply(protocol.Unauthorized, nil)
 		return
 	}
@@ -65,7 +64,7 @@ func (h *Hub) handleAccess(from Sender, msg protocol.Message) {
 		reply(accessErrorCode(err), nil)
 		return
 	}
-	mutation, err := store.ManageAccess(ctx, id, expected, actor, req)
+	mutation, err := h.accessService.Manage(ctx, id, expected, actor, req)
 	if err != nil {
 		code := accessErrorCode(err)
 		if code == protocol.RelayError && req.Action != "status" {

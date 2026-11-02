@@ -3,7 +3,6 @@ package relay
 import (
 	"context"
 	"errors"
-	"github.com/xallor-ai/xallor-remote/internal/access"
 
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
@@ -22,11 +21,10 @@ func (h *Hub) verifyClientAccess(from Sender, operation string) string {
 	ctx, cancel := context.WithTimeout(from.Context(), protocol.RelayIdentityTimeout)
 	defer cancel()
 	if client.access.OwnershipID != "" {
-		store, ok := h.store.(access.Store)
-		if !ok {
+		if h.accessService == nil {
 			return protocol.Unauthorized
 		}
-		if err := store.VerifyAccess(ctx, client.identity, client.authorization, operation); err != nil {
+		if err := h.accessService.Verify(ctx, client.identity, client.authorization, operation); err != nil {
 			return accessErrorCode(err)
 		}
 		return ""

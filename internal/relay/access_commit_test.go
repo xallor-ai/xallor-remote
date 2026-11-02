@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
-	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -18,12 +17,12 @@ type accessCommitStore struct {
 
 type uncertainAccessStore struct{ *SQLStore }
 
-func (s *uncertainAccessStore) ManageAccess(ctx context.Context, id string, expected access.Device, actor principal.Identity, request access.Request) (access.Mutation, error) {
-	_, err := s.SQLStore.ManageAccess(ctx, id, expected, actor, request)
+func (s *uncertainAccessStore) WriteAccess(ctx context.Context, operation func(access.Transaction) error) error {
+	err := s.SQLStore.WriteAccess(ctx, operation)
 	if err != nil {
-		return access.Mutation{}, err
+		return err
 	}
-	return access.Mutation{}, errors.New("fixture: committed transaction response lost")
+	return errors.New("fixture: committed transaction response lost")
 }
 
 // An operational failure can represent an uncertain committed claim. Existing
@@ -56,12 +55,12 @@ func TestAccess_should_stopRouting_whenCommitOutcomeIsUncertain(t *testing.T) {
 	}
 }
 
-func (s *accessCommitStore) ManageAccess(ctx context.Context, id string, expected access.Device, actor principal.Identity, request access.Request) (access.Mutation, error) {
-	mutation, err := s.SQLStore.ManageAccess(ctx, id, expected, actor, request)
+func (s *accessCommitStore) WriteAccess(ctx context.Context, operation func(access.Transaction) error) error {
+	err := s.SQLStore.WriteAccess(ctx, operation)
 	if err == nil && s.afterCommit != nil {
 		s.afterCommit()
 	}
-	return mutation, err
+	return err
 }
 
 // Losing the device channel after SQL commit cannot leave anonymous access in
