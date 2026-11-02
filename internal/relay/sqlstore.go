@@ -3,8 +3,10 @@ package relay
 import (
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -33,7 +35,18 @@ func OpenSQLStore(dir string) (*SQLStore, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", filepath.Join(dir, "relay.db"))
+	filename, err := filepath.Abs(filepath.Join(dir, "relay.db"))
+	if err != nil {
+		return nil, err
+	}
+	// Apply the short busy wait to every pooled connection, including replacements
+	// after cancellation. A long native busy handler delays context cancellation.
+	uriPath := filepath.ToSlash(filename)
+	if !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
+	dsn := (&url.URL{Scheme: "file", Path: uriPath, RawQuery: "_pragma=busy_timeout%3D50"}).String()
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +60,7 @@ func OpenSQLStore(dir string) (*SQLStore, error) {
 }
 
 func (s *SQLStore) migrate() error {
-	if _, err := s.db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;`); err != nil {
+	if _, err := s.db.Exec(`PRAGMA journal_mode=WAL;`); err != nil {
 		return err
 	}
 	tx, err := s.db.Begin()

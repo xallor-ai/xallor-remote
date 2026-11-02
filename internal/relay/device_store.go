@@ -1,6 +1,9 @@
 package relay
 
-import "errors"
+import (
+	"context"
+	"errors"
+)
 
 var (
 	ErrDeviceNotFound = errors.New("device not found")
@@ -18,8 +21,8 @@ type DeviceRecord struct {
 // atomically creates an absent identity or authenticates the existing one.
 // Operational errors must never be returned as ErrDeviceNotFound.
 type DeviceStore interface {
-	RegisterDevice(id, secretHash string, inbound bool) (DeviceRecord, error)
-	LoadDevice(id string) (DeviceRecord, error)
-	UpdateDevice(id string, record DeviceRecord) error
-	DeleteDevice(id, secretHash string) error
+	RegisterDevice(ctx context.Context, id, secretHash string, inbound bool) (DeviceRecord, error)
+	LoadDevice(ctx context.Context, id string) (DeviceRecord, error)
+	UpdateDevice(ctx context.Context, id string, record DeviceRecord) error
+	DeleteDevice(ctx context.Context, id, secretHash string) error
 }

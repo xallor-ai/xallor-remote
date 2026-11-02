@@ -83,7 +83,7 @@ func TestIdentityWire_should_closeDevice_whenAuthorizationCannotPersist(t *testi
 	if err := wsjson.Read(ctx, c, &reply); err == nil {
 		t.Fatal("failed mutation left device connection open")
 	}
-	stored, err := s.LoadDevice("device")
+	stored, err := s.LoadDevice(context.Background(), "device")
 	if err != nil || stored.GrantHash != "" || !stored.Inbound {
 		t.Fatalf("persisted state changed: %+v %v", stored, err)
 	}

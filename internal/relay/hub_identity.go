@@ -1,27 +1,49 @@
 package relay
 
 import (
+	"context"
 	"errors"
 
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
+func (h *Hub) beginIdentity(conn Sender, id string) (context.Context, func(), error) {
+	ctx, cancel := context.WithTimeout(conn.Context(), protocol.RelayIdentityTimeout)
+	release, err := h.identities.acquire(ctx, id)
+	if err != nil {
+		cancel()
+		return nil, nil, err
+	}
+	return ctx, func() { release(); cancel() }, nil
+}
+
 func (h *Hub) RegisterDevice(id, secret string, inbound bool, conn Sender) string {
+	ctx, release, err := h.beginIdentity(conn, id)
+	if err != nil {
+		return identityErrorCode(err)
+	}
+	defer release()
 	hash := protocol.SHA256Hex(secret)
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	record := DeviceRecord{SecretHash: hash, GrantHash: h.grants[id], Inbound: inbound}
+	record := DeviceRecord{SecretHash: hash, Inbound: inbound}
 	if h.store != nil {
-		var err error
-		record, err = h.store.RegisterDevice(id, hash, inbound)
+		record, err = h.store.RegisterDevice(ctx, id, hash, inbound)
 		if err != nil {
 			return identityErrorCode(err)
 		}
-	} else if old := h.devices[id]; old != nil {
-		if old.secretHash != hash {
-			return protocol.Unauthorized
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if ctx.Err() != nil {
+		return protocol.RelayError
+	}
+	if h.store == nil {
+		record.GrantHash = h.grants[id]
+		if old := h.devices[id]; old != nil {
+			if old.secretHash != hash {
+				return protocol.Unauthorized
+			}
+			record.Inbound = old.inbound
 		}
-		record.Inbound = old.inbound
 	}
 	// Queue the greeting before publishing a routable connection, so an invoke
 	// racing with registration can never be the peer's first received frame.
@@ -38,15 +60,26 @@ func (h *Hub) RegisterDevice(id, secret string, inbound bool, conn Sender) strin
 }
 
 func (h *Hub) RegisterClient(targetID, grant string, conn Sender) string {
+	ctx, release, err := h.beginIdentity(conn, targetID)
+	if err != nil {
+		return identityErrorCode(err)
+	}
+	defer release()
 	want := protocol.SHA256Hex(grant)
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	gh := h.grants[targetID]
+	var record DeviceRecord
 	if h.store != nil {
-		record, err := h.store.LoadDevice(targetID)
+		record, err = h.store.LoadDevice(ctx, targetID)
 		if err != nil {
 			return identityErrorCode(err)
 		}
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if ctx.Err() != nil {
+		return protocol.RelayError
+	}
+	gh := h.grants[targetID]
+	if h.store != nil {
 		gh = record.GrantHash
 		h.grants[targetID] = gh
 	} else if h.devices[targetID] == nil {
@@ -71,53 +104,4 @@ func identityErrorCode(err error) string {
 	default:
 		return protocol.RelayError
 	}
-}
-
-func (h *Hub) handleAuth(from Sender, msg protocol.Message) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	var id string
-	for did, d := range h.devices {
-		if d.conn == from {
-			id = did
-			break
-		}
-	}
-	if id == "" {
-		return
-	}
-	d := h.devices[id]
-	record := DeviceRecord{SecretHash: d.secretHash, GrantHash: h.grants[id], Inbound: d.inbound}
-	var err error
-	switch msg.Type {
-	case protocol.TypeGrantRotate:
-		record.GrantHash = msg.NewGrantHash
-	case protocol.TypeInboundSet:
-		if msg.Inbound == nil {
-			return
-		}
-		record.Inbound = *msg.Inbound
-	case protocol.TypeRevoke:
-		if h.store != nil {
-			err = h.store.DeleteDevice(id, record.SecretHash)
-		}
-	}
-	if h.store != nil && msg.Type != protocol.TypeRevoke {
-		err = h.store.UpdateDevice(id, record)
-	}
-	if err != nil {
-		// Persisted and live authorization must not diverge on a failed write.
-		_ = from.Enqueue(protocol.Message{Type: protocol.TypeError, Code: identityErrorCode(err)})
-		from.Close()
-		return
-	}
-	if msg.Type == protocol.TypeRevoke {
-		h.failDeviceLocked(id, protocol.DeviceOffline)
-		d.conn.Close()
-		delete(h.devices, id)
-		delete(h.grants, id)
-		return
-	}
-	d.inbound = record.Inbound
-	h.grants[id] = record.GrantHash
 }

@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -16,44 +17,44 @@ func scanDevice(row *sql.Row) (DeviceRecord, error) {
 	return record, err
 }
 
-func (s *SQLStore) LoadDevice(id string) (DeviceRecord, error) {
-	return scanDevice(s.db.QueryRow(`SELECT secret_hash, grant_hash, inbound FROM devices WHERE id=?`, id))
+func (s *SQLStore) LoadDevice(ctx context.Context, id string) (DeviceRecord, error) {
+	return scanDevice(s.db.QueryRowContext(ctx, `SELECT secret_hash, grant_hash, inbound FROM devices WHERE id=?`, id))
 }
 
-func (s *SQLStore) RegisterDevice(id, secretHash string, inbound bool) (DeviceRecord, error) {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return DeviceRecord{}, err
-	}
-	defer tx.Rollback()
-	// A competing registration must never overwrite the winning identity.
-	_, err = tx.Exec(`INSERT INTO devices (id, secret_hash, inbound, last_seen) VALUES (?,?,?,?)
+func (s *SQLStore) RegisterDevice(ctx context.Context, id, secretHash string, inbound bool) (DeviceRecord, error) {
+	return s.identityTransaction(ctx, func(tx *sql.Tx) (DeviceRecord, error) {
+		// A competing registration must never overwrite the winning identity.
+		_, err := tx.ExecContext(ctx, `INSERT INTO devices (id, secret_hash, inbound, last_seen) VALUES (?,?,?,?)
 ON CONFLICT(id) DO NOTHING`, id, secretHash, inbound, time.Now().Unix())
-	if err != nil {
-		return DeviceRecord{}, err
-	}
-	record, err := scanDevice(tx.QueryRow(`SELECT secret_hash, grant_hash, inbound FROM devices WHERE id=?`, id))
-	if err != nil {
-		return DeviceRecord{}, err
-	}
-	if record.SecretHash != secretHash {
-		return DeviceRecord{}, ErrDeviceIdentity
-	}
-	if err := tx.Commit(); err != nil {
-		return DeviceRecord{}, err
-	}
-	return record, nil
+		if err != nil {
+			return DeviceRecord{}, err
+		}
+		record, err := scanDevice(tx.QueryRowContext(ctx, `SELECT secret_hash, grant_hash, inbound FROM devices WHERE id=?`, id))
+		if err != nil {
+			return DeviceRecord{}, err
+		}
+		if record.SecretHash != secretHash {
+			return DeviceRecord{}, ErrDeviceIdentity
+		}
+		return record, nil
+	})
 }
 
-func (s *SQLStore) UpdateDevice(id string, record DeviceRecord) error {
-	result, err := s.db.Exec(`UPDATE devices SET grant_hash=?, inbound=?, last_seen=?
+func (s *SQLStore) UpdateDevice(ctx context.Context, id string, record DeviceRecord) error {
+	_, err := s.identityTransaction(ctx, func(tx *sql.Tx) (DeviceRecord, error) {
+		result, err := tx.ExecContext(ctx, `UPDATE devices SET grant_hash=?, inbound=?, last_seen=?
 WHERE id=? AND secret_hash=?`, record.GrantHash, record.Inbound, time.Now().Unix(), id, record.SecretHash)
-	return requireDeviceMutation(result, err)
+		return DeviceRecord{}, requireDeviceMutation(result, err)
+	})
+	return err
 }
 
-func (s *SQLStore) DeleteDevice(id, secretHash string) error {
-	result, err := s.db.Exec(`DELETE FROM devices WHERE id=? AND secret_hash=?`, id, secretHash)
-	return requireDeviceMutation(result, err)
+func (s *SQLStore) DeleteDevice(ctx context.Context, id, secretHash string) error {
+	_, err := s.identityTransaction(ctx, func(tx *sql.Tx) (DeviceRecord, error) {
+		result, err := tx.ExecContext(ctx, `DELETE FROM devices WHERE id=? AND secret_hash=?`, id, secretHash)
+		return DeviceRecord{}, requireDeviceMutation(result, err)
+	})
+	return err
 }
 
 func requireDeviceMutation(result sql.Result, err error) error {

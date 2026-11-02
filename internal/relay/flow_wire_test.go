@@ -35,10 +35,10 @@ func (l smallSendBufferListener) Accept() (net.Conn, error) {
 func TestFlowWire_should_routeOtherClient_whenSocketConsumerStopsReading(t *testing.T) {
 	s := openIdentityTestStore(t)
 	secret, grant := protocol.SHA256Hex("secret"), protocol.SHA256Hex("grant")
-	if _, err := s.RegisterDevice("device", secret, true); err != nil {
+	if _, err := s.RegisterDevice(context.Background(), "device", secret, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UpdateDevice("device", DeviceRecord{SecretHash: secret, GrantHash: grant, Inbound: true}); err != nil {
+	if err := s.UpdateDevice(context.Background(), "device", DeviceRecord{SecretHash: secret, GrantHash: grant, Inbound: true}); err != nil {
 		t.Fatal(err)
 	}
 	h := NewHub(s)

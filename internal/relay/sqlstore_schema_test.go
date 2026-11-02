@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"context"
 	"database/sql"
 	"path/filepath"
 	"testing"
@@ -26,7 +27,7 @@ INSERT INTO grants VALUES ('device','stale-mirror',0);`)
 		if err != nil {
 			t.Fatal(err)
 		}
-		r, err := s.LoadDevice("device")
+		r, err := s.LoadDevice(context.Background(), "device")
 		if err != nil || r != (DeviceRecord{SecretHash: "secret", GrantHash: "current-grant", Inbound: true}) {
 			t.Fatalf("identity: %+v %v", r, err)
 		}
