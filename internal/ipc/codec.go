@@ -119,7 +119,7 @@ func Call(c *Conn, id, method string, params any) error {
 func Human(code string) string {
 	switch code {
 	case "unauthorized":
-		return "授权码无效或已吊销。"
+		return "当前身份或授权不可用，请检查身份凭据和设备访问权限。"
 	case "unknown_device":
 		return "找不到这台设备。"
 	case "device_offline":

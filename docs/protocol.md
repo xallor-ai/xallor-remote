@@ -11,7 +11,7 @@ JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本
 | role | 谁发起 | 证明 | 用途 |
 | --- | --- | --- | --- |
 | `device` | 被控 Runtime | `device_id` + `device_secret` | 上线、收 invoke、回事件、**改授权** |
-| `client` | 控制侧 Runtime | 目标 `device_id` + **该目标的 grant** | 发 invoke、收事件；**不能** rotate/revoke/inbound |
+| `client` | 控制侧 Runtime | 目标 `device_id` + 对应访问凭据（见下） | 发 invoke、收事件；不能管理设备授权 |
 
 同一 Runtime 可以同时有一条 `device` 连接和多条 `client` 连接。**v0：一条 client 连接只绑定一个目标**（`hello_client` 时定死）。多 peer = 多条 client 连接，不在一条 WSS 上多路复用。
 
@@ -24,7 +24,7 @@ JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本
 | type | 谁可发 | 必带 | 含义 |
 | --- | --- | --- | --- |
 | `hello_device` | device | device_id, secret, os, arch, agent_version, workspace, inbound | 上线 |
-| `hello_client` | client | target_device_id, grant, account_token? | 连接目标；可携带调用者身份凭据 |
+| `hello_client` | client | target_device_id, grant?, account_token? | 未认领设备验证共享码，已认领设备验证账号访问权 |
 | `hello_ok` | Relay | role | hello 成功，此后可 heartbeat / invoke |
 | `heartbeat` | 双向 | — | 保活 |
 | `invoke` | client | exec_id, op, payload | op 见下；目标取自该 client 连接的 hello |
@@ -32,10 +32,24 @@ JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本
 | `grant_rotate` | **仅 device** | device_id, new_grant_hash | 作废旧 grant |
 | `revoke` | **仅 device** | device_id | 注销本机身份；踢线 |
 | `inbound_set` | **仅 device** | device_id, inbound | 开/关入站 |
+| `access.request` | **仅 device** | request_id, account_token, payload | 管理本连接证明的设备归属与分享 |
+| `access.result` | Relay → device | request_id, code? / payload? | 管理结果；成功为归属快照，失败为错误码 |
 
 client 连接上出现 `revoke` / `grant_rotate` / `inbound_set` → 忽略或 nack `unauthorized`，**不得执行**。
 
-`account_token` 仅用于 client hello：缺省为无账号共享访问；非空时必须通过签发方校验，失败返回 `unauthorized`，存储故障返回 `relay_error`，不能降级为无账号访问。目标 grant 仍然必需。主体、空间、成员版本和到期时间由 Relay 从凭据推导，不接受客户端自报身份。凭据不转发给目标，也不写入调用记录。当前凭据有效期由本机运维设置为 1 分钟至 90 天，默认 24 小时。
+`account_token` 用于 client hello 和 device 的授权管理请求，非空时必须通过签发方校验，失败返回 `unauthorized`，存储故障返回 `relay_error`，不能降级为无账号访问。未认领设备必须出示目标 grant；已认领设备忽略 grant，只允许所有者或明确获授权且有效的成员。主体、空间、成员版本和到期时间由 Relay 从凭据推导，不接受客户端自报身份。凭据不转发给其他设备，也不写入调用记录。账号凭据有效期由本机运维设置为 1 分钟至 90 天，默认 24 小时。
+
+`access.request` 的 `request_id` 非空且不超过 128 字节，`payload` 不超过 16 KiB；未知 action 或非法参数返回 `agent_error`。payload 为以下之一：
+
+| action | 参数 | 作用 |
+| --- | --- | --- |
+| `claim` | 无 | 将未认领设备绑定到当前账号的空间及主体 |
+| `status` | 无 | 查看归属及分享；已认领时仅所有者可查询 |
+| `share` | membership_id, operations, ttl_seconds | 对有效成员签发或替换有期限的操作授权 |
+| `unshare` | share_id | 删除本设备的指定分享 |
+| `transfer` | membership_id | 转移到有效成员所属的空间及主体，删除所有旧分享 |
+
+`operations` 仅接受 `info`、`read`、`write`、`exec`、`processes`、`handoff.submit`、`handoff.get` 的非空集合；cancel 始终只属于原连接，不是可授予他人的权限。分享期限为 60 至 7776000 秒，最多 128 份未过期分享，超限 `quota_exceeded`。成功快照为 `{device_uid,ownership_id?,owner_tenant?,owner_principal?,shares:[{id,membership_id,operations,expires_at}]}`，时间为 Unix 秒。角色或权限不符返回 `unauthorized`。设备身份取自实际 device 连接，忽略客户端自报目标；client 连接不能调用此入口。
 
 `reset` 不是协议消息：CLI 清空本机数据目录，并发送 `revoke`。
 

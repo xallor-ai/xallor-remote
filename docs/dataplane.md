@@ -37,7 +37,7 @@ Relay **永远不执行命令。** B Runtime 才 Popen。
 | 连接 | 谁发起 | hello | 绑定 |
 | --- | --- | --- | --- |
 | `device` | 被控 Runtime（B，以及任何 Node 自己） | `hello_device` + `device_id` + `device_secret` | 该 `device_id` 的入站 |
-| `client` | 控制侧 Runtime（A） | `hello_client` + **目标** `device_id` + **该目标** grant | **v0：一条 client 连接只绑一个目标** |
+| `client` | 控制侧 Runtime（A） | `hello_client` + 目标 ID + 对应访问凭据（见协议） | 一条 client 连接只绑一个目标及授权快照 |
 
 v0 **不**在一条 client 连接上多路复用多个目标。多 peer = 多条 client 连接。invoke 因此不必再带 `device_id`；目标以这条连接的 hello 为准。
 
@@ -45,7 +45,11 @@ v0 **不**在一条 client 连接上多路复用多个目标。多 peer = 多条
 
 hello 失败：Relay 关连接，不登记。成功：回一条 `hello_ok`（实现可把字段放进现有心跳前的第一条下行）。之后双方按 [protocol.md](protocol.md) 发 `heartbeat`；超时 → 连接死，走 §7。
 
-若 hello 带账号凭据，Relay 先从签发存储解析可信调用身份，再验证目标共享授权；两者均通过才登记 client。账号身份固定在该连接上，不能通过后续 invoke 改换。
+若 hello 带账号凭据，Relay 先从签发存储解析可信调用身份，再按设备归属选择共享码验证或账号访问授权。已认领设备绑定归属实例、分享实例（所有者无此项）、操作集合和有效期。账号身份与授权快照固定在该连接上，不能通过后续 invoke 改换。
+
+`access.request` 仅从已认证 device 连接进入，以该连接的设备身份而非 JSON 自报 ID 为目标。使用同设备身份协调器，在事务中再次核对设备 UID、密钥哈希、归属实例、账号有效性和管理权限。存储完成后发布新路由绑定再回结果；提交后断线仍须发布已提交的状态。归属改变会关闭旧 client 连接，向其前台 inflight 请求取消并结束原路由；分享撤销/替换由新调用的验证使旧授权失败。
+
+管理写入遇到存储故障时，提交结果可能不确定。Relay 在回复错误之前停止该 device 连接的路由并关闭连接；重连从存储重新加载权威归属，不能沿用旧缓存继续匿名放行。认证失败、参数失败或只读状态查询失败不因此关闭设备。Runtime 将这类写入故障、断线和超时报告为结果未确认，不自动重放。
 
 控制面消息（`grant_rotate` / `revoke` / `inbound_set`）只走 **device** 连接，见 [credentials.md](credentials.md)。本文只覆盖 invoke / 事件。
 
@@ -75,18 +79,18 @@ A 在已 hello 成功的 client 连接上发：
 Relay 收到 `invoke`（`op != cancel`）严格按序，失败即停、发 `invoke_nack`、**不**建 inflight：
 
 ```text
-1. 这条连接是已鉴权的 client；带账号时在路由锁外重新验证凭据、成员启用状态及版本
+1. 这条连接是已鉴权的 client；带账号时在路由锁外重新验证凭据、成员启用状态及版本；已认领设备还验证当前归属、分享、到期及本次操作权限
 2. 目标 device_id 存在，否则 unknown_device
-3. 该连接 hello 验证得到的设备 UID + 授权 ID 仍匹配当前绑定，否则 unauthorized
+3. 该连接 hello 验证得到的设备 UID + 共享授权实例或归属实例仍匹配当前绑定，否则 unauthorized
 4. 目标有活着且内部 UID 匹配的 device 连接，否则 device_offline
 5. 目标 inbound 开，否则 inbound_disabled
 6. 该设备 inflight 数 < 并发上限，否则 quota_exceeded（不排队）
 7. exec_id 未占用
 8. 登记 inflight[exec_id]，保留目标、client 连接及可信调用身份
-9. 去除仅供 hello 使用的账号凭据，把 invoke 转给 B 的 device 连接（Relay 不改 command）
+9. 去除账号凭据，把 invoke 转给 B 的 device 连接（Relay 不改 command）
 ```
 
-账号验证以本次数据库读取为判定时点，与随后进入路由锁不是跨模块原子事务。与撤销同时发生且已通过验证的请求可能继续准入；撤销完成后开始验证的新请求会失败。取消与输出帧不查询账号数据库，原连接仍可取消已经登记的任务。成员恢复递增版本，旧连接必须重新握手才能恢复使用；认证等待有期限并随连接断开取消。此阶段不提供撤销即终止后台任务的承诺。
+账号及分享验证以本次数据库读取为判定时点，与随后进入路由锁不是跨模块原子事务。与撤销同时发生且已通过验证的请求可能继续准入；撤销完成后开始验证的新请求会失败。归属变更还会在路由锁内使旧绑定失效。取消与输出帧不查询账号数据库，原连接仍可取消已经登记的任务。成员恢复递增版本，旧连接必须重新握手才能恢复使用；认证等待有期限并随连接断开取消。此阶段不提供撤销或转移即确认后台任务终止的承诺。
 
 B 收到后：校验请求形状 → [runtime.md](runtime.md) 策略。deny / 审批失败 → B 发 `invoke_nack`，Relay 转给 A 并 **删除 inflight**。allow 且 `exec` → Popen，**不再** nack。
 

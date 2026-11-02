@@ -16,7 +16,7 @@ func (d *Daemon) serveIPC(c *ipc.Conn) {
 		if err != nil {
 			return
 		}
-		if d.handleAccount(c, req) || d.handleObservation(c, req) || d.handleHeadState(c, req) || d.handleHandoffIPC(c, req) || d.handleLocal(c, req) {
+		if d.handleDeviceAccess(c, req) || d.handleAccount(c, req) || d.handleObservation(c, req) || d.handleHeadState(c, req) || d.handleHandoffIPC(c, req) || d.handleLocal(c, req) {
 			continue
 		}
 		switch req.Method {
@@ -37,8 +37,8 @@ func (d *Daemon) serveIPC(c *ipc.Conn) {
 				Grant    string `json:"grant"`
 			}
 			_ = json.Unmarshal(req.Params, &p)
-			if p.DeviceID == "" || p.Grant == "" {
-				_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "需要 device_id 与 grant"))
+			if p.DeviceID == "" {
+				_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "需要 device_id"))
 				continue
 			}
 			if err := d.store.AddPeer(p.DeviceID, p.Grant); err != nil {

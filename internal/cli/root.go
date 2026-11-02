@@ -28,6 +28,7 @@ func Execute() error {
 		SilenceErrors: true,
 	}
 	root.AddCommand(cmdRelay(), cmdStart(), cmdEnsure(), cmdStop(), cmdStatus(), cmdDoctor(), cmdGrant(), cmdInbound(), cmdRevoke(), cmdReset(), cmdPeer(), cmdExec(), cmdApprove(), cmdTUI(), cmdMCP(), cmdVersion(), cmdRuntime(), cmdIPCBridge(), cmdHandoff(), cmdAccount())
+	root.AddCommand(cmdDevice())
 	return root.Execute()
 }
 
@@ -152,8 +153,8 @@ func cmdPeer() *cobra.Command {
 		Use:   "add",
 		Short: "添加可控制的设备",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if id == "" || grant == "" {
-				return fmt.Errorf("需要 --id 与 --grant")
+			if id == "" {
+				return fmt.Errorf("需要 --id")
 			}
 			if err := ensureRuntime(); err != nil {
 				return err
@@ -167,7 +168,7 @@ func cmdPeer() *cobra.Command {
 		},
 	}
 	add.Flags().StringVar(&id, "id", "", "对方设备 ID")
-	add.Flags().StringVar(&grant, "grant", "", "对方授权码")
+	add.Flags().StringVar(&grant, "grant", "", "未认领设备的共享授权码；账号授权访问可省略")
 	c.AddCommand(add)
 	c.AddCommand(&cobra.Command{
 		Use:   "list",

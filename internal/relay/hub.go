@@ -24,9 +24,10 @@ type deviceSlot struct {
 }
 
 type clientSlot struct {
-	targetID string
-	access   access.Binding
-	identity principal.Identity
+	targetID      string
+	access        access.Binding
+	identity      principal.Identity
+	authorization access.Authorization
 }
 
 type inflight struct {
@@ -63,6 +64,15 @@ func (h *Hub) Handle(from Sender, role string, targetID string, msg protocol.Mes
 		return
 	}
 	switch msg.Type {
+	case protocol.TypeAccessRequest:
+		if role != protocol.RoleDevice {
+			if len(msg.RequestID) > 128 {
+				msg.RequestID = ""
+			}
+			_ = from.Enqueue(protocol.Message{Type: protocol.TypeAccessResult, RequestID: msg.RequestID, Code: protocol.Unauthorized})
+			return
+		}
+		h.handleAccess(from, msg)
 	case protocol.TypeHeartbeat:
 		return
 	case protocol.TypeGrantRotate, protocol.TypeRevoke, protocol.TypeInboundSet:
@@ -107,7 +117,7 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 		h.handleCancel(from, msg.ExecID)
 		return
 	}
-	if code := h.verifyPrincipal(from); code != "" {
+	if code := h.verifyClientAccess(from, msg.Op); code != "" {
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, code))
 		return
 	}

@@ -84,10 +84,21 @@ func (h *Hub) RegisterClient(targetID, grant, accountToken string, conn Sender) 
 	}
 	want := protocol.SHA256Hex(grant)
 	var record access.Device
+	var decision access.Authorization
 	if h.store != nil {
 		record, err = h.store.LoadDevice(ctx, targetID)
 		if err != nil {
 			return identityErrorCode(err)
+		}
+		if record.OwnershipID != "" {
+			store, ok := h.store.(access.Store)
+			if !ok {
+				return protocol.Unauthorized
+			}
+			decision, err = store.ResolveAccess(ctx, record, identity)
+			if err != nil {
+				return accessErrorCode(err)
+			}
 		}
 	}
 	h.mu.Lock()
@@ -101,14 +112,17 @@ func (h *Hub) RegisterClient(targetID, grant, accountToken string, conn Sender) 
 		}
 		record = h.devices[targetID].record
 	}
-	if record.GrantHash == "" || record.GrantHash != want || record.UID == "" || record.GrantID == "" {
-		return protocol.Unauthorized
+	if record.OwnershipID == "" {
+		if record.GrantHash == "" || record.GrantHash != want || record.UID == "" || record.GrantID == "" {
+			return protocol.Unauthorized
+		}
+		decision = access.Authorization{Binding: record.Binding(), Permissions: access.AllPermissions()}
 	}
 	if err := conn.Enqueue(protocol.Message{Type: protocol.TypeHelloOK, Role: protocol.RoleClient}); err != nil {
 		return protocol.RelayError
 	}
 	h.access[targetID] = record.Binding()
-	h.clients[conn] = clientSlot{targetID: targetID, access: record.Binding(), identity: identity}
+	h.clients[conn] = clientSlot{targetID: targetID, access: record.Binding(), identity: identity, authorization: decision}
 	return ""
 }
 

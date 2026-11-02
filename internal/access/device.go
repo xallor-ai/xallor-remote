@@ -10,25 +10,34 @@ import (
 // Device is a committed identity/access snapshot. UID survives reconnection and
 // is replaced on recreation. GrantID changes only when the sharing hash changes.
 type Device struct {
-	UID        string
-	SecretHash string
-	Inbound    bool
-	GrantID    string
-	GrantHash  string
+	UID            string
+	SecretHash     string
+	Inbound        bool
+	GrantID        string
+	GrantHash      string
+	OwnershipID    string
+	OwnerTenant    string
+	OwnerPrincipal string
 }
 
 // Binding identifies what was authenticated, without retaining a bearer secret.
 // Tenant/principal authorization will produce its own trusted context; a sharing
 // binding alone does not identify a user or a billing tenant.
 type Binding struct {
-	DeviceUID string
-	GrantID   string
+	DeviceUID   string
+	GrantID     string
+	OwnershipID string
 }
 
-func (d Device) Binding() Binding { return Binding{DeviceUID: d.UID, GrantID: d.GrantID} }
+func (d Device) Binding() Binding {
+	if d.OwnershipID != "" {
+		return Binding{DeviceUID: d.UID, OwnershipID: d.OwnershipID}
+	}
+	return Binding{DeviceUID: d.UID, GrantID: d.GrantID}
+}
 
 func (b Binding) Matches(current Binding) bool {
-	return b.DeviceUID != "" && b.GrantID != "" && b == current
+	return b.DeviceUID != "" && ((b.GrantID != "") != (b.OwnershipID != "")) && b == current
 }
 
 func NewDevice(secretHash string, inbound bool) (Device, error) {

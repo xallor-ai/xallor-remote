@@ -107,7 +107,7 @@ func serveConn(parent context.Context, hub *Hub, c *websocket.Conn, log *slog.Lo
 		defer lim.OnDeviceDown(ip)
 		role, bindID = protocol.RoleDevice, hello.DeviceID
 	case protocol.TypeHelloClient:
-		if hello.TargetID == "" || hello.Grant == "" {
+		if hello.TargetID == "" {
 			return
 		}
 		if code := hub.RegisterClient(hello.TargetID, hello.Grant, hello.AccountToken, s); code != "" {

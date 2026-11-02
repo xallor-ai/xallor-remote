@@ -45,7 +45,7 @@ PRAGMA user_version=1;`)
 				t.Fatal("reopening changed the migrated binding")
 			}
 			var tables string
-			if err := s.db.QueryRow(`SELECT group_concat(name) FROM (SELECT name FROM sqlite_master WHERE type='table' ORDER BY name)`).Scan(&tables); err != nil || tables != "authority,device_grants,devices,memberships,principal_credentials,principals,tenants" {
+			if err := s.db.QueryRow(`SELECT group_concat(name) FROM (SELECT name FROM sqlite_master WHERE type='table' ORDER BY name)`).Scan(&tables); err != nil || tables != "authority,device_grants,device_ownership,device_shares,devices,memberships,principal_credentials,principals,tenants" {
 				t.Fatalf("unexpected persisted collections: %q %v", tables, err)
 			}
 			var indexes, seen, version int
@@ -58,7 +58,7 @@ PRAGMA user_version=1;`)
 			if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 				t.Fatal(err)
 			}
-			if indexes != 0 || seen != 1234 || version != 4 {
+			if indexes != 0 || seen != 1234 || version != 5 {
 				t.Fatalf("unexpected schema/state: indexes=%d last_seen=%d version=%d", indexes, seen, version)
 			}
 		}()

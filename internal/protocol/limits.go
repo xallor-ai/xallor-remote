@@ -20,6 +20,7 @@ const (
 	MaxEnvelopeBytes     = 8192
 	MaxWSMessageBytes    = 6*(MaxWriteBytes+MaxPathBytes) + MaxEnvelopeBytes
 	MaxConcurrentExec    = 4
+	MaxDeviceShares      = 128
 	HeartbeatEvery       = 30 * time.Second
 	ConnStaleAfter       = 60 * time.Second
 )

@@ -68,12 +68,15 @@ SSOT：命名管道 / Unix socket 上的报文与 ensure。路径与权限见 [d
 | `config.get` / `config.set` | 人侧头 | relay URL、workspace、shell |
 | `account.set` | 人侧头 | `{token:string}`；必须明确提供，空字符串表示清除；返回 `{configured:bool}` |
 | `account.status` | 人侧头 | 返回 `{configured:bool}`，不返回凭据或宣称已在线认证 |
+| `device.access` | 人侧头 | 归属/分享管理参数见协议；凭据由 Runtime 获取，头不得传入 token 或设备密钥 |
 | `approval.subscribe` | 人侧头 | 注册为审批 UI；断开即取消 |
 | `approval.respond` | 人侧头 | 独立请求 ID；`{approval_id,allow:bool}`，同一审批最多确认一次 |
 | `approval.list` | 人侧头 | 当前待审批 `{pending:[{id,exec_id,preview,created}]}`；只读，不代替订阅 |
 | `audit.list` | 人侧头 | 本机最近 500 条操作元数据 `{entries:[...]}`；读取失败明确报错 |
 
-MCP **可以**调 `status` / `peer.*` / 下面远程方法；**不要**调 grant/inbound/revoke/account.set（包里不实现）。Runtime 不做「MCP 指纹鉴权」——防模型靠 tool 面，不靠 IPC 分角色。MCP 连接**不算**审批 UI。
+MCP **可以**调 `status` / `peer.*` / 下面远程方法；**不要**调 grant/inbound/revoke/account.set/device.access（包里不实现）。Runtime 不做「MCP 指纹鉴权」——防模型靠 tool 面，不靠 IPC 分角色。MCP 连接**不算**审批 UI。
+
+`device.access` 经当前 device 出站连接发送，校验连接 Relay 地址与当前凭据绑定地址一致；请求和响应关联到该连接实例。最多 16 个等待 Relay 结果的请求，每次 5 秒期限包含写入排队；断线/超时返回结果未确认，不自动重放管理动作。响应来自已认证 Relay，成功状态直接回到调用头。`peer.add` 的 grant 可以省略，供账号授权访问；添加 peer 不表示已通过远程授权验证。
 
 `account.set` 原子持久化到当前 profile 的 `account.json`，绑定当前 Relay URL。成功后递增本机身份代次并关闭旧控制连接，等待中的调用可能收到通道失败，不能自动重放。导入只校验凭据格式，实际有效性在远程握手和新调用时验证；设置失败保留旧配置。目标 `doctor` 使用与实际调用相同的身份凭据，不能匿名探测后冒充账号访问成功。
 

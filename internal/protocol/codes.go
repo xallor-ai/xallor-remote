@@ -18,19 +18,21 @@ const (
 )
 
 const (
-	TypeHelloDevice = "hello_device"
-	TypeHelloClient = "hello_client"
-	TypeHelloOK     = "hello_ok"
-	TypeHeartbeat   = "heartbeat"
-	TypeInvoke      = "invoke"
-	TypeInvokeNack  = "invoke_nack"
-	TypeGrantRotate = "grant_rotate"
-	TypeRevoke      = "revoke"
-	TypeInboundSet  = "inbound_set"
-	TypeStdout      = "stdout"
-	TypeStderr      = "stderr"
-	TypeExit        = "exit"
-	TypeError       = "error"
+	TypeHelloDevice   = "hello_device"
+	TypeHelloClient   = "hello_client"
+	TypeHelloOK       = "hello_ok"
+	TypeHeartbeat     = "heartbeat"
+	TypeInvoke        = "invoke"
+	TypeInvokeNack    = "invoke_nack"
+	TypeGrantRotate   = "grant_rotate"
+	TypeRevoke        = "revoke"
+	TypeInboundSet    = "inbound_set"
+	TypeStdout        = "stdout"
+	TypeStderr        = "stderr"
+	TypeExit          = "exit"
+	TypeError         = "error"
+	TypeAccessRequest = "access.request"
+	TypeAccessResult  = "access.result"
 )
 
 const (

@@ -14,6 +14,7 @@ type Message struct {
 	Secret       string          `json:"secret,omitempty"`
 	Grant        string          `json:"grant,omitempty"`
 	AccountToken string          `json:"account_token,omitempty"`
+	RequestID    string          `json:"request_id,omitempty"`
 	NewGrantHash string          `json:"new_grant_hash,omitempty"`
 	OS           string          `json:"os,omitempty"`
 	Arch         string          `json:"arch,omitempty"`

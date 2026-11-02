@@ -75,6 +75,12 @@ func (h *Hub) handleAuth(from Sender, msg protocol.Message) {
 func (h *Hub) rejectIdentity(from Sender, code string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.stopDeviceRoutingLocked(from)
+	_ = from.Enqueue(protocol.Message{Type: protocol.TypeError, Code: code})
+	from.Close()
+}
+
+func (h *Hub) stopDeviceRoutingLocked(from Sender) {
 	// Failed/uncertain writes stop routing immediately, before network drain.
 	for id, d := range h.devices {
 		if d.conn == from {
@@ -84,6 +90,4 @@ func (h *Hub) rejectIdentity(from Sender, code string) {
 			break
 		}
 	}
-	_ = from.Enqueue(protocol.Message{Type: protocol.TypeError, Code: code})
-	from.Close()
 }

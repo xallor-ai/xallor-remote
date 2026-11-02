@@ -12,15 +12,16 @@ import (
 
 func scanDevice(row *sql.Row) (access.Device, error) {
 	var record access.Device
-	err := row.Scan(&record.UID, &record.SecretHash, &record.Inbound, &record.GrantID, &record.GrantHash)
+	err := row.Scan(&record.UID, &record.SecretHash, &record.Inbound, &record.GrantID, &record.GrantHash, &record.OwnershipID, &record.OwnerTenant, &record.OwnerPrincipal)
 	if errors.Is(err, sql.ErrNoRows) {
 		return access.Device{}, ErrDeviceNotFound
 	}
 	return record, err
 }
 
-const selectDevice = `SELECT d.uid, d.secret_hash, d.inbound, COALESCE(g.id,''), COALESCE(g.token_hash,'')
-FROM devices d LEFT JOIN device_grants g ON g.device_uid=d.uid WHERE d.id=?`
+const deviceFields = `SELECT d.uid, d.secret_hash, d.inbound, COALESCE(g.id,''), COALESCE(g.token_hash,''), COALESCE(o.id,''), COALESCE(o.tenant_id,''), COALESCE(o.principal_id,'')
+FROM devices d LEFT JOIN device_grants g ON g.device_uid=d.uid LEFT JOIN device_ownership o ON o.device_uid=d.uid`
+const selectDevice = deviceFields + ` WHERE d.id=?`
 
 func (s *SQLStore) LoadDevice(ctx context.Context, id string) (access.Device, error) {
 	return scanDevice(s.db.QueryRowContext(ctx, selectDevice, id))
@@ -31,7 +32,7 @@ func (s *SQLStore) RegisterDevice(ctx context.Context, id, secretHash string, in
 	if err != nil {
 		return access.Device{}, err
 	}
-	return s.identityTransaction(ctx, func(tx *sql.Tx) (access.Device, error) {
+	return storeTransaction(ctx, s.db, func(tx *sql.Tx) (access.Device, error) {
 		// A competing registration must never overwrite the winning identity.
 		_, err := tx.ExecContext(ctx, `INSERT INTO devices (uid, id, secret_hash, inbound, last_seen) VALUES (?,?,?,?,?)
 ON CONFLICT(id) DO NOTHING`, candidate.UID, id, secretHash, inbound, time.Now().Unix())
@@ -50,7 +51,7 @@ ON CONFLICT(id) DO NOTHING`, candidate.UID, id, secretHash, inbound, time.Now().
 }
 
 func (s *SQLStore) UpdateDevice(ctx context.Context, id string, requested access.Device) (access.Device, error) {
-	return s.identityTransaction(ctx, func(tx *sql.Tx) (access.Device, error) {
+	return storeTransaction(ctx, s.db, func(tx *sql.Tx) (access.Device, error) {
 		current, err := scanDevice(tx.QueryRowContext(ctx, selectDevice, id))
 		if errors.Is(err, ErrDeviceNotFound) {
 			return access.Device{}, ErrDeviceIdentity
@@ -81,7 +82,7 @@ ON CONFLICT(device_uid) DO UPDATE SET id=excluded.id, token_hash=excluded.token_
 }
 
 func (s *SQLStore) DeleteDevice(ctx context.Context, id, uid, secretHash string) error {
-	_, err := s.identityTransaction(ctx, func(tx *sql.Tx) (access.Device, error) {
+	_, err := storeTransaction(ctx, s.db, func(tx *sql.Tx) (access.Device, error) {
 		result, err := tx.ExecContext(ctx, `DELETE FROM devices WHERE id=? AND uid=? AND secret_hash=?`, id, uid, secretHash)
 		return access.Device{}, requireDeviceMutation(result, err)
 	})

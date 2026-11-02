@@ -2,7 +2,6 @@ package noderun
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"os/exec"
 	stdruntime "runtime"
@@ -19,31 +18,6 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
-
-type wsConn struct {
-	mu      sync.Mutex
-	ctx     context.Context
-	conn    *websocket.Conn
-	observe func(protocol.Message)
-}
-
-func (w *wsConn) send(m protocol.Message) error {
-	raw, err := json.Marshal(m)
-	if err != nil {
-		return err
-	}
-	if len(raw) > protocol.MaxWSMessageBytes {
-		return errMsgTooLarge
-	}
-	if w.observe != nil {
-		w.observe(m)
-	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.conn.Write(w.ctx, websocket.MessageText, raw)
-}
-
-var errMsgTooLarge = errStr(protocol.TooLarge)
 
 type clientLink struct {
 	target  string
@@ -64,6 +38,7 @@ type Daemon struct {
 	clients           map[clientKey]*clientLink
 	ensuring          map[clientKey]chan struct{}
 	accountGeneration uint64
+	accessRequests    accessRequests
 	local             map[string]context.CancelFunc
 	remote            map[string]*remoteExec
 	approvals         *approvalHub
@@ -143,7 +118,7 @@ func (d *Daemon) connectDevice() error {
 	}
 	conn.SetReadLimit(int64(protocol.MaxWSMessageBytes))
 	defer conn.Close(websocket.StatusNormalClosure, "")
-	link := &wsConn{ctx: ctx, conn: conn, observe: func(msg protocol.Message) { d.recordTerminal("inbound", id, msg) }}
+	link := &wsConn{ctx: ctx, conn: conn, relay: relay, observe: func(msg protocol.Message) { d.recordTerminal("inbound", id, msg) }}
 	inb := inbound && grant != ""
 	hello := protocol.Message{
 		Type: protocol.TypeHelloDevice, DeviceID: id, Secret: secret,
@@ -207,6 +182,8 @@ func (e errStr) Error() string { return string(e) }
 
 func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
 	switch msg.Type {
+	case protocol.TypeAccessResult:
+		d.accessRequests.deliver(link, msg)
 	case protocol.TypeHeartbeat:
 	case protocol.TypeInvoke:
 		if msg.Op == protocol.OpCancel {
