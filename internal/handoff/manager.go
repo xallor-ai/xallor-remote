@@ -83,7 +83,7 @@ func (m *Manager) Submit(scope invocation.Scope, r Request, root string) (Receip
 		return Receipt{}, fmt.Errorf("回执或并发交接已达上限；同一会话不能并行交接。")
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	owner, err := m.jobs.Reserve(scope, "handoff", r.Session)
+	owner, err := m.jobs.ReserveHandoff(scope, r.Session)
 	if err != nil {
 		return Receipt{}, fmt.Errorf("本机作业容量不足或仍有未确认结束的任务。")
 	}

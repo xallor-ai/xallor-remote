@@ -76,7 +76,7 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		_ = link.send(protocol.Nack(msg.ExecID, executionErrorCode(err)))
 		return
 	}
-	owner, err := d.jobs.Reserve(*msg.Scope, "exec", msg.ExecID)
+	owner, err := d.jobs.ReserveExec(*msg.Scope, msg.ExecID)
 	if err != nil {
 		code := protocol.AgentError
 		if errors.Is(err, job.ErrCapacity) {

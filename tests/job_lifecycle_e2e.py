@@ -72,6 +72,8 @@ try:
     reservations=cluster.root/("reservations"+suffix)
     for path,source in ((tree,"process-tree"),(agent,"cursor-cli"),(reservations,"job-reservations")):
         subprocess.run([args.go,"build","-o",str(path),"./tests/fixtures/"+source],cwd=root,check=True,timeout=180)
+    subprocess.run([str(reservations),"sequence",str(cluster.root/"sequence")],check=True,timeout=30)
+    results.append("one_owner_rejects_parallel_launch_and_reuses_slot_after_cleanup")
     cluster.start()
     target=cluster.add("target")
     cluster.add("controller")

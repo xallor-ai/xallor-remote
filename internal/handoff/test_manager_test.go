@@ -15,7 +15,7 @@ func newTestManager(ctx context.Context, dir string) *testManager {
 func (m *testManager) Close() { m.Manager.Close(); m.jobs.Close() }
 func (m *testManager) probeOwner(t *testing.T) *job.Owner {
 	t.Helper()
-	owner, err := m.jobs.Reserve(testScope, "handoff", testSession)
+	owner, err := m.jobs.ReserveHandoff(testScope, testSession)
 	if err != nil {
 		t.Fatal(err)
 	}

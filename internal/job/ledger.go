@@ -131,7 +131,7 @@ func (l *Ledger) initializeLocked() error {
 func validRecord(id string, r Record) bool {
 	b, err := hex.DecodeString(id)
 	return err == nil && len(b) == 16 && hex.EncodeToString(b) == id && id == r.ID && r.Scope.Valid() &&
-		(r.Kind == "exec" || r.Kind == "handoff") && len(r.Key) > 0 && len(r.Key) <= 128 &&
+		Kind(r.Kind).valid() && len(r.Key) > 0 && len(r.Key) <= 128 &&
 		(r.State == "reserved" || r.State == "occupied" || r.State == "uncertain")
 }
 
@@ -156,10 +156,22 @@ func (l *Ledger) copyLocked() map[string]Record {
 	return jobs
 }
 
-// Reserve persists occupancy before any child can start. Active and uncertain
-// records both consume capacity; neither expiry nor a lost response frees it.
-func (l *Ledger) Reserve(scope invocation.Scope, kind, key string) (*Owner, error) {
-	if !scope.Valid() || (kind != "exec" && kind != "handoff") || len(key) == 0 || len(key) > 128 {
+// ReserveExec persists occupancy for a foreground or remote exec before any
+// target child can start. Active and uncertain records both consume capacity.
+func (l *Ledger) ReserveExec(scope invocation.Scope, execID string) (*Owner, error) {
+	return l.reserve(scope, KindExec, execID)
+}
+
+// ReserveHandoff persists occupancy for a durable Agent session. Its smaller
+// process-management ceiling is enforced independently of exec capacity.
+func (l *Ledger) ReserveHandoff(scope invocation.Scope, sessionID string) (*Owner, error) {
+	return l.reserve(scope, KindHandoff, sessionID)
+}
+
+// reserve is the one implementation for the two explicit lifecycle entries.
+// It is unexported so callers cannot invent a third resource category.
+func (l *Ledger) reserve(scope invocation.Scope, kind Kind, key string) (*Owner, error) {
+	if !scope.Valid() || !kind.valid() || len(key) == 0 || len(key) > 128 {
 		return nil, fmt.Errorf("invalid job identity")
 	}
 	l.mu.Lock()
@@ -169,10 +181,10 @@ func (l *Ledger) Reserve(scope invocation.Scope, kind, key string) (*Owner, erro
 	}
 	count := 0
 	for _, r := range l.jobs {
-		if r.Scope == scope && r.Kind == kind && r.Key == key {
+		if r.Scope == scope && Kind(r.Kind) == kind && r.Key == key {
 			return nil, ErrUncertain
 		}
-		if r.Kind == "handoff" {
+		if Kind(r.Kind) == KindHandoff {
 			count++
 		}
 	}
@@ -188,7 +200,7 @@ func (l *Ledger) Reserve(scope invocation.Scope, kind, key string) (*Owner, erro
 		return nil, ErrUnavailable
 	}
 	jobs := l.copyLocked()
-	jobs[id] = Record{ID: id, Scope: scope, Kind: kind, Key: key, State: "reserved"}
+	jobs[id] = Record{ID: id, Scope: scope, Kind: string(kind), Key: key, State: "reserved"}
 	if err := l.saveLocked(jobs); err != nil {
 		return nil, err
 	}
