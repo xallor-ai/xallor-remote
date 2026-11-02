@@ -29,10 +29,21 @@ func (j *job) start(cmd *exec.Cmd) error {
 	var handles [3]windows.Handle
 	files := []*os.File{fileOf(cmd.Stdin), fileOf(cmd.Stdout), fileOf(cmd.Stderr)}
 	for i, f := range files {
-		if f == nil {
-			continue
+		source := windows.Handle(0)
+		if f != nil {
+			source = windows.Handle(f.Fd())
+		} else {
+			name, err := windows.UTF16PtrFromString("NUL")
+			if err != nil {
+				return err
+			}
+			source, err = windows.CreateFile(name, windows.GENERIC_READ|windows.GENERIC_WRITE, 0, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
+			if err != nil {
+				return err
+			}
+			defer windows.CloseHandle(source)
 		}
-		if err := windows.DuplicateHandle(windows.CurrentProcess(), windows.Handle(f.Fd()), windows.CurrentProcess(), &handles[i], 0, true, windows.DUPLICATE_SAME_ACCESS); err != nil {
+		if err := windows.DuplicateHandle(windows.CurrentProcess(), source, windows.CurrentProcess(), &handles[i], 0, true, windows.DUPLICATE_SAME_ACCESS); err != nil {
 			return err
 		}
 		defer windows.CloseHandle(handles[i])
@@ -72,6 +83,9 @@ func (j *job) start(cmd *exec.Cmd) error {
 	}
 	var pi windows.ProcessInformation
 	flags := uint32(windows.CREATE_SUSPENDED | windows.CREATE_UNICODE_ENVIRONMENT | windows.EXTENDED_STARTUPINFO_PRESENT)
+	if cmd.SysProcAttr != nil {
+		flags |= cmd.SysProcAttr.CreationFlags
+	}
 	if err := windows.CreateProcess(app, &line[0], nil, nil, true, flags, env, dir, &si.StartupInfo, &pi); err != nil {
 		return err
 	}

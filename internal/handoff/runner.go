@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"os/exec"
 	"time"
@@ -46,7 +45,6 @@ func (m *Manager) run(key string, r Request, root string, owner *job.Owner) outc
 	args = append(args, "--", prompt)
 	cmd := exec.Command(cfg.Executable, args...)
 	cmd.Dir = workspace
-	cmd.Stderr = io.Discard
 	stdout, output, err := os.Pipe()
 	if err != nil {
 		return outcome{state: "failed", code: "cli_start_failed", version: version}
