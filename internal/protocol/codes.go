@@ -12,6 +12,8 @@ const (
 	Cancelled          = "cancelled"
 	RelayError         = "relay_error"
 	AgentError         = "agent_error"
+	ResultUnknown      = "result_unknown"
+	RuntimeUnavailable = "runtime_unavailable"
 	UnsupportedShell   = "unsupported_shell"
 	ShellUnavailable   = "shell_unavailable"
 	InvalidExecution   = "invalid_execution"

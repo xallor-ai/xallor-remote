@@ -115,6 +115,8 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 | `truncated` | 与 `exit` 同时出现的标志，不是单独终态。read 因默认窗口或上限少给的内容也标 true |
 | `relay_error` | 中转故障或重启丢 inflight |
 | `agent_error` | Runtime 内部失败 |
+| `result_unknown` | 控制端未收到有效终态、响应标识不匹配或终态字段矛盾；不表示未执行，不自动重试 |
+| `runtime_unavailable` | 执行头无法启动或连接本机 Runtime，本次尚未发送执行请求 |
 | `invalid_execution` | 执行输入形状、文本或参数无效 |
 | `program_unavailable` | 目标无法安全找到指定程序；不回退到 Shell |
 | `unsupported_program` | Windows program 模式选择了批处理文件或 cmd.exe，须改为显式脚本调用 |
@@ -125,6 +127,23 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 | `too_large` | write/read、执行输入或目标命令行超过硬上限 |
 
 MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
+
+### CLI 执行事件输出
+
+`exec --jsonl` 在标准输出逐行发送 JSON；文本模式和 JSONL 共用同一 IPC 结果解析器。这是客户端展示合同，不新增 WSS 消息或调度状态。事件形状：
+
+```json
+{"type":"stdout","exec_id":"ex_…","data":"first\nsecond\n"}
+{"type":"stderr","exec_id":"ex_…","data":"diagnostic\n"}
+{"type":"exit","exec_id":"ex_…","status":"completed","exit_code":7,"duration_ms":12,"truncated":false}
+{"type":"error","exec_id":"ex_…","code":"relay_error","message":"目标连接已断开。"}
+```
+
+`exit` 和 `error` 是互斥终态，示例最后两行属于不同调用。可写输出通道上恰有一个终态且位于最后；管道关闭、CLI 被终止或参数语法解析失败时可能没有完整终态，调用者必须视为结果未确认。不得把 EOF 当成功。命令产生的 JSON/换行只放入 data，不作为事件解析；输出边界是块，不承诺一帧一行命令输出或 stdout/stderr 之间的真实时间顺序。
+
+`exec_id` 仅在已观测时出现，可能随空 stdout 事件先到达；这不是目标进程已启动的证明。exit 字段沿用本协议终态语义，缺失的可选元数据省略，不伪造 0/false；completed 缺少有效整数退出码时转为 result_unknown。错误保留已知协议 code，不根据一般传输错误推断命令是否开跑。发送失败也可能已部分发送，所以返回 result_unknown。
+
+本地语义输入校验失败为 invalid_execution/too_large；Runtime 启动或连接失败为 runtime_unavailable。非法选项、help 等 Cobra 语法/帮助流程不属于执行事件流，仍走普通诊断/帮助输出。进程退出状态仅在 completed 且 exit_code=0 时为 0，其余为非零；它不是远端原始退出码透传，远端值读取 exit_code。诊断可写入 CLI stderr，但远端 stderr 在 JSONL 中只作为标准输出上的 stderr 事件。输出写入失败立即停止并关闭 IPC，不补写成功或重试执行。
 
 ---
 

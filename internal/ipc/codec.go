@@ -118,6 +118,10 @@ func Call(c *Conn, id, method string, params any) error {
 
 func Human(code string) string {
 	switch code {
+	case "result_unknown":
+		return "执行结果未确认。"
+	case "runtime_unavailable":
+		return "无法连接本机 Runtime，请检查服务状态。"
 	case "invalid_execution":
 		return "执行参数无效，请选择脚本或程序并检查参数。"
 	case "program_unavailable":
