@@ -10,11 +10,11 @@ func TestInvoke_should_rejectExistingClient_whenGrantRotated(t *testing.T) {
 	h := NewHub(newMemStore())
 	dev, client := &recSender{}, &recSender{}
 	h.RegisterDevice("123456789", "secret", true, dev)
-	h.Handle(dev, protocol.RoleDevice, "123456789", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("old")})
+	h.Handle(dev, protocol.RoleDevice, "123456789", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("old")})
 	if code := h.RegisterClient("123456789", "old", "", client); code != "" {
 		t.Fatal(code)
 	}
-	h.Handle(dev, protocol.RoleDevice, "123456789", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("new")})
+	h.Handle(dev, protocol.RoleDevice, "123456789", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("new")})
 	h.Handle(client, protocol.RoleClient, "123456789", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "after-rotation"})
 	if client.last().Code != protocol.Unauthorized {
 		t.Fatalf("old connection retained permission: %+v", client.last())

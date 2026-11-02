@@ -45,7 +45,7 @@ func TestInboxWire_should_chargeDroppedOutput_whenIdentityHandlerBlocked(t *test
 	}
 	defer held.Close()
 	before := s.db.Stats().WaitCount
-	if err := wsjson.Write(ctx, c, protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("pending")}); err != nil {
+	if err := wsjson.Write(ctx, c, protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("pending")}); err != nil {
 		t.Fatal(err)
 	}
 	waitCondition(t, func() bool { return s.db.Stats().WaitCount > before })

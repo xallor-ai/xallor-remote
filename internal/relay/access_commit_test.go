@@ -36,7 +36,7 @@ func TestAccess_should_stopRouting_whenCommitOutcomeIsUncertain(t *testing.T) {
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)
 	}
-	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("bearer")})
+	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("bearer")})
 	if code := h.RegisterClient("device", "bearer", "", client); code != "" {
 		t.Fatal(code)
 	}
@@ -76,7 +76,7 @@ func TestAccess_should_publishCommittedOwner_whenDeviceDisconnectsBeforeReply(t 
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)
 	}
-	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("bearer")})
+	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("bearer")})
 	if code := h.RegisterClient("device", "bearer", "", &recSender{}); code != "" {
 		t.Fatal(code)
 	}

@@ -52,7 +52,10 @@ func TestAccessWire_should_rejectOldBinding_whenCredentialReused(t *testing.T) {
 			hello := protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "123456789", Secret: "secret", Inbound: protocol.Bool(true)}
 			device := dial(hello)
 			rotate := func(code string) {
-				write(device, protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex(code)})
+				write(device, protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex(code)})
+				if ack := read(device); ack.Type != protocol.TypeDeviceSettingsResult || ack.Code != "" {
+					t.Fatalf("settings: %+v", ack)
+				}
 				waitCondition(t, func() bool {
 					h.mu.Lock()
 					defer h.mu.Unlock()

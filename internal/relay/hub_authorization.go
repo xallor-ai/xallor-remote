@@ -3,6 +3,14 @@ package relay
 import "github.com/xallor-ai/xallor-remote/internal/protocol"
 
 func (h *Hub) handleAuth(from Sender, msg protocol.Message) {
+	if msg.Type == protocol.TypeDeviceSettings && !msg.ValidDeviceSettings() {
+		key := msg.RequestID
+		if len(key) > 128 {
+			key = ""
+		}
+		_ = from.Enqueue(protocol.Message{Type: protocol.TypeDeviceSettingsResult, RequestID: key, Code: protocol.AgentError})
+		return
+	}
 	h.mu.Lock()
 	var id string
 	for did, d := range h.devices {
@@ -30,12 +38,8 @@ func (h *Hub) handleAuth(from Sender, msg protocol.Message) {
 	record := d.record
 	h.mu.Unlock()
 	switch msg.Type {
-	case protocol.TypeGrantRotate:
-		record.GrantHash = msg.NewGrantHash
-	case protocol.TypeInboundSet:
-		if msg.Inbound == nil {
-			return
-		}
+	case protocol.TypeDeviceSettings:
+		record.GrantHash = msg.GrantHash
 		record.Inbound = *msg.Inbound
 	case protocol.TypeRevoke:
 	default:
@@ -70,6 +74,14 @@ func (h *Hub) handleAuth(from Sender, msg protocol.Message) {
 	}
 	d.record = record
 	h.access[id] = record.Binding()
+	// Queue the confirmation before publishing readiness, so initial invokes
+	// cannot precede the settings response on the shared device connection.
+	if err := from.Enqueue(protocol.Message{Type: protocol.TypeDeviceSettingsResult, RequestID: msg.RequestID}); err != nil {
+		h.stopDeviceRoutingLocked(from)
+		from.Close()
+		return
+	}
+	d.ready = true
 }
 
 func (h *Hub) rejectIdentity(from Sender, code string) {

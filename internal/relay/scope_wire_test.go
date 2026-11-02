@@ -25,6 +25,7 @@ func TestScopeWire_should_replaceForgedIdentity_whenRoutingInvocation(t *testing
 	if hello.Type != protocol.TypeHelloOK {
 		t.Fatal(hello)
 	}
+	confirmWireSettings(t, dctx, target, "bearer", true)
 	for _, token := range []string{"", a.Token} {
 		cctx, caller, hello := identityWire(t, h, protocol.Message{Type: protocol.TypeHelloClient, TargetID: "device", Grant: "bearer", AccountToken: token})
 		if hello.Type != protocol.TypeHelloOK {

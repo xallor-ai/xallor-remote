@@ -12,7 +12,7 @@ import (
 // Responses are bound to the exact live device link, and cleaned-up requests
 // cannot be completed by a late or duplicate response from another connection.
 func TestDeviceAccess_should_ignoreWrongLinkAndLateResponse(t *testing.T) {
-	var requests accessRequests
+	var requests deviceReplies
 	link := &wsConn{}
 	id, result, remove, err := requests.register(link)
 	if err != nil {
@@ -44,7 +44,7 @@ func TestDeviceAccess_should_ignoreWrongLinkAndLateResponse(t *testing.T) {
 // Pending management requests have a hard admission cap; cancellation releases
 // one slot without permitting duplicate responses to retain the old waiter.
 func TestDeviceAccess_should_releaseCapacity_whenWaiterRemoved(t *testing.T) {
-	var requests accessRequests
+	var requests deviceReplies
 	var cleanup []func()
 	for range 16 {
 		_, _, remove, err := requests.register(&wsConn{})

@@ -23,19 +23,23 @@ JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本
 
 | type | 谁可发 | 必带 | 含义 |
 | --- | --- | --- | --- |
-| `hello_device` | device | device_id, secret, os, arch, agent_version, workspace, inbound | 上线 |
+| `hello_device` | device | device_id, secret, os, arch, agent_version, workspace | 证明设备身份；新设备默认关闭入站 |
 | `hello_client` | client | target_device_id, grant?, account_token? | 未认领设备验证共享码，已认领设备验证账号访问权 |
 | `hello_ok` | Relay | role | hello 成功，此后可 heartbeat / invoke |
 | `heartbeat` | 双向 | — | 保活 |
 | `invoke` | client | exec_id, op, payload | op 见下；目标取自该 client 连接的 hello |
 | `invoke_nack` | Relay 或目标 | exec_id, code | 未开跑 |
-| `grant_rotate` | **仅 device** | device_id, new_grant_hash | 作废旧 grant |
+| `device.settings` | **仅 device** | request_id, inbound；grant_hash 可省略 | 原子替换本连接设备的完整共享访问设置 |
+| `device.settings.result` | Relay → device | request_id, code? | 持久化并应用后的确认；无 code 表示成功 |
 | `revoke` | **仅 device** | device_id | 注销本机身份；踢线 |
-| `inbound_set` | **仅 device** | device_id, inbound | 开/关入站 |
 | `access.request` | **仅 device** | request_id, account_token, payload | 管理本连接证明的设备归属与分享 |
 | `access.result` | Relay → device | request_id, code? / payload? | 管理结果；成功为归属快照，失败为错误码 |
 
-client 连接上出现 `revoke` / `grant_rotate` / `inbound_set` → 忽略或 nack `unauthorized`，**不得执行**。
+client 连接上出现 `revoke` / `device.settings` → 忽略或 nack `unauthorized`，**不得执行**。
+
+`device.settings` 的 `request_id` 非空且最多 128 字节；`inbound` 必须明确提供。`grant_hash` 为 64 位小写十六进制 SHA-256；省略或空字符串表示没有授权码，仅允许入站关闭，也会清除现有共享码。整个快照在一个存储事务中替换，不能分别应用开关与授权码；设备身份由实际连接推导。非法快照返回 `device.settings.result` + `agent_error`，不改变状态；存储结果不确定时停止旧路由并关闭连接，不发送成功确认。确认绑定请求 ID 和连接实例，不是可跨连接重放的操作凭据。
+
+每条 device 连接在 `hello_ok` 后必须先提交完整设置；Relay 排入成功确认后才允许新调用路由到该连接，不能依赖上次连接的入站值提前执行。Runtime 在初始确认后才报告本机连接在线。重新连接同步本机保存的期望快照，不重新签发授权码。`revoke` 的注销语义独立于设置确认。
 
 `account_token` 用于 client hello 和 device 的授权管理请求，非空时必须通过签发方校验，失败返回 `unauthorized`，存储故障返回 `relay_error`，不能降级为无账号访问。未认领设备必须出示目标 grant；已认领设备忽略 grant，只允许所有者或明确获授权且有效的成员。主体、空间、成员版本和到期时间由 Relay 从凭据推导，不接受客户端自报身份。凭据不转发给其他设备，也不写入调用记录。账号凭据有效期由本机运维设置为 1 分钟至 90 天，默认 24 小时。
 

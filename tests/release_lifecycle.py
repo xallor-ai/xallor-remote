@@ -112,7 +112,12 @@ def main():
         assert snapshot(target) == before
         record("upgrade_preserves_identity_grant_peers_workspace_and_inbound")
 
-        time.sleep(.5)
+        # Installation confirms the local IPC process; wait for the read-only
+        # status to confirm its initial Relay settings before testing access.
+        deadline = time.monotonic() + 15
+        while not json.loads(cli(target, "status", "--json").stdout)["online"]:
+            assert time.monotonic() < deadline, "upgraded Runtime did not confirm Relay settings"
+            time.sleep(.05)
         denied = cli(controller, "exec", "--device", identity["device_id"], "--", "echo release-e2e", success=False)
         assert denied.returncode != 0 and "开放入站" in denied.stderr, denied.stderr
         record("upgrade_reconnect_keeps_inbound_disabled")

@@ -117,7 +117,7 @@ func TestInvokeRoutesAndExitDeletesInflight(t *testing.T) {
 		t.Fatal(code)
 	}
 	grant := "xr_grant_test"
-	h.Handle(dev, protocol.RoleDevice, "dev_a", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex(grant)})
+	h.Handle(dev, protocol.RoleDevice, "dev_a", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex(grant)})
 	if code := h.RegisterClient("dev_a", grant, "", cli); code != "" {
 		t.Fatal(code)
 	}

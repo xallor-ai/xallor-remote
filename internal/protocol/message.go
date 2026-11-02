@@ -18,7 +18,7 @@ type Message struct {
 	AccountToken string            `json:"account_token,omitempty"`
 	RequestID    string            `json:"request_id,omitempty"`
 	Scope        *invocation.Scope `json:"scope,omitempty"`
-	NewGrantHash string            `json:"new_grant_hash,omitempty"`
+	GrantHash    string            `json:"grant_hash,omitempty"`
 	OS           string            `json:"os,omitempty"`
 	Arch         string            `json:"arch,omitempty"`
 	AgentVersion string            `json:"agent_version,omitempty"`

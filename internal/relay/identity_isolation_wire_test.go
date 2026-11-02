@@ -44,6 +44,7 @@ func TestIdentityWire_should_routeAndCancelDisconnectedHello_whenSQLPoolBlocked(
 		return c
 	}
 	device := dial(protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "healthy", Secret: "secret"}, true)
+	confirmWireSettings(t, ctx, device, "grant", true)
 	client := dial(protocol.Message{Type: protocol.TypeHelloClient, TargetID: "healthy", Grant: "grant"}, true)
 	held, err := s.db.Conn(ctx)
 	if err != nil {

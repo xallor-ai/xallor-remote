@@ -115,10 +115,10 @@ func TestIdentity_should_serializeReplacementWithRotation_whenDeviceDrops(t *tes
 	if code := h.RegisterDevice("device", "secret", true, old); code != "" {
 		t.Fatal(code)
 	}
-	h.Handle(old, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("original")})
+	h.Handle(old, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("original")})
 	finished := make(chan struct{})
 	go func() {
-		h.Handle(old, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("rotated")})
+		h.Handle(old, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("rotated")})
 		close(finished)
 	}()
 	waitSignal(t, s.entered)

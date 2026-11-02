@@ -95,11 +95,9 @@ func serveConn(parent context.Context, hub *Hub, c *websocket.Conn, log *slog.Lo
 			_ = s.Enqueue(protocol.Message{Type: protocol.TypeError, Code: code})
 			return
 		}
-		inb := false
-		if hello.Inbound != nil {
-			inb = *hello.Inbound
-		}
-		if code := hub.RegisterDevice(hello.DeviceID, hello.Secret, inb, s); code != "" {
+		// Hello proves identity only. Initial access stays disabled until the
+		// complete settings snapshot is committed and acknowledged.
+		if code := hub.RegisterDevice(hello.DeviceID, hello.Secret, false, s); code != "" {
 			_ = s.Enqueue(protocol.Message{Type: protocol.TypeError, Code: code})
 			return
 		}

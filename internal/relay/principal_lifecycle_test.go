@@ -75,7 +75,7 @@ func TestPrincipal_should_keepRoutingAndCancelLookup_whenVerificationBlocks(t *t
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)
 	}
-	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("grant")})
+	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("grant")})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	client := &contextSender{ctx: ctx}

@@ -32,7 +32,7 @@ func TestIdentity_should_publishCommittedGrant_whenCancellationFollowsCommit(t *
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)
 	}
-	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("committed")})
+	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("committed")})
 	if ctx.Err() == nil {
 		t.Fatal("fixture did not cancel after commit")
 	}

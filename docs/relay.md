@@ -24,7 +24,7 @@ SSOT：职责边界、落盘、官方预算、运维。**连接 / inflight / 流
 
 同一 `device_id`：**一条** device 连接（新的踢旧的）。**多条** client 连接，v0 一条 client 只绑一个目标。细节与踢线后果见 [dataplane.md](dataplane.md)。
 
-`grant_rotate` / `revoke` / `inbound_set`：**只处理来自对应 device 连接的消息**。client 连接上的同类消息丢弃或 `unauthorized`。
+`device.settings` / `revoke`：**只处理来自对应 device 连接的消息**。client 连接上的同类消息丢弃或 `unauthorized`。
 
 ---
 

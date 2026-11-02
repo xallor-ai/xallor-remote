@@ -21,7 +21,7 @@ func TestAccess_should_requireFreshBinding_whenCredentialValueReused(t *testing.
 				t.Fatal(code)
 			}
 			rotate := func(hash string) {
-				h.Handle(dev, protocol.RoleDevice, "123456789", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex(hash)})
+				h.Handle(dev, protocol.RoleDevice, "123456789", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex(hash)})
 			}
 			rotate("shared")
 			if code := h.RegisterClient("123456789", "shared", "", stale); code != "" {

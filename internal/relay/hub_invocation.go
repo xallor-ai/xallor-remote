@@ -42,7 +42,7 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 		return
 	}
 	dev := h.devices[targetID]
-	if dev == nil || !dev.online || dev.conn == nil || dev.record.UID != binding.access.DeviceUID {
+	if dev == nil || !dev.online || !dev.ready || dev.conn == nil || dev.record.UID != binding.access.DeviceUID {
 		// A live authenticated binding already proves that the identity exists.
 		// Revocation removes its grant before routing can reach this branch.
 		code := protocol.DeviceOffline

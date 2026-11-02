@@ -37,7 +37,7 @@ func TestAccess_should_rejectControllerClaimAndInvalidateBearer_whenDeviceClaims
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)
 	}
-	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("grant")})
+	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("grant")})
 	if code := h.RegisterClient("device", "grant", b.Token, controller); code != "" {
 		t.Fatal(code)
 	}

@@ -28,7 +28,7 @@ func TestIdentity_should_rejectRegistrationAndClient_whenStoreFails(t *testing.T
 	if code := h.RegisterDevice("existing", "original", true, dev); code != "" {
 		t.Fatal(code)
 	}
-	h.Handle(dev, protocol.RoleDevice, "existing", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("grant")})
+	h.Handle(dev, protocol.RoleDevice, "existing", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("grant")})
 	if _, err := s.db.Exec(`DROP TABLE devices`); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestIdentity_should_rejectRegistrationAndClient_whenStoreFails(t *testing.T
 
 // Each failed authorization mutation must leave durable and live state unchanged.
 func TestIdentity_should_preserveAuthorization_whenMutationFails(t *testing.T) {
-	for _, kind := range []string{protocol.TypeGrantRotate, protocol.TypeInboundSet, protocol.TypeRevoke} {
+	for _, kind := range []string{protocol.TypeDeviceSettings, protocol.TypeRevoke} {
 		t.Run(kind, func(t *testing.T) {
 			s := openIdentityTestStore(t)
 			h := NewHub(s)
@@ -56,7 +56,7 @@ func TestIdentity_should_preserveAuthorization_whenMutationFails(t *testing.T) {
 			if code := h.RegisterDevice("device", "secret", true, dev); code != "" {
 				t.Fatal(code)
 			}
-			h.Handle(dev, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: "original"})
+			h.Handle(dev, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("original")})
 			before, err := s.LoadDevice(context.Background(), "device")
 			if err != nil {
 				t.Fatal(err)
@@ -68,7 +68,7 @@ func TestIdentity_should_preserveAuthorization_whenMutationFails(t *testing.T) {
 			if _, err := s.db.Exec(statement); err != nil {
 				t.Fatal(err)
 			}
-			h.Handle(dev, protocol.RoleDevice, "device", protocol.Message{Type: kind, NewGrantHash: "replacement", Inbound: protocol.Bool(false)})
+			h.Handle(dev, protocol.RoleDevice, "device", protocol.Message{Type: kind, RequestID: "settings", GrantHash: protocol.SHA256Hex("replacement"), Inbound: protocol.Bool(false)})
 			if dev.last().Code != protocol.RelayError {
 				t.Fatalf("mutation failure not reported: %+v", dev.last())
 			}

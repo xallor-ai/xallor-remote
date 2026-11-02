@@ -116,6 +116,15 @@ func Call(c *Conn, id, method string, params any) error {
 	return err
 }
 
+// FailureMessage preserves the Runtime's actionable explanation, including an
+// unconfirmed mutation. A generic code translation must not erase that state.
+func FailureMessage(frame Frame) string {
+	if frame.Message != "" {
+		return frame.Message
+	}
+	return Human(frame.Code)
+}
+
 func Human(code string) string {
 	switch code {
 	case "result_unknown":

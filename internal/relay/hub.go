@@ -21,6 +21,7 @@ type deviceSlot struct {
 	conn   Sender
 	record access.Device
 	online bool
+	ready  bool
 }
 
 type clientSlot struct {
@@ -78,7 +79,7 @@ func (h *Hub) Handle(from Sender, role string, targetID string, msg protocol.Mes
 		h.handleAccess(from, msg)
 	case protocol.TypeHeartbeat:
 		return
-	case protocol.TypeGrantRotate, protocol.TypeRevoke, protocol.TypeInboundSet:
+	case protocol.TypeDeviceSettings, protocol.TypeRevoke:
 		if role != protocol.RoleDevice {
 			_ = from.Enqueue(protocol.Message{Type: protocol.TypeError, Code: protocol.Unauthorized})
 			return

@@ -51,7 +51,7 @@ hello 失败：Relay 关连接，不登记。成功：回一条 `hello_ok`（实
 
 管理写入遇到存储故障时，提交结果可能不确定。Relay 在回复错误之前停止该 device 连接的路由并关闭连接；重连从存储重新加载权威归属，不能沿用旧缓存继续匿名放行。认证失败、参数失败或只读状态查询失败不因此关闭设备。Runtime 将这类写入故障、断线和超时报告为结果未确认，不自动重放。
 
-控制面消息（`grant_rotate` / `revoke` / `inbound_set`）只走 **device** 连接，见 [credentials.md](credentials.md)。本文只覆盖 invoke / 事件。
+控制面消息（`device.settings` / `revoke`）只走 **device** 连接，见 [credentials.md](credentials.md)。本文只覆盖 invoke / 事件。
 
 ---
 

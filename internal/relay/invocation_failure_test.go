@@ -29,7 +29,7 @@ func TestRouting_should_retireAllMappings_whenEitherQueueRejects(t *testing.T) {
 			if code := h.RegisterDevice("device", "secret", true, d); code != "" {
 				t.Fatal(code)
 			}
-			h.Handle(d, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("grant")})
+			h.Handle(d, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("grant")})
 			if code := h.RegisterClient("device", "grant", "", c); code != "" {
 				t.Fatal(code)
 			}
@@ -73,6 +73,7 @@ func TestRouting_should_discardFormerOwnerEvents_whenOwnershipTransfers(t *testi
 	if code := h.RegisterDevice("device", "secret", true, d); code != "" {
 		t.Fatal(code)
 	}
+	h.Handle(d, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", GrantHash: protocol.SHA256Hex("grant"), Inbound: protocol.Bool(true)})
 	controlAccess(t, h, d, a.Token, access.Request{Action: "claim"})
 	if code := h.RegisterClient("device", "", a.Token, old); code != "" {
 		t.Fatal(code)

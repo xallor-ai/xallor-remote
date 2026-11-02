@@ -71,7 +71,7 @@ func TestIdentityWire_should_closeDevice_whenAuthorizationCannotPersist(t *testi
 	if _, err := s.db.Exec(`CREATE TRIGGER reject_update BEFORE UPDATE ON devices BEGIN SELECT RAISE(ABORT, 'fixture update failure'); END;`); err != nil {
 		t.Fatal(err)
 	}
-	if err := wsjson.Write(ctx, c, protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("new")}); err != nil {
+	if err := wsjson.Write(ctx, c, protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("new")}); err != nil {
 		t.Fatal(err)
 	}
 	if err := wsjson.Read(ctx, c, &reply); err != nil {
@@ -84,7 +84,7 @@ func TestIdentityWire_should_closeDevice_whenAuthorizationCannotPersist(t *testi
 		t.Fatal("failed mutation left device connection open")
 	}
 	stored, err := s.LoadDevice(context.Background(), "device")
-	if err != nil || stored.GrantHash != "" || !stored.Inbound {
+	if err != nil || stored.GrantHash != "" || stored.Inbound {
 		t.Fatalf("persisted state changed: %+v %v", stored, err)
 	}
 }

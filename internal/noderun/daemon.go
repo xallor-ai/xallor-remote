@@ -38,7 +38,9 @@ type Daemon struct {
 	clients           map[clientKey]*clientLink
 	ensuring          map[clientKey]chan struct{}
 	accountGeneration uint64
-	accessRequests    accessRequests
+	accessRequests    deviceReplies
+	settingsReplies   deviceReplies
+	settings          settingsGate
 	local             map[string]context.CancelFunc
 	localWG           sync.WaitGroup
 	remote            map[string]*remoteExec
@@ -114,10 +116,21 @@ func (d *Daemon) keepDevice() {
 }
 
 func (d *Daemon) connectDevice() error {
+	setup, setupCancel := context.WithTimeout(d.ctx, protocol.RelayIdentityTimeout)
+	defer setupCancel()
+	release, err := d.settings.acquire(setup)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if release != nil {
+			release()
+		}
+	}()
 	id, secret, grant, ws, relay, inbound, _ := d.store.Snapshot()
 	ctx, cancel := context.WithCancel(d.ctx)
 	defer cancel()
-	conn, _, err := websocket.Dial(ctx, relay, nil)
+	conn, _, err := websocket.Dial(setup, relay, nil)
 	if err != nil {
 		return err
 	}
@@ -128,25 +141,38 @@ func (d *Daemon) connectDevice() error {
 	hello := protocol.Message{
 		Type: protocol.TypeHelloDevice, DeviceID: id, Secret: secret,
 		OS: stdruntime.GOOS, Arch: stdruntime.GOARCH, AgentVersion: buildinfo.Version(),
-		Workspace: ws, Inbound: protocol.Bool(inb),
+		Workspace: ws,
 	}
-	if err := link.send(hello); err != nil {
+	if err := link.sendContext(setup, hello); err != nil {
 		return err
 	}
 	var ack protocol.Message
-	if err := wsjson.Read(ctx, conn, &ack); err != nil {
+	if err := wsjson.Read(setup, conn, &ack); err != nil {
 		return err
 	}
-	if ack.Type != protocol.TypeHelloOK {
+	if ack.Type != protocol.TypeHelloOK || ack.Role != protocol.RoleDevice {
 		return errHello(ack.Code)
 	}
-	if grant != "" {
-		_ = link.send(protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex(grant)})
-		_ = link.send(protocol.Message{Type: protocol.TypeInboundSet, Inbound: protocol.Bool(inb)})
+	settings := settingsMessage(grant, inb)
+	settings.RequestID, err = protocol.RandomHex(16)
+	if err != nil {
+		return err
+	}
+	if err := link.sendContext(setup, settings); err != nil {
+		return err
+	}
+	if err := wsjson.Read(setup, conn, &ack); err != nil {
+		return err
+	}
+	if ack.Type != protocol.TypeDeviceSettingsResult || ack.RequestID != settings.RequestID || ack.Code != "" {
+		return errStr("device settings unconfirmed")
 	}
 	d.mu.Lock()
 	d.device = link
 	d.mu.Unlock()
+	release()
+	release = nil
+	setupCancel()
 	defer func() {
 		d.mu.Lock()
 		if d.device == link {
@@ -187,6 +213,8 @@ func (e errStr) Error() string { return string(e) }
 
 func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
 	switch msg.Type {
+	case protocol.TypeDeviceSettingsResult:
+		d.settingsReplies.deliver(link, msg)
 	case protocol.TypeAccessResult:
 		d.accessRequests.deliver(link, msg)
 	case protocol.TypeHeartbeat:
@@ -242,17 +270,6 @@ func (d *Daemon) deviceOnline() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.device != nil
-}
-
-func (d *Daemon) pushGrant(grant string) {
-	d.mu.Lock()
-	link := d.device
-	d.mu.Unlock()
-	if link == nil {
-		return
-	}
-	_ = link.send(protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex(grant)})
-	_ = link.send(protocol.Message{Type: protocol.TypeInboundSet, Inbound: protocol.Bool(true)})
 }
 
 func (d *Daemon) killAllLocal() {

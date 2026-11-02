@@ -114,7 +114,7 @@ func TestPrincipal_should_rejectNewInvoke_whenCredentialRevoked(t *testing.T) {
 	if code := h.RegisterDevice("device", "secret", true, dev); code != "" {
 		t.Fatal(code)
 	}
-	h.Handle(dev, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("grant")})
+	h.Handle(dev, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("grant")})
 	if code := h.RegisterClient("device", "grant", a.Token, client); code != "" {
 		t.Fatal(code)
 	}

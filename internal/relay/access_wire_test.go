@@ -50,6 +50,7 @@ func TestAccessWire_should_reloadCommittedOwnership_whenCommitResultLost(t *test
 	if hello.Type != protocol.TypeHelloOK {
 		t.Fatal(hello.Code)
 	}
+	confirmWireSettings(t, fctx, fresh, "bearer", true)
 	if err := wsjson.Write(cctx, old, protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "stale"}); err != nil {
 		t.Fatal(err)
 	}

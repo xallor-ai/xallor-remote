@@ -61,12 +61,12 @@ Agent 或人
 
 ## 4. 改授权时序
 
-不走 client / invoke。持 grant 的对端发 `grant_rotate` / `revoke` / `inbound_set` → Relay 拒绝。
+不走 client / invoke。持 grant 的对端发 `device.settings` / `revoke` → Relay 拒绝。
 
 ```text
 人 / CLI（被控本机）
     → IPC → 本机 Runtime
-    → device 连接：grant_rotate | inbound_set | revoke
+    → device 连接：device.settings | revoke
     → Relay 换哈希 / 改 inbound / 销登记并踢线
 ```
 

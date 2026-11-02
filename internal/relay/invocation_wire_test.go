@@ -62,6 +62,7 @@ func TestRoutingWire_should_dropLatePrivateResult_whenAnotherPrincipalReusesID(t
 		return c
 	}
 	d := dial(protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "device", Secret: "secret"})
+	confirmWireSettings(t, ctx, d, "grant", true)
 	first := dial(protocol.Message{Type: protocol.TypeHelloClient, TargetID: "device", AccountToken: a.Token})
 	write(first, protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpHandoffGet, ExecID: "same"})
 	old := read(d)
