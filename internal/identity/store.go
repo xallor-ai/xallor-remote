@@ -27,10 +27,7 @@ type Config struct {
 type Store struct {
 	mu         sync.Mutex
 	Dir        string
-	DeviceID   string
-	Secret     string
-	Grant      string
-	Inbound    bool
+	device     deviceRecord
 	Config     Config
 	Peers      []Peer
 	account    accountCredential
@@ -50,26 +47,10 @@ func LoadFrom(dir string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{Dir: dir}
-	idPath := filepath.Join(dir, "identity.json")
-	var inboundOverride *bool
-	if b, err := os.ReadFile(idPath); err == nil {
-		var wrap struct {
-			DeviceID string `json:"device_id"`
-			Inbound  *bool  `json:"inbound"`
-		}
-		_ = json.Unmarshal(b, &wrap)
-		s.DeviceID = wrap.DeviceID
-		inboundOverride = wrap.Inbound
-	}
-	if b, err := os.ReadFile(filepath.Join(dir, "device_secret")); err == nil {
-		s.Secret = string(b)
-	}
-	if b, err := os.ReadFile(filepath.Join(dir, "grant")); err == nil {
-		s.Grant = string(b)
-		s.Inbound = s.Grant != ""
-	}
-	if inboundOverride != nil {
-		s.Inbound = *inboundOverride
+	var err error
+	s.device, err = loadDeviceRecord(dir, true)
+	if err != nil {
+		return nil, err
 	}
 	if b, err := os.ReadFile(filepath.Join(dir, "config.json")); err == nil {
 		_ = json.Unmarshal(b, &s.Config)
@@ -89,50 +70,12 @@ func LoadFrom(dir string) (*Store, error) {
 		}
 		s.Config.Workspace = ws
 	}
-	idChanged := false
-	if !protocol.IsNumericDeviceID(s.DeviceID) {
-		id, err := protocol.NewDeviceID()
-		if err != nil {
-			return nil, err
-		}
-		s.DeviceID = id
-		idChanged = true
-	}
-	if s.Secret == "" {
-		sec, err := protocol.NewSecret()
-		if err != nil {
-			return nil, err
-		}
-		s.Secret = sec
-		idChanged = true
-	}
-	if idChanged {
-		if err := s.persistIdentity(); err != nil {
-			return nil, err
-		}
-	}
 	if err := os.MkdirAll(s.Config.Workspace, 0o700); err != nil {
 		return nil, err
 	}
 	// Keep local recovery available while Credentials fails closed on bad data.
 	s.accountErr = s.loadAccount()
 	return s, nil
-}
-
-func (s *Store) persistIdentity() error {
-	b, _ := json.MarshalIndent(map[string]any{"device_id": s.DeviceID, "inbound": s.Inbound}, "", "  ")
-	if err := os.WriteFile(filepath.Join(s.Dir, "identity.json"), b, 0o600); err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(s.Dir, "device_secret"), []byte(s.Secret), 0o600)
-}
-
-func (s *Store) persistGrant() error {
-	if s.Grant == "" {
-		_ = os.Remove(filepath.Join(s.Dir, "grant"))
-		return nil
-	}
-	return os.WriteFile(filepath.Join(s.Dir, "grant"), []byte(s.Grant), 0o600)
 }
 
 func (s *Store) persistPeers() error {
@@ -147,12 +90,9 @@ func (s *Store) IssueGrant() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	s.Grant = g
-	s.Inbound = true
-	if err := s.persistGrant(); err != nil {
-		return "", err
-	}
-	if err := s.persistIdentity(); err != nil {
+	next := s.device
+	next.Grant, next.Inbound = g, true
+	if err := s.publishDevice(next); err != nil {
 		return "", err
 	}
 	return g, nil
@@ -189,7 +129,7 @@ func (s *Store) Snapshot() (deviceID, secret, grant, workspace, relay string, in
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cp := append([]Peer(nil), s.Peers...)
-	return s.DeviceID, s.Secret, s.Grant, s.Config.Workspace, s.Config.RelayURL, s.Inbound, cp
+	return s.device.DeviceID, s.device.Secret, s.device.Grant, s.Config.Workspace, s.Config.RelayURL, s.device.Inbound, cp
 }
 
 func Hostname() string {

@@ -35,8 +35,11 @@ func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
 			return true
 		}
 		defer release()
+		if err := d.store.ClearGrant(); err != nil {
+			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "无法清除本机授权码。"))
+			return true
+		}
 		d.pushRevoke(ctx)
-		_ = d.store.ClearGrant()
 		_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
 	case "reset":
 		ctx, cancel := context.WithTimeout(d.ctx, protocol.RelayIdentityTimeout)
@@ -56,7 +59,11 @@ func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
 			return true
 		}
 		d.pushRevoke(ctx)
-		_ = d.store.Wipe()
+		if err := d.store.Wipe(); err != nil {
+			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "本机重置未完成，请检查数据目录后重启服务。"))
+			d.Stop()
+			return true
+		}
 		_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
 		d.Stop()
 	case "stop":

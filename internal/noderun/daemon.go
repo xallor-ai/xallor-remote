@@ -87,7 +87,7 @@ func (d *Daemon) Run() error {
 	defer ln.Close()
 	go func() { <-d.ctx.Done(); _ = ln.Close() }()
 	go d.keepDevice()
-	d.log.Info("runtime ipc up", "device", d.store.DeviceID)
+	d.log.Info("runtime ipc up", "device", d.store.ID())
 	for {
 		c, err := ln.Accept()
 		if err != nil {
@@ -127,6 +127,9 @@ func (d *Daemon) connectDevice() error {
 			release()
 		}
 	}()
+	if err := d.store.RefreshDevice(); err != nil {
+		return err
+	}
 	id, secret, grant, ws, relay, inbound, _ := d.store.Snapshot()
 	ctx, cancel := context.WithCancel(d.ctx)
 	defer cancel()
@@ -229,7 +232,7 @@ func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
 			}
 			return
 		}
-		d.recordActivity(activity.Entry{ExecID: msg.ExecID, Direction: "inbound", DeviceID: d.store.DeviceID, Op: msg.Op, Stage: "requested"})
+		d.recordActivity(activity.Entry{ExecID: msg.ExecID, Direction: "inbound", DeviceID: d.store.ID(), Op: msg.Op, Stage: "requested"})
 		if d.handleHandoffInvoke(link, msg) {
 			return
 		}

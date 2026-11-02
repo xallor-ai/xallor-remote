@@ -24,7 +24,7 @@ try:
     target = cluster.add("target")
     cluster.add("controller")
     cluster.cli("target", "inbound", "on")
-    grant = (cluster.root/"target/grant").read_text(encoding="utf-8")
+    grant = cluster.grant("target")
     cluster.cli("controller", "peer", "add", "--id", target, "--grant", grant)
     workspace = cluster.root/"workspaces/target"
     cwd = workspace/"space ' 中文"

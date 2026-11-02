@@ -30,7 +30,7 @@ def main():
         target = cluster.add("target")
         cluster.add("controller")
         cluster.cli("target", "inbound", "on")
-        grant = (cluster.root / "target/grant").read_text(encoding="utf-8")
+        grant = cluster.grant("target")
         cluster.cli("controller", "peer", "add", "--id", target, "--grant", grant)
         bad_exit = cluster.cli("controller", "exec", "--device", target, "--", "exit 7", check=False)
         assert bad_exit.returncode != 0, "CLI falsely reported nonzero remote exit as success"
@@ -62,7 +62,7 @@ def main():
             assert db.execute("SELECT inbound FROM devices WHERE id=?", (target,)).fetchone() == (1,)
             uid, grant_id, token_hash = db.execute("SELECT d.uid,g.id,g.token_hash FROM devices d JOIN device_grants g ON g.device_uid=d.uid WHERE d.id=?", (target,)).fetchone()
             assert len(uid) == 32 and len(grant_id) == 32 and uid != target
-            current_grant = (cluster.root / "target/grant").read_text(encoding="utf-8")
+            current_grant = cluster.grant("target")
             assert token_hash == hashlib.sha256(current_grant.encode("utf-8")).hexdigest()
         results.append({"name":"relay_persists_identity_without_operation_payloads", "status":"pass"})
     finally:

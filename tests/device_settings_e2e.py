@@ -42,22 +42,14 @@ try:
     target = cluster.add("target")
     cluster.add("controller")
     cluster.cli("target", "inbound", "on")
-    grant_path = cluster.root / "target/grant"
-    grant = grant_path.read_text(encoding="utf-8")
+    grant = cluster.grant("target")
     cluster.cli("controller", "peer", "add", "--id", target, "--grant", grant)
     db = sqlite3.connect(cluster.root / "relay/relay.db", timeout=3)
     db.execute("BEGIN IMMEDIATE")
     pending = subprocess.Popen([str(cluster.binary), "inbound", "off"], env=cluster.env("target"),
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    identity_path = cluster.root / "target/identity.json"
-
     def locally_disabled():
-        # The current local store rewrites this file; a concurrent read may see
-        # an incomplete write. Retry observation only, never the mutation.
-        try:
-            return not json.loads(identity_path.read_text(encoding="utf-8"))["inbound"]
-        except (OSError, ValueError):
-            return False
+        return not cluster.device_state("target")["inbound"]
 
     wait_for(locally_disabled, "local desired state was not saved")
     assert db.execute("SELECT inbound FROM devices WHERE id=?", (target,)).fetchone()[0] == 1
@@ -82,7 +74,7 @@ try:
     passed("inbound_on_immediately_allows_one_execution_without_retry")
 
     cluster.cli("target", "grant", "rotate")
-    replacement = grant_path.read_text(encoding="utf-8")
+    replacement = cluster.grant("target")
     assert replacement != grant
     denied = cluster.cli("controller", "exec", "--device", target, "--", "echo old-grant", check=False)
     assert denied.returncode != 0
@@ -95,10 +87,10 @@ try:
     wait_for(lambda: not online(), "Runtime did not observe Relay disconnect")
     result = cluster.cli("target", "inbound", "off", check=False)
     assert result.returncode != 0 and "尚未确认" in result.stderr, result.stderr
-    assert locally_disabled() and grant_path.read_text(encoding="utf-8") == replacement
+    assert locally_disabled() and cluster.grant("target") == replacement
     cluster.restart_relay()
     wait_for(online, "saved settings were not confirmed after reconnect", seconds=45)
-    assert grant_path.read_text(encoding="utf-8") == replacement
+    assert cluster.grant("target") == replacement
     assert db.execute("SELECT inbound FROM devices WHERE id=?", (target,)).fetchone()[0] == 0
     denied = cluster.cli("controller", "exec", "--device", target, "--", "echo still-disabled", check=False)
     assert denied.returncode != 0 and "开放入站" in denied.stderr, denied.stderr

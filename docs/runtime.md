@@ -42,12 +42,12 @@ IPC 报文见 [ipc.md](ipc.md)。头关系见 [heads.md](heads.md)。
 
 | 文件 | 内容 |
 | --- | --- |
-| `identity.json` | device_id |
-| `device_secret` | 仅当前用户可读 |
-| `grant` | 仅 issue 之后；明文只为再显示 |
+| `identity.db` | 设备 ID、设备密钥、授权码、入站状态及本机版本；仅当前用户可读，授权码明文用于本机再显示 |
 | `peers.json` | 对方 id + grant（**密钥库**） |
 | `config.json` | relay、workspace、shell |
 | `policy.json` | capability 开关、approval 列表（可选） |
+
+核心设备状态在同一个 SQLite 事务中保存，提交成功后才发布到 Runtime 内存。更新校验身份和版本，过期写入失败；重连读取持久状态，同一 Runtime 不接管重置后产生的新身份。已有 `identity.json`、`device_secret`、`grant` 仅在首次存储迁移时读取：完整提交后清理旧文件，清理中断可续做，此后不回读或双写。格式损坏、记录缺失或来源不完整时返回错误，不静默创建替代身份。显式 reset 写入清空身份的标记，下一次启动先完成配置、配对与账户文件的清理，再生成新身份；这些文件的清理不属于核心设备事务，清理失败保留标记并阻止新身份启动。这里保证本机状态的一致性，中转确认另按 [dataplane.md](dataplane.md) 执行。
 
 ---
 

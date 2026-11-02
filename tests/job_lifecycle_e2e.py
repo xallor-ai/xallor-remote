@@ -76,7 +76,7 @@ try:
     target=cluster.add("target")
     cluster.add("controller")
     cluster.cli("target","inbound","on")
-    grant=(cluster.root/"target/grant").read_text(encoding="utf-8")
+    grant=cluster.grant("target")
     cluster.cli("controller","peer","add","--id",target,"--grant",grant)
     cluster.stop("target")
     ready=cluster.root/"reservations-ready.json"

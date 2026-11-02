@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+from fixtures.runtime_cluster import device_state
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,8 +55,12 @@ def main():
         return json.loads(cli(profile, "runtime", "status").stdout)
 
     def snapshot(profile):
-        return {name: hashlib.sha256((profile / name).read_bytes()).hexdigest()
-                for name in ("identity.json", "device_secret", "grant", "peers.json", "config.json")}
+        files = {name: hashlib.sha256((profile / name).read_bytes()).hexdigest()
+                 for name in ("peers.json", "config.json")}
+        core = device_state(profile)
+        core.pop("revision")  # Internal write generation can change while user settings remain identical.
+        files["identity"] = hashlib.sha256(json.dumps(core, sort_keys=True).encode()).hexdigest()
+        return files
 
     try:
         os.environ["SOURCE_DATE_EPOCH"] = "1793536800"
@@ -93,9 +98,9 @@ def main():
             }), encoding="utf-8")
             cli(profile, "runtime", "install", "--bundle", str(a))
         target, controller = profiles
-        identity = json.loads((target / "identity.json").read_text())
+        identity = device_state(target)
         cli(target, "grant", "issue")
-        grant = (target / "grant").read_text()
+        grant = device_state(target)["grant"]
         cli(target, "peer", "add", "--id", "901234569", "--grant", "xr_grant_test_only")
         cli(controller, "peer", "add", "--id", identity["device_id"], "--grant", grant)
         cli(target, "inbound", "off")

@@ -77,7 +77,10 @@ try {
   await info("ok");
   pass("transfer_revokes_owner_and_removes_prior_shares");
   await cli("controller", "account", "clear");
-  await cli("controller", "peer", "add", "--id", target, "--grant", fs.readFileSync(path.join(root, "target/grant"), "utf8"));
+  const shown = await cli("target", "grant", "show");
+  const grant = shown.stdout.match(/授权码:\s*(\S+)/)?.[1];
+  assert(grant, "target grant show did not return an authorization code");
+  await cli("controller", "peer", "add", "--id", target, "--grant", grant);
   await info("unauthorized");
   pass("clearing_account_cannot_bypass_claimed_device_access");
   await account("controller", "bob");
