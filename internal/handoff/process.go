@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/job"
 )
@@ -39,30 +40,38 @@ func (m *Manager) output(ctx context.Context, cmd *exec.Cmd, owner *job.Owner) (
 		return "", err
 	}
 	_ = writer.Close()
-	readDone := make(chan struct{})
+	readDone := make(chan error, 1)
 	go func() {
-		_, _ = io.Copy(b, reader)
-		close(readDone)
-	}()
-	stopRead := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			_ = reader.Close()
-		case <-stopRead:
-		}
+		_, err := io.Copy(b, reader)
+		readDone <- err
 	}()
 	waitErr := child.Wait()
-	close(stopRead)
-	// Child.Wait includes descendant cleanup. Closing the read end now releases
-	// any malformed process that retained stdout after the supervised boundary.
-	_ = reader.Close()
-	<-readDone
-	if waitErr != nil {
-		return "", waitErr
+	readErr := finishProbeRead(ctx, reader, readDone)
+	if err := errors.Join(waitErr, readErr, ctx.Err()); err != nil {
+		return "", err
 	}
 	if b.overflow {
 		return "", errors.New("output_limit")
 	}
 	return string(b.data), nil
+}
+
+// Process exit does not mean its pipe has been drained. Wait for EOF first;
+// only close early for cancellation or an escaped inherited writer.
+func finishProbeRead(ctx context.Context, reader io.ReadCloser, done <-chan error) error {
+	defer reader.Close()
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		_ = reader.Close()
+		<-done
+		return ctx.Err()
+	case <-timer.C:
+		_ = reader.Close()
+		<-done
+		return exec.ErrWaitDelay
+	}
 }
