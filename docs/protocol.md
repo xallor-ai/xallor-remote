@@ -156,14 +156,15 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 | 路径 | 最长 4096 字节；超则 `policy_deny` |
 | 单次 stdout+stderr | **4 MiB** 后丢后续输出，`exit.truncated=true` |
 | Relay 每 inflight 待发缓冲 | **1 MiB**；超则丢数据帧并 truncated，不堵整条 device 连接 |
-| Relay 每连接待发队列 | 最多 256 条等待帧，保留 8 个非输出槽；总内存计量上限 `4 × MaxRelayBufferBytes + MaxWSMessageBytes`（含正在写的帧） |
+| Relay 每连接待发队列 | 最多 256 条等待帧，保留 32 个非输出槽；总内存计量上限 `4 MiB + MaxWSMessageBytes`（含正在写的帧），不随作业容量或会员额度扩大 |
 | Relay 单次写入 / 关闭排空 | 各最多 5 秒；超时关闭连接并按断线规则回收，不无限等待 |
 | Relay 身份操作 | 5 秒 context 期限，包含同设备协调器和数据库连接池等待；断线触发取消，驱动中的短 busy wait 返回后结束操作 |
-| Relay 接收缓冲 | 64 帧，输出保留 8 个控制槽；排队字节计量上限 `MaxWSMessageBytes + MaxRelayBufferBytes`，另有一条正在解码及一条正在处理的消息 |
+| Relay 接收缓冲 | 64 帧，输出保留 32 个控制槽；排队字节计量上限 `MaxWSMessageBytes + MaxRelayBufferBytes`，另有一条正在解码及一条正在处理的消息 |
+| Relay 控制字节预留 | 接收/待发队列各从输出可用预算中预留 **128 KiB**；控制消息本身仍服从队列总上限，超载仍会断开 |
 | read 默认 / 上限 | 64 KiB / 1 MiB；少给则 `exit.truncated=true`，按 rune 边界切 |
 | read `offset` | 字节起点，可大于 1 MiB；落在 rune 中间则回退到该 rune 起点 |
 | **write 上限** | **1 MiB**（解码后）；整包 marshal 超 WSS 读上限则 `too_large`，不落盘 |
-| 每设备并发 exec | **4** |
+| Relay 每设备在途请求 | **16**，所有非 cancel 操作合计，跨 client 连接共享；cancel 不占新名额。此项是传输预算，不是会员或本机作业额度 |
 | Runtime 本机作业占用 | 前台 exec 与后台 handoff 合计 **4**；其中 handoff 最多 **2**，不确定占用也计入；独立于 Relay inflight |
 | exec 输入 | 解码后的 cwd、脚本文本及 shell 名，或 cwd、程序名及全部参数，合计最多 **64 KiB UTF-8**；最多 **256** 个程序参数；超则 `too_large` |
 | exec JSON | 最多 `6 × 64 KiB + 8 KiB`，包含 IPC 路由字段；超则 `too_large` |

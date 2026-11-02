@@ -59,7 +59,7 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 			n++
 		}
 	}
-	if n >= protocol.MaxConcurrentExec {
+	if n >= protocol.MaxDeviceRequests {
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.QuotaExceeded))
 		return
 	}

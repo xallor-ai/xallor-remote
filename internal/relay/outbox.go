@@ -70,8 +70,8 @@ func (b *outbox) Enqueue(m protocol.Message) error {
 	size := retainedBytes(m)
 	if outputMessage(m) {
 		if b.buffered[m.ExecID]+size > protocol.MaxRelayBufferBytes ||
-			len(b.queue) >= protocol.MaxRelayQueueFrames-protocol.MaxConcurrentExec*2 ||
-			b.bytes+size > protocol.MaxRelayQueueBytes-protocol.MaxEnvelopeBytes*protocol.MaxConcurrentExec {
+			len(b.queue) >= protocol.MaxRelayQueueFrames-protocol.RelayControlReserveFrames ||
+			b.bytes+size > protocol.MaxRelayQueueBytes-protocol.RelayControlReserveBytes {
 			return errOutputDropped
 		}
 	} else if len(b.queue) >= protocol.MaxRelayQueueFrames || b.bytes+size > protocol.MaxRelayQueueBytes {

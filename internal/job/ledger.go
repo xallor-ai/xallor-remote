@@ -16,10 +16,11 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/atomicfile"
 	"github.com/xallor-ai/xallor-remote/internal/filelock"
 	"github.com/xallor-ai/xallor-remote/internal/invocation"
-	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
-const Capacity = protocol.MaxConcurrentExec
+// Capacity bounds durable local jobs, including occupied and uncertain entries.
+// Transport requests and service entitlements do not change this safety limit.
+const Capacity = 4
 const HandoffCapacity = 2
 const maxLedgerBytes = 16 * 1024
 

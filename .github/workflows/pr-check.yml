@@ -205,6 +205,7 @@ jobs:
       - run: python tests/execution_input_e2e.py
       - run: python tests/execution_results_e2e.py
       - run: python tests/exec_jsonl_e2e.py
+      - run: python tests/resource_boundaries_e2e.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -219,6 +220,7 @@ jobs:
             dist/verification/execution-input.json
             dist/verification/execution-results.json
             dist/verification/exec-jsonl.json
+            dist/verification/resource-boundaries.json
             dist/release/**/manifest.json
 
   # Single required status for branch protection.

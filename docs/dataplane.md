@@ -84,7 +84,7 @@ Relay 收到 `invoke`（`op != cancel`）严格按序，失败即停、发 `invo
 3. 客户端 exec_id 非空，且 (client连接,客户端exec_id) 未占用，否则 agent_error
 4. 目标有活着且内部 UID 匹配的 device 连接，否则 device_offline
 5. 目标 inbound 开，否则 inbound_disabled
-6. 该设备 inflight 数 < 并发上限，否则 quota_exceeded（不排队）
+6. 该设备 inflight 数 < 传输请求上限，否则 quota_exceeded（不排队）；与目标 Runtime 持久作业容量独立
 7. 连接 context 尚未取消；已断开的请求停止准入
 8. 分配随机内部调用ID，原子登记 requests[(client连接,客户端exec_id)] → 内部ID 及 inflight[内部ID]，保留客户端原值、目标、client连接及可信调用身份
 9. 从已验证的连接绑定推导稳定 scope，重建 invoke 并转给 B 的 device 连接；客户端身份、凭据及无关字段不透传，payload 内执行输入不改写。scope 字段见协议，后台交接的消费与留存见 handoff.md。
