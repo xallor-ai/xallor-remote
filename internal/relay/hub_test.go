@@ -119,6 +119,7 @@ func TestOversizeStdoutMarksTruncatedOnExit(t *testing.T) {
 	h := NewHub(newMemStore())
 	dev, cli := &recSender{}, &recSender{}
 	h.RegisterDevice("dev_a", "secret", true, dev)
+	authorizeTestClient(t, h, dev, cli)
 	h.mu.Lock()
 	h.devices["dev_a"].inbound = true
 	h.mu.Unlock()
@@ -152,6 +153,7 @@ func TestClientDropSendsCancelToDevice(t *testing.T) {
 	h := NewHub(newMemStore())
 	dev, cli := &recSender{}, &recSender{}
 	h.RegisterDevice("dev_a", "secret", true, dev)
+	authorizeTestClient(t, h, dev, cli)
 	h.mu.Lock()
 	h.devices["dev_a"].inbound = true
 	h.mu.Unlock()
@@ -189,6 +191,7 @@ func TestInboundDisabled(t *testing.T) {
 	h := NewHub(newMemStore())
 	dev, cli := &recSender{}, &recSender{}
 	h.RegisterDevice("dev_a", "secret", false, dev)
+	authorizeTestClient(t, h, dev, cli)
 	h.Handle(cli, protocol.RoleClient, "dev_a", protocol.Message{
 		Type: protocol.TypeInvoke, ExecID: "ex_1", Op: protocol.OpExec,
 	})

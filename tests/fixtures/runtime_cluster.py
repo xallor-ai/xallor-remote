@@ -69,6 +69,13 @@ class Cluster:
             assert time.monotonic() < deadline, "Runtime did not connect to fixture Relay"
             time.sleep(.05)
 
+    def restart_relay(self):
+        assert self.relay is not None and self.relay.poll() is not None
+        from urllib.parse import urlparse
+        address = urlparse(self.url).netloc
+        self.relay = subprocess.Popen([str(self.binary), "relay", "--listen", address,
+                                       "--data", str(self.root / "relay")], stdout=self.log, stderr=self.log)
+
     def stop(self, name):
         self.cli(name, "stop", check=False)
         deadline = time.monotonic() + 10

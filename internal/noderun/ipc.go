@@ -179,6 +179,12 @@ func (d *Daemon) ensureClient(peer identity.Peer) (*wsConn, *clientLink, error) 
 	for {
 		d.mu.Lock()
 		if cl, ok := d.clients[peer.DeviceID]; ok && cl.ws != nil {
+			if cl.grant != peer.Grant {
+				delete(d.clients, peer.DeviceID)
+				d.mu.Unlock()
+				cl.closeConn()
+				continue
+			}
 			d.mu.Unlock()
 			return cl.ws, cl, nil
 		}
@@ -227,7 +233,7 @@ func (d *Daemon) dialClient(peer identity.Peer) (*wsConn, *clientLink, error) {
 		cancel()
 		return nil, nil, fmt.Errorf("%s", ack.Code)
 	}
-	cl := &clientLink{target: peer.DeviceID, ws: link, cancel: cancel, waiters: map[string]*execWaiter{}}
+	cl := &clientLink{target: peer.DeviceID, grant: peer.Grant, ws: link, cancel: cancel, waiters: map[string]*execWaiter{}}
 	go d.runClientReader(peer.DeviceID, cl)
 	go func() {
 		t := time.NewTicker(protocol.HeartbeatEvery)

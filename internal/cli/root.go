@@ -3,7 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"io"
+
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -15,7 +15,7 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/identity"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 	"github.com/xallor-ai/xallor-remote/internal/noderun"
-	"github.com/xallor-ai/xallor-remote/internal/protocol"
+
 	"github.com/xallor-ai/xallor-remote/internal/relay"
 )
 
@@ -290,51 +290,4 @@ func rpc(method string, params map[string]any) (map[string]any, error) {
 		out = map[string]any{}
 	}
 	return out, nil
-}
-
-func streamExec(device, command string) error {
-	raw, err := ipc.Dial(2 * time.Second)
-	if err != nil {
-		return err
-	}
-	defer raw.Close()
-	c := ipc.NewConn(raw)
-	if err := ipc.Call(c, "e1", "exec", map[string]any{"device_id": device, "command": command}); err != nil {
-		return err
-	}
-	for {
-		fr, err := c.ReadFrame()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if fr.Event == "stdout" {
-			fmt.Fprint(os.Stdout, fr.Data)
-			continue
-		}
-		if fr.Event == "stderr" {
-			fmt.Fprint(os.Stderr, fr.Data)
-			continue
-		}
-		if fr.OK != nil && *fr.OK {
-			var res struct {
-				Status string `json:"status"`
-			}
-			if len(fr.Result) > 0 {
-				_ = json.Unmarshal(fr.Result, &res)
-			}
-			switch res.Status {
-			case protocol.ExitCancelled:
-				return fmt.Errorf("%s", ipc.Human(protocol.Cancelled))
-			case protocol.ExitTimeout:
-				return fmt.Errorf("%s", ipc.Human(protocol.ExecTimeout))
-			}
-			return nil
-		}
-		if fr.OK != nil && !*fr.OK {
-			return fmt.Errorf("%s", ipc.Human(fr.Code))
-		}
-	}
 }
