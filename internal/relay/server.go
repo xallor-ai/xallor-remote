@@ -34,6 +34,7 @@ func Serve(addr, dataDir string, log *slog.Logger, quota Quota) error {
 	if err != nil {
 		return err
 	}
+	defer store.Close()
 	hub := NewHub(store)
 	var lim *Limiter
 	if quota.Enabled {

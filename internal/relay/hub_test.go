@@ -10,35 +10,55 @@ import (
 
 type memStore struct {
 	mu   sync.Mutex
-	rows map[string]devRow
-}
-
-type devRow struct {
-	secret, grant string
-	inbound       bool
+	rows map[string]DeviceRecord
 }
 
 func newMemStore() *memStore {
-	return &memStore{rows: map[string]devRow{}}
+	return &memStore{rows: map[string]DeviceRecord{}}
 }
 
-func (m *memStore) LoadDevice(id string) (string, string, bool, bool) {
+func (m *memStore) LoadDevice(id string) (DeviceRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r, ok := m.rows[id]
-	return r.secret, r.grant, r.inbound, ok
+	if !ok {
+		return DeviceRecord{}, ErrDeviceNotFound
+	}
+	return r, nil
 }
 
-func (m *memStore) SaveDevice(id, secretHash, grantHash string, inbound bool) {
+func (m *memStore) RegisterDevice(id, secretHash string, inbound bool) (DeviceRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.rows[id] = devRow{secretHash, grantHash, inbound}
+	if r, ok := m.rows[id]; ok {
+		if r.SecretHash != secretHash {
+			return DeviceRecord{}, ErrDeviceIdentity
+		}
+		return r, nil
+	}
+	r := DeviceRecord{SecretHash: secretHash, Inbound: inbound}
+	m.rows[id] = r
+	return r, nil
 }
 
-func (m *memStore) DeleteDevice(id string) {
+func (m *memStore) UpdateDevice(id string, r DeviceRecord) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if old, ok := m.rows[id]; !ok || old.SecretHash != r.SecretHash {
+		return ErrDeviceIdentity
+	}
+	m.rows[id] = r
+	return nil
+}
+
+func (m *memStore) DeleteDevice(id, secretHash string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if old, ok := m.rows[id]; !ok || old.SecretHash != secretHash {
+		return ErrDeviceIdentity
+	}
 	delete(m.rows, id)
+	return nil
 }
 
 type recSender struct {
@@ -71,10 +91,7 @@ func TestInvokeRoutesAndExitDeletesInflight(t *testing.T) {
 		t.Fatal(code)
 	}
 	grant := "xr_grant_test"
-	h.mu.Lock()
-	h.grants["dev_a"] = protocol.SHA256Hex(grant)
-	h.devices["dev_a"].inbound = true
-	h.mu.Unlock()
+	h.Handle(dev, protocol.RoleDevice, "dev_a", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex(grant)})
 	if code := h.RegisterClient("dev_a", grant, cli); code != "" {
 		t.Fatal(code)
 	}

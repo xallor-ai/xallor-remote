@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -12,14 +13,22 @@ func TestSQLStoreDeviceRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	s.SaveDevice("dev_a", "sec", "gr", true)
-	sec, gr, inb, ok := s.LoadDevice("dev_a")
-	if !ok || sec != "sec" || gr != "gr" || !inb {
-		t.Fatalf("load %+v %v %v %v", sec, gr, inb, ok)
+	if _, err := s.RegisterDevice("dev_a", "sec", true); err != nil {
+		t.Fatal(err)
 	}
-	s.DeleteDevice("dev_a")
-	if _, _, _, ok := s.LoadDevice("dev_a"); ok {
-		t.Fatal("deleted row still present")
+	want := DeviceRecord{SecretHash: "sec", GrantHash: "gr", Inbound: true}
+	if err := s.UpdateDevice("dev_a", want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.LoadDevice("dev_a")
+	if err != nil || got != want {
+		t.Fatalf("load %+v %v", got, err)
+	}
+	if err := s.DeleteDevice("dev_a", "sec"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LoadDevice("dev_a"); !errors.Is(err, ErrDeviceNotFound) {
+		t.Fatalf("deleted row: %v", err)
 	}
 }
 

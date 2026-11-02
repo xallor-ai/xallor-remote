@@ -34,11 +34,14 @@ v0 用 **SQLite** 单文件（`--data` 目录内），驱动见 [stack.md](stack
 
 | 集合 | 内容 |
 | --- | --- |
-| `devices` | id, secret_hash, os, arch, hostname, version, workspace, caps, last_seen, status, owner_account_id?（v0 空） |
-| `grants` | device_id, grant_hash, 时间戳 |
+| `devices` | id, secret_hash, grant_hash, inbound, last_seen；设备身份与当前授权状态的唯一事实来源 |
 | `audit` | 见下 |
 
 禁止持久：grant/secret 明文、完整 stdout、write 正文、**完整 command 字符串**。
+
+设备存储由 `DeviceStore` 管理：注册在事务中创建或校验身份，禁止覆盖已登记设备的密钥；更新和删除必须校验设备密钥哈希。不存在、身份不匹配与存储故障分别处理。数据库故障返回 `relay_error`，不得确认注册成功；授权修改必须提交后才更新内存，持久化失败时关闭设备连接并保留原状态。
+
+SQLite 使用 `user_version` 管理结构版本。版本 1 保留 `devices` 中的身份与授权状态，移除重复的 `grants` 镜像；不存在双写或双读分支。结构变更在事务中完成，不支持高版本数据库由低版本程序打开。部署升级前必须备份 Relay 数据目录；生产部署仍需明确授权。
 
 **审计（诚实边界）：** v0 证明「哪类操作发生过」，**不**保证事故后能还原完整命令。字段：`ts, device_id, op, exec_id, decision, code, duration_ms, client_meta, args_preview, args_digest`。
 

@@ -31,23 +31,17 @@ type inflight struct {
 	trunc    bool
 }
 
-// Hub is the in-memory router. Persistence of hashes is optional via Store.
+// Hub is the in-memory router. Identity persistence is owned by DeviceStore.
 type Hub struct {
 	mu       sync.Mutex
 	devices  map[string]*deviceSlot
 	grants   map[string]string // device_id -> grant hash
 	clients  map[Sender]clientSlot
 	inflight map[string]*inflight
-	store    Store
+	store    DeviceStore
 }
 
-type Store interface {
-	LoadDevice(id string) (secretHash string, grantHash string, inbound bool, ok bool)
-	SaveDevice(id, secretHash, grantHash string, inbound bool)
-	DeleteDevice(id string)
-}
-
-func NewHub(store Store) *Hub {
+func NewHub(store DeviceStore) *Hub {
 	return &Hub{
 		devices:  map[string]*deviceSlot{},
 		grants:   map[string]string{},
@@ -81,64 +75,6 @@ func (h *Hub) Handle(from Sender, role string, targetID string, msg protocol.Mes
 	default:
 		return
 	}
-}
-
-func (h *Hub) RegisterDevice(id, secret string, inbound bool, conn Sender) string {
-	hash := protocol.SHA256Hex(secret)
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.store != nil {
-		if sh, gh, inb, ok := h.store.LoadDevice(id); ok {
-			if sh != hash {
-				return protocol.Unauthorized
-			}
-			h.grants[id] = gh
-			inbound = inb
-		} else {
-			h.store.SaveDevice(id, hash, "", inbound)
-		}
-	}
-	if old, ok := h.devices[id]; ok && old.conn != nil && old.conn != conn {
-		h.failDeviceLocked(id, protocol.DeviceOffline)
-		old.conn.Close()
-	}
-	if gh, ok := h.grants[id]; !ok || gh == "" {
-		if h.store != nil {
-			if _, gh2, inb, ok := h.store.LoadDevice(id); ok {
-				h.grants[id] = gh2
-				inbound = inb
-			}
-		}
-	}
-	h.devices[id] = &deviceSlot{conn: conn, secretHash: hash, inbound: inbound, online: true}
-	return ""
-}
-
-func (h *Hub) RegisterClient(targetID, grant string, conn Sender) string {
-	want := protocol.SHA256Hex(grant)
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	gh := h.grants[targetID]
-	if gh == "" && h.store != nil {
-		if _, g, _, ok := h.store.LoadDevice(targetID); ok {
-			gh = g
-			h.grants[targetID] = g
-		}
-	}
-	if gh == "" {
-		if _, ok := h.devices[targetID]; !ok && (h.store == nil || func() bool {
-			_, _, _, ok := h.store.LoadDevice(targetID)
-			return !ok
-		}()) {
-			return protocol.UnknownDevice
-		}
-		return protocol.Unauthorized
-	}
-	if gh != want {
-		return protocol.Unauthorized
-	}
-	h.clients[conn] = clientSlot{targetID: targetID, grantHex: want}
-	return ""
 }
 
 func (h *Hub) Drop(from Sender, role, deviceOrTarget string) {
@@ -181,9 +117,13 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 	if dev == nil || !dev.online || dev.conn == nil {
 		code := protocol.UnknownDevice
 		if h.store != nil {
-			if _, _, _, ok := h.store.LoadDevice(targetID); ok {
+			if _, err := h.store.LoadDevice(targetID); err == nil {
 				code = protocol.DeviceOffline
+			} else {
+				code = identityErrorCode(err)
 			}
+		} else if dev != nil {
+			code = protocol.DeviceOffline
 		}
 		_ = from.Send(protocol.Nack(msg.ExecID, code))
 		h.record(targetID, msg.Op, msg.ExecID, "nack", code, msg.Payload)
@@ -254,45 +194,6 @@ func (h *Hub) forwardToClient(from Sender, msg protocol.Message) {
 		}
 		h.record(inf.deviceID, "", msg.ExecID, decision, code, nil)
 		delete(h.inflight, msg.ExecID)
-	}
-}
-
-func (h *Hub) handleAuth(from Sender, msg protocol.Message) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	var id string
-	for did, d := range h.devices {
-		if d.conn == from {
-			id = did
-			break
-		}
-	}
-	if id == "" {
-		return
-	}
-	switch msg.Type {
-	case protocol.TypeGrantRotate:
-		h.grants[id] = msg.NewGrantHash
-		if d := h.devices[id]; d != nil && h.store != nil {
-			h.store.SaveDevice(id, d.secretHash, msg.NewGrantHash, d.inbound)
-		}
-	case protocol.TypeInboundSet:
-		if d := h.devices[id]; d != nil && msg.Inbound != nil {
-			d.inbound = *msg.Inbound
-			if h.store != nil {
-				h.store.SaveDevice(id, d.secretHash, h.grants[id], d.inbound)
-			}
-		}
-	case protocol.TypeRevoke:
-		h.failDeviceLocked(id, protocol.DeviceOffline)
-		if d := h.devices[id]; d != nil && d.conn != nil {
-			d.conn.Close()
-		}
-		delete(h.devices, id)
-		delete(h.grants, id)
-		if h.store != nil {
-			h.store.DeleteDevice(id)
-		}
 	}
 }
 
