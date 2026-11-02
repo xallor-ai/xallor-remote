@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { head } from "./fixture-head";
 
 // Real state only: no route mocks, fake Runtime or prerecorded results.
@@ -23,7 +25,12 @@ test("connect, stream, cancel, approve and inspect actual history", async ({ pag
     await expect(page).toHaveTitle(/XallorRemote/);
     await expect(page.getByRole("heading", { name: "连接", exact: true })).toBeVisible();
     await expect(page.locator("vite-error-overlay")).toHaveCount(0);
-    const grant = (await readFile(path.join(process.env.XR_GUI_ROOT!, "controller", "grant"), "utf8")).trim();
+    const grantOutput = await promisify(execFile)(process.env.XR_GUI_CLI!, ["grant", "show"], {
+      env: { ...process.env, XALLOR_REMOTE_DATA_DIR: path.join(process.env.XR_GUI_ROOT!, "controller") },
+      windowsHide: true,
+    });
+    const grant = grantOutput.stdout.match(/授权码:\s*(\S+)/)?.[1];
+    expect(grant).toBeTruthy();
     expect(await page.locator("body").textContent()).not.toContain(grant);
     const alias = '<img src=x onerror="window.xss=1"> Laptop';
     await page.getByLabel("设备备注").fill(alias);
