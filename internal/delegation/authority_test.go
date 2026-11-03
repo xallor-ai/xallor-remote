@@ -18,6 +18,7 @@ type authorityFixture struct {
 	authorization access.Authorization
 	err           error
 	after         func()
+	operation     string
 }
 
 func (f *authorityFixture) Authority() string { return strings.Repeat("a", 32) }
@@ -43,7 +44,11 @@ func (f permissionsFixture) Verify(_ context.Context, p principal.Identity, a ac
 	if f.after != nil {
 		f.after()
 	}
-	if p != f.identity || a != f.authorization || op != protocol.OpHandoffSubmit {
+	want := f.operation
+	if want == "" {
+		want = protocol.OpHandoffSubmit
+	}
+	if p != f.identity || a != f.authorization || op != want {
 		return access.ErrDenied
 	}
 	return f.err

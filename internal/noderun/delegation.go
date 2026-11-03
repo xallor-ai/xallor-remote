@@ -2,16 +2,40 @@ package noderun
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/delegation"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
+// No process has started: transport uncertainty must not be reported as a
+// target failure, and caller cancellation/deadline retain their own meaning.
+func executionLeaseStartCode(ctx context.Context, err error) string {
+	if ctx.Err() != nil {
+		return startFailureCode(ctx)
+	}
+	if errors.Is(err, delegation.ErrDenied) {
+		return protocol.Unauthorized
+	}
+	return protocol.RelayError
+}
+
 func (d *Daemon) renewExecution(ctx context.Context, proof string) (time.Duration, error) {
 	if proof == "" || len(proof) > protocol.MaxDelegationBytes {
 		return 0, delegation.ErrDenied
 	}
+	return d.requestExecutionLease(ctx, protocol.Message{Type: protocol.TypeExecutionRenew, Delegation: proof})
+}
+
+func (d *Daemon) renewForeground(ctx context.Context, routeID string) (time.Duration, error) {
+	if routeID == "" {
+		return 0, delegation.ErrDenied
+	}
+	return d.requestExecutionLease(ctx, protocol.Message{Type: protocol.TypeExecutionRenewRoute, ExecID: routeID})
+}
+
+func (d *Daemon) requestExecutionLease(ctx context.Context, request protocol.Message) (time.Duration, error) {
 	d.mu.Lock()
 	link := d.device
 	d.mu.Unlock()
@@ -23,7 +47,8 @@ func (d *Daemon) renewExecution(ctx context.Context, proof string) (time.Duratio
 		return 0, err
 	}
 	defer remove()
-	if err = link.sendContext(ctx, protocol.Message{Type: protocol.TypeExecutionRenew, RequestID: key, Delegation: proof}); err != nil {
+	request.RequestID = key
+	if err = link.sendContext(ctx, request); err != nil {
 		return 0, err
 	}
 	select {

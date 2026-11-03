@@ -35,6 +35,7 @@ JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本
 | `access.request` | **仅 device** | request_id, account_token, payload | 管理本连接证明的设备归属与分享 |
 | `access.result` | Relay → device | request_id, code? / payload? | 管理结果；成功为归属快照，失败为错误码 |
 | `execution.renew` | **仅 device** | request_id, delegation | 复验本设备收到的后台执行委托 |
+| `execution.route.renew` | **仅 device** | request_id, exec_id | 复验本设备仍存活的前台 exec 路由 |
 | `execution.lease` | Relay → device | request_id, code? / lease_ms? | 短期执行许可；不确认任务结束或释放额度 |
 
 client 连接上出现 `revoke` / `device.settings` → 忽略或 nack `unauthorized`，**不得执行**。
@@ -46,6 +47,8 @@ client 连接上出现 `revoke` / `device.settings` → 忽略或 nack `unauthor
 成功的 `device.settings.result` 和 `access.result` 必须携带 `device_context:{authority,device_uid,ownership_id?,grant_id?,inbound}`，由 Relay 的已提交设备状态生成，仅返回 device 连接。authority/device_uid 为 32 位小写十六进制；ownership_id/grant_id 非空时格式相同且互斥，未签发共享授权的设备允许两者均空。Runtime 在初始快照有效前不上线，后续先应用快照再交付管理回执或处理后续 invoke。handoff 的 scope 须匹配其 authority、设备实例和归属/共享授权实例，且 inbound 为 true。快照不是主体权限凭据，不替代每次调用的账号与操作授权。
 
 Relay 下发 `handoff.submit` 时附带 `delegation`，客户端自报值被丢弃。它是固定用于后台交接复验的 HMAC-SHA256 委托，绑定签发方、设备显示号码/内部实例、原始共享/归属实例、账号凭据与成员版本及分享快照，不包含明文凭据、命令或 prompt。目标不得仅凭委托启动：须通过当前已认证 device 连接完成首次 `execution.renew`。委托至多 4096 字节，有效期 11 分钟且不续发，原始凭据或分享先到期时仍提前失效。续期请求 ID 非空且至多 128 字节，回复匹配请求与连接实例，其他设备和 client 角色不能使用它。
+
+前台 `exec` 在启动进程前通过 `execution.route.renew` 获取同样的短期许可。`exec_id` 是 Relay 生成的路由 ID，非空且至多 128 字节；`request_id` 使用同一限制，不能携带 `delegation`。只允许当前目标 device 连接为尚未取消/结束的 exec 路由续期。原始调用绑定保留在 Relay 内存中，续期不能自报或替换账号、分享及操作；存储复验后再次检查相同路由和双方连接。前台不受后台委托的年龄上限限制，`timeout_ms=0` 继续表示不设执行期限；连接断开仍取消、不恢复或重放旧命令。首次拒绝返回 `invoke_nack/unauthorized`，首次交换故障或过晚返回 `invoke_nack/relay_error`，原调用取消/超时分别保留 `cancelled`/`exec_timeout`。运行中授权丢失在进程清理和占用释放确认后返回 `exit.status=authorization_lost`，保留实际退出码、耗时、截断标记和已输出内容；清理失败仍使用原错误，不伪造成功退出。
 
 `execution.lease` 成功含正数 `lease_ms`，至多 20000 毫秒，且不超过委托、原始凭据或分享的剩余有效期；拒绝返回 `unauthorized`，存储/链路故障为 `relay_error` 或没有回复。Runtime 在发出请求前记下单调时间，从该时点计算到期，网络耗时不得加到许可期限上；正常每 5 秒复验，单次最多 5 秒且不能越过现有许可到期。明确拒绝取消作业；故障不续期，到期取消，不能迟到恢复。凭据续签/重新分享不替换已运行任务绑定的原始委托。委托仅驻内存，不进入回执；无首次许可为 `unknown/execution_authorization_unconfirmed`，运行中丢失许可为 `unknown/execution_authorization_lost`，回收或落盘未确认仍优先使用原有诊断。这是执行授权期限，不是商业资源租约、计费回执或 OS 沙箱。
 
@@ -102,7 +105,7 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 
 非零退出只走 `exit`（`status=completed`）。每个 `exec_id` 恰好一个终态：`invoke_nack` **或** `exit` **或** `error`，然后 Relay 删 inflight。见 [dataplane.md](dataplane.md)。
 
-`exit.status`：`completed` | `cancelled` | `timeout`。MCP/CLI 把后两者映射为 code `cancelled` / `exec_timeout`。
+`exit.status`：`completed` | `cancelled` | `timeout` | `authorization_lost`。后三者均为已启动且已停止的非成功结果，CLI 返回非零、JSONL 保留 `exit` 与原状态，MCP 返回 `isError=true` 并保留输出与终态信息。`authorization_lost` 区别于用户取消、执行超时和启动前拒绝，不代表尚未执行，也不允许自动重试。
 
 `exec_id`：每条连接上的请求关联值。控制侧 Runtime 为新操作生成随机 ID；Relay 为每次准入另生成独立的随机内部 ID，以该值下发 device，并在回事件时还原调用者原值。目标只回显它收到的 ID。不同 client 连接可以使用相同值；同一连接同时重复使用返回 `agent_error`，不替换原调用。cancel 按原 client 连接与其关联 ID 解析，内部 ID 不能作为控制侧取消凭据。
 

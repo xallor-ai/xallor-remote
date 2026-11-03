@@ -9,11 +9,21 @@ test("terminal certainty preserves nonzero, cancel, timeout and unknown results"
     [{ status: "completed" }, "结果待确认"],
     [{ status: "cancelled" }, "已取消"],
     [{ status: "timeout" }, "已超时"],
+    [{ status: "authorization_lost", exit_code: 1 }, "授权失效，已停止"],
     [{}, "结果待确认"],
   ] as const) {
     const t = task(); finish(t, { id: "1", ok: true, result }); assert.equal(t.status, expected); assert.equal(t.live, false);
   }
   const t = task(); finish(t, { id: "1", ok: false, code: "relay_error" }); assert.equal(t.status, "结果待确认");
+});
+
+// Revocation is a confirmed stop after execution, retaining the output already shown.
+test("authorization loss preserves partial output and confirmed stop", () => {
+  const t = task(); append(t, "already executed\n");
+  finish(t, { id: "1", ok: true, result: { status: "authorization_lost", exit_code: 1, truncated: true } });
+  assert.equal(t.status, "授权失效，已停止");
+  assert.equal(t.output, "already executed\n");
+  assert.equal(t.truncated, true); assert.equal(t.live, false);
 });
 test("display output stays bounded and preserves truncation from either layer", () => {
   const t = task(); append(t, "x".repeat(300_000)); append(t, "tail");

@@ -38,7 +38,9 @@ type inflight struct {
 	client    Sender
 	outBytes  int
 	trunc     bool
-	identity  principal.Identity
+	binding   clientSlot
+	operation string
+	cancelled bool
 	lease     *admission.Lease
 }
 
@@ -83,6 +85,8 @@ func (h *Hub) Handle(from Sender, role string, targetID string, msg protocol.Mes
 		return
 	}
 	switch msg.Type {
+	case protocol.TypeExecutionRenewRoute:
+		h.renewExecutionRoute(from, role, msg)
 	case protocol.TypeExecutionRenew:
 		h.renewExecution(from, role, msg)
 	case protocol.TypeAccessRequest:

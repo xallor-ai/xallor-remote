@@ -199,6 +199,7 @@ jobs:
       - run: python tests/cross_layer_e2e.py
       - run: python tests/principal_e2e.py
       - run: python tests/ownership_e2e.py
+      - run: python tests/foreground_authorization_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
       - run: python tests/process_lifetime_e2e.py
       - run: python tests/job_lifecycle_e2e.py
       - run: python tests/shell_adapter_e2e.py
@@ -216,6 +217,7 @@ jobs:
             dist/verification/cross-layer.json
             dist/verification/principal.json
             dist/verification/ownership.json
+            dist/verification/foreground-authorization.json
             dist/verification/process-lifetime.json
             dist/verification/job-lifecycle.json
             dist/verification/shell-adapter.json

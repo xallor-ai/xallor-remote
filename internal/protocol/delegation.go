@@ -4,6 +4,7 @@ import "time"
 
 const (
 	TypeExecutionRenew      = "execution.renew"
+	TypeExecutionRenewRoute = "execution.route.renew"
 	TypeExecutionLease      = "execution.lease"
 	MaxDelegationBytes      = 4096
 	DelegationProofLifetime = 11 * time.Minute

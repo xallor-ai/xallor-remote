@@ -96,7 +96,30 @@ func (a *Authority) Renew(ctx context.Context, deviceID, uid, proof string) (tim
 	if json.Unmarshal(data, &c) != nil || c.Authority != a.devices.Authority() || c.DeviceID != deviceID || c.Binding.DeviceUID != uid || c.Expires <= a.now().UnixMilli() {
 		return 0, ErrDenied
 	}
-	device, err := a.devices.LoadDevice(ctx, deviceID)
+	return a.renew(ctx, c, protocol.OpHandoffSubmit)
+}
+
+// Invocation is a trusted snapshot retained by the Relay's live route. It is
+// never decoded from a renewal request or supplied by the controlling client.
+type Invocation struct {
+	DeviceID      string
+	Binding       access.Binding
+	Identity      principal.Identity
+	Authorization access.Authorization
+}
+
+// RenewForeground uses the live route instead of a time-limited proof. The
+// router must verify the requesting device and retain the same route across I/O.
+func (a *Authority) RenewForeground(ctx context.Context, invocation Invocation) (time.Duration, error) {
+	return a.renew(ctx, claims{DeviceID: invocation.DeviceID, Binding: invocation.Binding,
+		Identity: invocation.Identity, Authorization: invocation.Authorization}, protocol.OpExec)
+}
+
+func (a *Authority) renew(ctx context.Context, c claims, operation string) (time.Duration, error) {
+	if a.devices == nil || !c.Binding.Matches(c.Binding) {
+		return 0, ErrDenied
+	}
+	device, err := a.devices.LoadDevice(ctx, c.DeviceID)
 	if errors.Is(err, access.ErrDeviceNotFound) {
 		return 0, ErrDenied
 	}
@@ -110,7 +133,7 @@ func (a *Authority) Renew(ctx context.Context, deviceID, uid, proof string) (tim
 		if a.access == nil {
 			return 0, ErrDenied
 		}
-		err = a.access.Verify(ctx, c.Identity, c.Authorization, protocol.OpHandoffSubmit)
+		err = a.access.Verify(ctx, c.Identity, c.Authorization, operation)
 	} else if c.Identity.PrincipalID != "" {
 		if a.accounts == nil {
 			return 0, ErrDenied
@@ -127,18 +150,19 @@ func (a *Authority) Renew(ctx context.Context, deviceID, uid, proof string) (tim
 		return 0, err
 	}
 	// Evaluate after all reads, and do not renew beyond any signed expiry.
-	expires := time.UnixMilli(c.Expires)
+	now := a.now()
+	expires := now.Add(protocol.ExecutionLeaseDuration)
+	if c.Expires > 0 && time.UnixMilli(c.Expires).Before(expires) {
+		expires = time.UnixMilli(c.Expires)
+	}
 	for _, seconds := range []int64{c.Identity.ExpiresAt, c.Authorization.ExpiresAt} {
 		if seconds > 0 && time.Unix(seconds, 0).Before(expires) {
 			expires = time.Unix(seconds, 0)
 		}
 	}
-	ttl := expires.Sub(a.now())
+	ttl := expires.Sub(now)
 	if ttl <= 0 {
 		return 0, ErrDenied
-	}
-	if ttl > protocol.ExecutionLeaseDuration {
-		ttl = protocol.ExecutionLeaseDuration
 	}
 	return ttl, nil
 }

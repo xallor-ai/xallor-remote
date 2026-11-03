@@ -7,6 +7,7 @@ export function finish(task: Task, frame: Frame) {
   task.truncated ||= !!r?.truncated;
   if (r?.status === "cancelled") task.status = "已取消";
   else if (r?.status === "timeout") task.status = "已超时";
+  else if (r?.status === "authorization_lost") task.status = "授权失效，已停止";
   else if (r?.status === "completed" && Number.isInteger(r.exit_code)) task.status = r.exit_code === 0 ? "已完成" : `执行失败（退出码 ${r.exit_code}）`;
   else task.status = "结果待确认";
 }

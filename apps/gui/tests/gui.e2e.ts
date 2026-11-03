@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { head } from "./fixture-head";
@@ -70,6 +70,27 @@ test("connect, stream, cancel, approve and inspect actual history", async ({ pag
     await expect(page.locator(".task-state").first()).toHaveText("已取消", { timeout: 15_000 });
     expect(await page.locator("#tasks pre").first().textContent()).not.toContain("should-not-run");
     }
+
+    // A real credential revocation stops an already-started task without
+    // discarding output or presenting the result as an unstarted rejection.
+    const localCLI = async (...args: string[]) => promisify(execFile)(process.env.XR_GUI_CLI!, args, {
+      env: { ...process.env, XALLOR_REMOTE_DATA_DIR: path.join(process.env.XR_GUI_ROOT!, "controller") }, windowsHide: true,
+    });
+    const admin = ["relay", "--data", path.join(process.env.XR_GUI_ROOT!, "relay"), "principal"];
+    const actor = JSON.parse((await localCLI(...admin, "create", "--name", "gui-revocation")).stdout);
+    const credentialFile = path.join(process.env.XR_GUI_ROOT!, "gui-credential.json");
+    await writeFile(credentialFile, JSON.stringify(actor), "utf8");
+    await localCLI("account", "use", "--credential-file", credentialFile);
+    try {
+      await page.getByLabel("命令", { exact: true }).fill(command);
+      await page.getByRole("button", { name: "执行", exact: true }).click();
+      await expect(page.locator("#tasks pre").first()).toContainText("gui-stream", { timeout: 20_000 });
+      await localCLI(...admin, "revoke", "--credential", actor.credential_id);
+      await expect(page.locator(".task-state").first()).toHaveText("授权失效，已停止", { timeout: 25_000 });
+      await expect(page.locator("#tasks pre").first()).toContainText("gui-stream");
+      await expect(page.getByRole("button", { name: "取消任务" }).first()).toBeDisabled();
+      await page.screenshot({ path: path.join(process.env.XR_GUI_EVIDENCE!, "authorization-lost.png"), fullPage: true });
+    } finally { await localCLI("account", "clear"); }
 
     await page.getByRole("button", { name: /^审批/ }).click();
     // The policy matches shutdown inside an inert echo. No power operation is run.
