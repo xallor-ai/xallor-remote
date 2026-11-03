@@ -170,6 +170,9 @@ func (d *Daemon) connectDevice() error {
 	if ack.Type != protocol.TypeDeviceSettingsResult || ack.RequestID != settings.RequestID || ack.Code != "" {
 		return errStr("device settings unconfirmed")
 	}
+	if err := d.syncDeviceContext(ack); err != nil {
+		return err
+	}
 	d.mu.Lock()
 	d.device = link
 	d.mu.Unlock()
@@ -215,6 +218,12 @@ type errStr string
 func (e errStr) Error() string { return string(e) }
 
 func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
+	if (msg.Type == protocol.TypeDeviceSettingsResult || msg.Type == protocol.TypeAccessResult) && msg.Code == "" {
+		if err := d.syncDeviceContext(msg); err != nil {
+			_ = link.conn.CloseNow()
+			return
+		}
+	}
 	switch msg.Type {
 	case protocol.TypeDeviceSettingsResult:
 		d.settingsReplies.deliver(link, msg)

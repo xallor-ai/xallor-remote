@@ -53,6 +53,8 @@ hello 失败：Relay 关连接，不登记。成功：回一条 `hello_ok`（实
 
 控制面消息（`device.settings` / `revoke`）只走 **device** 连接，见 [credentials.md](credentials.md)。本文只覆盖 invoke / 事件。
 
+设置与设备访问管理成功时，Relay 将当前设备作用域随确认消息排入同一 outbox，再允许后续调用排队。Runtime 的 device reader 先同步后台执行作用域，再处理后续 invoke；reader 收到 handoff 提交时同步捕获本机代际，异步提交须在 Manager 锁内复验作用域与代际。每次作用域变化递增代际，重复确认不递增，防止关闭后重开恢复相同作用域时，先前排入的旧调用延迟启动。重连的初始设置确认从持久化设备状态重建作用域。字段见协议，取消与真实回收的区别见 handoff.md。
+
 ---
 
 ## 3. 请求模型

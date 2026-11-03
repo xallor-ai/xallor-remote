@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/xallor-ai/xallor-remote/internal/identity"
+	"github.com/xallor-ai/xallor-remote/internal/invocation"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -76,7 +78,7 @@ func (f *settingsWire) next(t *testing.T, kind string) protocol.Message {
 	}
 }
 func (f *settingsWire) ack(m protocol.Message) {
-	f.replies <- protocol.Message{Type: protocol.TypeDeviceSettingsResult, RequestID: m.RequestID}
+	f.replies <- protocol.Message{Type: protocol.TypeDeviceSettingsResult, RequestID: m.RequestID, DeviceContext: &invocation.DeviceContext{Authority: strings.Repeat("a", 32), DeviceUID: strings.Repeat("b", 32), Inbound: *m.Inbound}}
 }
 func noSettingsResult(t *testing.T, done <-chan ipc.Frame) {
 	t.Helper()

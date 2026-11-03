@@ -88,12 +88,18 @@ func (h *Hub) handleAccess(from Sender, msg protocol.Message) {
 		device.record = mutation.Device
 		h.access[id] = mutation.Device.Binding()
 	}
+	// Publish the authoritative context in FIFO order before another invoke can
+	// enter this device's outbox. A lost confirmation is reconciled at reconnect.
+	payload, _ := json.Marshal(mutation.State)
+	if err := from.Enqueue(protocol.Message{Type: protocol.TypeAccessResult, RequestID: requestID, Payload: payload, DeviceContext: h.deviceContext(mutation.Device)}); err != nil {
+		h.stopDeviceRoutingLocked(from)
+		from.Close()
+	}
 	h.mu.Unlock()
-	reply("", mutation.State)
 }
 
-// Foreground invocations lose their channel on ownership change. Cancel is a
-// best-effort stop request; this does not claim background handoff workers ended.
+// Foreground invocations lose their channel on ownership change. The device
+// context also cancels old handoff workers; neither signal proves cleanup.
 func (h *Hub) invalidateOwnershipLocked(id string) {
 	device := h.devices[id]
 	for execID, task := range h.inflight {

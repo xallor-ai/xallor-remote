@@ -41,6 +41,8 @@ client 连接上出现 `revoke` / `device.settings` → 忽略或 nack `unauthor
 
 每条 device 连接在 `hello_ok` 后必须先提交完整设置；Relay 排入成功确认后才允许新调用路由到该连接，不能依赖上次连接的入站值提前执行。Runtime 在初始确认后才报告本机连接在线。重新连接同步本机保存的期望快照，不重新签发授权码。`revoke` 的注销语义独立于设置确认。
 
+成功的 `device.settings.result` 和 `device.access.result` 必须携带 `device_context:{authority,device_uid,ownership_id?,grant_id?,inbound}`，由 Relay 的已提交设备状态生成，仅返回 device 连接。authority/device_uid 为 32 位小写十六进制；ownership_id/grant_id 非空时格式相同且互斥，未签发共享授权的设备允许两者均空。Runtime 在初始快照有效前不上线，后续先应用快照再交付管理回执或处理后续 invoke。handoff 的 scope 须匹配其 authority、设备实例和归属/共享授权实例，且 inbound 为 true。快照不是主体权限凭据，不替代每次调用的账号与操作授权。
+
 `account_token` 用于 client hello 和 device 的授权管理请求，非空时必须通过签发方校验，失败返回 `unauthorized`，存储故障返回 `relay_error`，不能降级为无账号访问。未认领设备必须出示目标 grant；已认领设备忽略 grant，只允许所有者或明确获授权且有效的成员。主体、空间、成员版本和到期时间由 Relay 从凭据推导，不接受客户端自报身份。凭据不转发给其他设备，也不写入调用记录。账号凭据有效期由本机运维设置为 1 分钟至 90 天，默认 24 小时。
 
 `access.request` 的 `request_id` 非空且不超过 128 字节，`payload` 不超过 16 KiB；未知 action 或非法参数返回 `agent_error`。payload 为以下之一：

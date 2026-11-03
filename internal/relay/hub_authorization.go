@@ -76,7 +76,7 @@ func (h *Hub) handleAuth(from Sender, msg protocol.Message) {
 	h.access[id] = record.Binding()
 	// Queue the confirmation before publishing readiness, so initial invokes
 	// cannot precede the settings response on the shared device connection.
-	if err := from.Enqueue(protocol.Message{Type: protocol.TypeDeviceSettingsResult, RequestID: msg.RequestID}); err != nil {
+	if err := from.Enqueue(protocol.Message{Type: protocol.TypeDeviceSettingsResult, RequestID: msg.RequestID, DeviceContext: h.deviceContext(record)}); err != nil {
 		h.stopDeviceRoutingLocked(from)
 		from.Close()
 		return

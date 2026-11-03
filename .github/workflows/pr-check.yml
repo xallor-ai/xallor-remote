@@ -245,11 +245,14 @@ jobs:
       - run: python -m unittest discover -s tests -p test_cursor_session.py
       - run: python tests/handoff_e2e.py --binary dist/handoff-runtime.exe
       - run: python tests/handoff_scope_e2e.py --binary dist/handoff-runtime.exe
+      - run: python tests/handoff_revocation_e2e.py --binary dist/handoff-runtime.exe
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: handoff-scope-${{ matrix.os }}
-          path: dist/verification/handoff-scope.json
+          path: |
+            dist/verification/handoff-scope.json
+            dist/verification/handoff-revocation.json
 
   pr-check:
     name: pr-check

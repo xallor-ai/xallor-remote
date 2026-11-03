@@ -17,9 +17,14 @@ type outcome struct {
 	truncated                  bool
 }
 
-func (m *Manager) run(key string, r Request, root string, owner *job.Owner) outcome {
-	ctx, cancel := context.WithTimeout(m.ctx, time.Duration(r.TimeoutSeconds)*time.Second)
+func (m *Manager) run(parent context.Context, key string, r Request, root string, owner *job.Owner) (result outcome) {
+	ctx, cancel := context.WithTimeout(parent, time.Duration(r.TimeoutSeconds)*time.Second)
 	defer cancel()
+	defer func() {
+		if errors.Is(context.Cause(ctx), errDeviceContextChanged) && result.code != "process_cleanup_unconfirmed" {
+			result.state, result.code = "unknown", "device_authorization_changed"
+		}
+	}()
 	cfg, version, workspace, err := m.preflight(ctx, r, root, owner)
 	if err != nil {
 		state, code := "failed", err.Error()
@@ -65,7 +70,7 @@ func (m *Manager) run(key string, r Request, root string, owner *job.Owner) outc
 		case <-readDone:
 		}
 	}()
-	result, parseErr := readCursor(stdout, r.Session, workspace, func() error { return m.update(key, "running", "", version, "", false) })
+	outputResult, parseErr := readCursor(stdout, r.Session, workspace, func() error { return m.update(key, "running", "", version, "", false) })
 	close(readDone)
 	if parseErr != nil {
 		_ = child.Stop()
@@ -78,10 +83,10 @@ func (m *Manager) run(key string, r Request, root string, owner *job.Owner) outc
 		state, code = "unknown", "interrupted"
 	} else if parseErr != nil {
 		state, code = "unknown", parseErr.Error()
-	} else if result.isError {
+	} else if outputResult.isError {
 		state, code = "failed", "cli_result_error"
 	} else if waitErr != nil {
 		state, code = "unknown", "cli_exit_nonzero"
 	}
-	return outcome{state: state, code: code, version: version, text: result.text, truncated: result.truncated}
+	return outcome{state: state, code: code, version: version, text: outputResult.text, truncated: outputResult.truncated}
 }

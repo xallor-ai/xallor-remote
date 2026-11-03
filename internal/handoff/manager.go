@@ -13,20 +13,22 @@ import (
 )
 
 type Manager struct {
-	mu     sync.Mutex
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
-	dir    string
-	items  map[string]record
-	active map[string]bool
-	err    error
-	jobs   *job.Ledger
+	mu         sync.Mutex
+	ctx        context.Context
+	cancel     context.CancelFunc
+	wg         sync.WaitGroup
+	dir        string
+	items      map[string]record
+	active     map[string]worker
+	device     invocation.DeviceContext
+	generation uint64
+	err        error
+	jobs       *job.Ledger
 }
 
 func New(parent context.Context, dir string, jobs *job.Ledger) *Manager {
 	ctx, cancel := context.WithCancel(parent)
-	m := &Manager{ctx: ctx, cancel: cancel, dir: dir, jobs: jobs, items: map[string]record{}, active: map[string]bool{}}
+	m := &Manager{ctx: ctx, cancel: cancel, dir: dir, jobs: jobs, items: map[string]record{}, active: map[string]worker{}}
 	m.err = m.load()
 	return m
 }
@@ -46,13 +48,17 @@ func (m *Manager) Get(scope invocation.Scope, id string) (Receipt, error) {
 	if m.err != nil {
 		return Receipt{}, fmt.Errorf("交接记录不可用，请检查本机数据目录。")
 	}
+	if !m.device.Allows(scope) {
+		return Receipt{}, fmt.Errorf("设备授权已变化，请重新连接。")
+	}
 	r, ok := m.items[requestKey(scope, id)]
 	if !ok {
 		return Receipt{}, fmt.Errorf("没有此请求的交接回执。")
 	}
 	return r.Receipt, nil
 }
-func (m *Manager) Submit(scope invocation.Scope, r Request, root string) (Receipt, error) {
+func (m *Manager) Submit(ticket Ticket, r Request, root string) (Receipt, error) {
+	scope := ticket.scope
 	if !scope.Valid() {
 		return Receipt{}, fmt.Errorf("交接身份无效。")
 	}
@@ -69,6 +75,9 @@ func (m *Manager) Submit(scope invocation.Scope, r Request, root string) (Receip
 	if m.err != nil || m.ctx.Err() != nil {
 		return Receipt{}, fmt.Errorf("交接服务不可用。")
 	}
+	if ticket.manager != m || ticket.generation != m.generation || !m.device.Allows(scope) {
+		return Receipt{}, fmt.Errorf("设备授权已变化，请重新连接。")
+	}
 	if old, ok := m.items[id]; ok {
 		if old.Fingerprint != hash {
 			return Receipt{}, fmt.Errorf("请求 ID 已用于不同内容，拒绝覆盖。")
@@ -79,7 +88,7 @@ func (m *Manager) Submit(scope invocation.Scope, r Request, root string) (Receip
 	if !m.ownsSession(scope, key) {
 		return Receipt{}, fmt.Errorf("该会话不能用于当前身份，请使用新会话。")
 	}
-	if len(m.items) >= MaxReceipts || m.active[key] {
+	if _, active := m.active[key]; len(m.items) >= MaxReceipts || active {
 		return Receipt{}, fmt.Errorf("回执或并发交接已达上限；同一会话不能并行交接。")
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
@@ -95,12 +104,14 @@ func (m *Manager) Submit(scope invocation.Scope, r Request, root string) (Receip
 		return Receipt{}, fmt.Errorf("回执无法保存，未启动 Agent。")
 	}
 	m.items[id] = stored
-	m.active[key] = true
+	ctx, cancel := context.WithCancelCause(m.ctx)
+	m.active[key] = worker{scope: scope, cancel: cancel}
 	m.wg.Add(1)
 	go func() {
+		defer cancel(nil)
 		defer m.wg.Done()
 		defer func() { m.mu.Lock(); delete(m.active, key); m.mu.Unlock() }()
-		result := m.run(id, r, root, owner)
+		result := m.run(ctx, id, r, root, owner)
 		if owner.Finish() != nil {
 			result.state, result.code = "unknown", "job_release_unconfirmed"
 		}
