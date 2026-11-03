@@ -45,7 +45,7 @@ func TestAccount_should_preserveExistingCredential_whenRenewalWriteFails(t *test
 	if err == nil || result != (principal.Enrollment{}) {
 		t.Fatal("failed renewal returned credential")
 	}
-	identity, err := s.Authenticate(ctx, first.Token)
+	identity, err := principal.NewService(s).Authenticate(ctx, first.Token)
 	if err != nil || identity != first.Identity {
 		t.Fatal("original credential changed", err)
 	}

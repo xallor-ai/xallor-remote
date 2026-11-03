@@ -10,6 +10,7 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/access"
 	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/appdata"
+	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 	"github.com/xallor-ai/xallor-remote/internal/relay"
 	"github.com/xallor-ai/xallor-remote/internal/storage"
@@ -35,7 +36,7 @@ func cmdRelay() *cobra.Command {
 				return err
 			}
 			defer store.Close()
-			hub := relay.NewHub(store, store, access.NewService(store), admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+			hub := relay.NewHub(store, principal.NewService(store), access.NewService(store), admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 			return relay.Serve(listen, hub, log, relay.Quota{Enabled: quota})
 		},
 	}
