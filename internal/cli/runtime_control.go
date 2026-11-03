@@ -95,7 +95,7 @@ func (c runtimeControl) Start(path, sha string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(path, "start")
+	cmd := exec.Command(path, guardedArgs("start")...)
 	cmd.Stdout = log
 	cmd.Stderr = log
 	err = detach(cmd)
