@@ -120,6 +120,9 @@ func (d *Daemon) dialClient(peer identity.Peer, key clientKey, token string) (*w
 		cancel()
 		return nil, nil, fmt.Errorf("%s", ack.Code)
 	}
+	if !ack.ConfirmsClientAuth(token != "") {
+		return nil, nil, fmt.Errorf("中转未确认连接认证，请检查版本。")
+	}
 	cl := &clientLink{target: peer.DeviceID, ws: link, cancel: cancel, waiters: map[string]*execWaiter{}}
 	success = true
 	go d.runClientReader(peer.DeviceID, cl)

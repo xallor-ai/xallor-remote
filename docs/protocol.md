@@ -25,7 +25,7 @@ JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本
 | --- | --- | --- | --- |
 | `hello_device` | device | device_id, secret, os, arch, agent_version, workspace | 证明设备身份；新设备默认关闭入站 |
 | `hello_client` | client | target_device_id, grant?, account_token? | 未认领设备验证共享码，已认领设备验证账号访问权 |
-| `hello_ok` | Relay | role | hello 成功，此后可 heartbeat / invoke |
+| `hello_ok` | Relay | role；client 另必带 client_auth | hello 成功，client 验证认证确认后可 heartbeat / invoke |
 | `heartbeat` | 双向 | — | 保活 |
 | `invoke` | client | exec_id, op, payload | op 见下；目标取自该 client 连接的 hello |
 | `invoke_nack` | Relay 或目标 | exec_id, code | 未开跑 |
@@ -39,6 +39,8 @@ JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本
 | `execution.lease` | Relay → device | request_id, code? / lease_ms? | 短期执行许可；不确认任务结束或释放额度 |
 
 client 连接上出现 `revoke` / `device.settings` → 忽略或 nack `unauthorized`，**不得执行**。
+
+每条 client 连接的 `hello_ok` 必须携带 `client_auth:{mode:"shared"|"account"}`，由 Relay 在对应认证成功后生成。请求中提供 `account_token` 时必须确认 `account`，未提供时必须确认 `shared`；有效共享码不能替代失败的账号认证。Runtime 和诊断探针必须检查 type、client role、无错误 code 及匹配的 mode，缺失、未知或不匹配的确认一律拒绝，不缓存连接、不发后续 invoke，也不报告授权正常。所有 client 使用这一个明确合同，不接受只有 role 的普通成功回执。确认不携带原始凭据，不替代后续每次调用的身份及访问权限复验。
 
 `device.settings` 的 `request_id` 非空且最多 128 字节；`inbound` 必须明确提供。`grant_hash` 为 64 位小写十六进制 SHA-256；省略或空字符串表示没有授权码，仅允许入站关闭，也会清除现有共享码。整个快照在一个存储事务中替换，不能分别应用开关与授权码；设备身份由实际连接推导。非法快照返回 `device.settings.result` + `agent_error`，不改变状态；存储结果不确定时停止旧路由并关闭连接，不发送成功确认。确认绑定请求 ID 和连接实例，不是可跨连接重放的操作凭据。
 
