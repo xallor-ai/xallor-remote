@@ -60,7 +60,7 @@ func TestArguments_should_preserveScript_withoutNativeArgumentReparsing(t *testi
 			t.Fatal(args)
 		}
 		launcher := args[len(args)-1]
-		prefix := "& ([scriptblock]::Create([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('"
+		prefix := encodingPrefix + "& ([scriptblock]::Create([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('"
 		if !strings.HasPrefix(launcher, prefix) || !strings.HasSuffix(launcher, "'))))") {
 			t.Fatal(launcher)
 		}
@@ -72,7 +72,7 @@ func TestArguments_should_preserveScript_withoutNativeArgumentReparsing(t *testi
 		for i := range words {
 			words[i] = binary.LittleEndian.Uint16(b[2*i:])
 		}
-		if got := string(utf16.Decode(words)); got != encodingPrefix+command+statusSuffix || strings.Contains(got, "LASTEXITCODE") {
+		if got := string(utf16.Decode(words)); got != command+statusSuffix || strings.Contains(got, "LASTEXITCODE") {
 			t.Fatal(got)
 		}
 	}

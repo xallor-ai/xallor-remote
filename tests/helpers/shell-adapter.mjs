@@ -38,6 +38,22 @@ try {
     let errors="";
     const failed=ok(await bounded(controller.stream("exec",{device_id:device,script:{text:powershell?"Write-Error '中文 error'":"printf '中文 error' >&2; exit 1"}},f=>{if(f.event==="stderr")errors+=f.data||"";})));
     assert.equal(failed.exit_code,1); assert(errors.includes("中文 error"),errors); assert(!errors.includes("CLIXML"),errors);
+    if (powershell) {
+      const declarationScripts = [
+        "using namespace System.Text\n[StringBuilder]::new('declaration-ready 中文🌍').ToString()",
+        "param([string]$Label = 'declaration-ready 中文🌍')\nWrite-Output $Label",
+        "using namespace System.Text\n[CmdletBinding()]\nparam([string]$Label = 'declaration-ready 中文🌍')\n[StringBuilder]::new($Label).ToString()",
+      ];
+      for (const text of declarationScripts) {
+        let stdout = "", stderr = "";
+        const declared = ok(await bounded(controller.stream("exec", {device_id:device,script:{text,shell:name}}, f => {
+          if (f.event === "stdout") stdout += f.data || "";
+          if (f.event === "stderr") stderr += f.data || "";
+        })));
+        assert.equal(declared.exit_code,0); assert.equal(stdout.trim(),"declaration-ready 中文🌍"); assert.equal(stderr,"");
+      }
+      results.push({name:name+"_leading_declarations",status:"pass"});
+    }
     results.push({name,status:"pass"});
   }
   const before=ok(await target.call("config.get"));

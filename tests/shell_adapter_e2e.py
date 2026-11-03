@@ -31,6 +31,13 @@ try:
     env = dict(cluster.env("controller"), XALLOR_TEST_CLUSTER=str(cluster.root),
                XALLOR_TEST_TARGET=target, XALLOR_TEST_SHELL=selected)
     subprocess.run(["node", str(root/"tests/helpers/shell-adapter.mjs")], env=env, check=True, timeout=180)
+    script_file = cluster.root / "declarations ' 中文.ps1"
+    script_file.write_text("using namespace System.Text\nparam([string]$Label = 'script-file-ready 中文🌍')\n[StringBuilder]::new($Label).ToString()", encoding="utf-8")
+    available = json.loads((root/"dist/verification/shell-adapter.json").read_text(encoding="utf-8"))
+    for row in available:
+        if row["name"] in ("powershell", "pwsh"):
+            executed = cluster.cli("controller", "exec", "--device", target, "--shell", row["name"], "--script-file", str(script_file))
+            assert executed.stdout.strip() == "script-file-ready 中文🌍" and not executed.stderr
     cluster.stop("target")
     cluster.cli("target", "ensure")
     assert json.loads(cluster.cli("target", "config", "get").stdout)["shell"] == selected

@@ -115,7 +115,9 @@ const encodingPrefix = "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($fa
 const statusSuffix = "\nif (-not $?) { exit 1 } else { exit 0 }"
 
 func encode(command string) string {
-	words := utf16.Encode([]rune(encodingPrefix + command + statusSuffix))
+	// Encoding setup belongs to the launcher: using/param declarations must
+	// retain their required leading position in the user's script block.
+	words := utf16.Encode([]rune(command + statusSuffix))
 	b := make([]byte, 2*len(words))
 	for i, w := range words {
 		binary.LittleEndian.PutUint16(b[2*i:], w)
@@ -129,7 +131,7 @@ func arguments(name, command string) []string {
 		// -EncodedCommand forces redirected WinPS stderr to CLIXML even with
 		// -OutputFormat Text. A fixed ASCII launcher decodes the script instead;
 		// only base64 data is inserted, never user text or path quoting.
-		launcher := "& ([scriptblock]::Create([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('" + encode(command) + "'))))"
+		launcher := encodingPrefix + "& ([scriptblock]::Create([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('" + encode(command) + "'))))"
 		return []string{"-NoLogo", "-NoProfile", "-NonInteractive", "-Command", launcher}
 	case "bash":
 		return []string{"--noprofile", "--norc", "-c", command}
