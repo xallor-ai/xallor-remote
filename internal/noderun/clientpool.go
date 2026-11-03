@@ -29,6 +29,8 @@ func (d *Daemon) runClientReader(deviceID string, cl *clientLink) {
 }
 
 func (d *Daemon) ensureClient(peer identity.Peer) (*wsConn, *clientLink, error) {
+	var initial clientKey
+	captured := false
 	for {
 		d.mu.Lock()
 		relay, token, err := d.store.Credentials()
@@ -37,6 +39,11 @@ func (d *Daemon) ensureClient(peer identity.Peer) (*wsConn, *clientLink, error) 
 			return nil, nil, err
 		}
 		key := clientKey{relay: relay, target: peer.DeviceID, grantHash: protocol.SHA256Hex(peer.Grant), credentialHash: protocol.SHA256Hex(token), generation: d.accountGeneration}
+		if captured && key != initial {
+			d.mu.Unlock()
+			return nil, nil, fmt.Errorf("身份或连接已变更，请重试")
+		}
+		initial, captured = key, true
 		var stale []*clientLink
 		for existing, cl := range d.clients {
 			if existing.target == key.target && existing != key {
