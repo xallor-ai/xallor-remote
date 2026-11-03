@@ -121,7 +121,7 @@ v0 **不**解析「这是 `npm install` 还是 `rm`」来当沙箱。命令分�
      有 TTY 或本机 UI → 等待；超时 → approval_timeout
      无 TTY 且无 UI（典型无头 Linux）→ **直接 policy_deny**
      不要挂死等一个不存在的人
-6. 取得执行授权后启动；持续授权与终态见 dataplane.md
+6. 通过上述检查后执行；exec 另须在启动前及运行中确认授权，见 dataplane.md
 ```
 
 v0 capability：
