@@ -1,6 +1,11 @@
 package relay
 
-import "github.com/xallor-ai/xallor-remote/internal/protocol"
+import (
+	"errors"
+
+	"github.com/xallor-ai/xallor-remote/internal/admission"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
+)
 
 // Caller correlation is local to a connection. Device-side routing uses a fresh
 // Relay-generated ID, so a delayed event cannot attach to a replacement request.
@@ -12,6 +17,7 @@ type requestKey struct {
 func (h *Hub) finishInvocationLocked(routeID string) {
 	if task := h.inflight[routeID]; task != nil {
 		delete(h.requests, requestKey{client: task.client, id: task.requestID})
+		task.lease.Release()
 		delete(h.inflight, routeID)
 	}
 }
@@ -53,16 +59,20 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.InboundDisabled))
 		return
 	}
-	n := 0
-	for _, inf := range h.inflight {
-		if inf.deviceID == targetID {
-			n++
+	lease, err := h.admission.Acquire(admission.Request{DeviceUID: binding.access.DeviceUID})
+	if err != nil {
+		code := protocol.RelayError
+		if errors.Is(err, admission.ErrLimit) {
+			code = protocol.QuotaExceeded
 		}
-	}
-	if n >= protocol.MaxDeviceRequests {
-		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.QuotaExceeded))
+		_ = from.Enqueue(protocol.Nack(msg.ExecID, code))
 		return
 	}
+	defer func() {
+		if lease != nil {
+			lease.Release()
+		}
+	}()
 	// Recheck at admission: disconnect can race with waiting for the routing lock.
 	if from.Context().Err() != nil {
 		return
@@ -77,7 +87,8 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 		return
 	}
 	h.requests[key] = routeID
-	h.inflight[routeID] = &inflight{requestID: msg.ExecID, deviceID: targetID, client: from, identity: binding.identity}
+	h.inflight[routeID] = &inflight{requestID: msg.ExecID, deviceID: targetID, client: from, identity: binding.identity, lease: lease}
+	lease = nil
 	// Reconstruct the invoke: credentials, forged scopes and unrelated envelope
 	// fields never reach the device. Cancel is separately bound to its connection.
 	scope := h.invocationScope(binding)

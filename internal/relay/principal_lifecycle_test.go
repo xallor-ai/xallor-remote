@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/account"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -72,7 +73,7 @@ func TestPrincipal_should_keepRoutingAndCancelLookup_whenVerificationBlocks(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := NewHub(s, s, access.NewService(s))
+	h := NewHub(s, s, access.NewService(s), admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device, anonymous := &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)

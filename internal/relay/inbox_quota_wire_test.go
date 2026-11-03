@@ -9,6 +9,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -16,7 +17,7 @@ import (
 // traffic quota, and the quota error must flush before cancelling the blocked writer.
 func TestInboxWire_should_chargeDroppedOutput_whenIdentityHandlerBlocked(t *testing.T) {
 	s := openIdentityTestStore(t)
-	h := NewHub(s, nil, nil)
+	h := NewHub(s, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	output := protocol.Message{Type: protocol.TypeStdout, ExecID: "flood", Data: strings.Repeat("x", 512)}
 	raw, err := output.Bytes()
 	if err != nil {

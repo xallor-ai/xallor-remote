@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -38,6 +39,7 @@ type inflight struct {
 	outBytes  int
 	trunc     bool
 	identity  principal.Identity
+	lease     *admission.Lease
 }
 
 // Hub is the in-memory router. Identity persistence is owned by DeviceStore.
@@ -51,12 +53,16 @@ type Hub struct {
 	store         DeviceStore
 	accounts      principal.Authenticator
 	accessService DeviceAccess
+	admission     *admission.Service
 	identities    identityGates
 }
 
 // NewHub receives independently composed services. Nil account/access services
 // disable their operations; a store's incidental methods never enable them.
-func NewHub(store DeviceStore, accounts principal.Authenticator, accessService DeviceAccess) *Hub {
+func NewHub(store DeviceStore, accounts principal.Authenticator, accessService DeviceAccess, transport *admission.Service) *Hub {
+	if transport == nil {
+		panic("relay: transport admission is required")
+	}
 	return &Hub{
 		devices:       map[string]*deviceSlot{},
 		access:        map[string]access.Binding{},
@@ -66,6 +72,7 @@ func NewHub(store DeviceStore, accounts principal.Authenticator, accessService D
 		store:         store,
 		accounts:      accounts,
 		accessService: accessService,
+		admission:     transport,
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -12,7 +13,7 @@ import (
 func TestRouting_should_isolateLateOutput_whenAnotherSubjectReusesExecID(t *testing.T) {
 	s := openIdentityTestStore(t)
 	a, b := enrollment(t, s, "alice", ""), enrollment(t, s, "bob", "")
-	h := NewHub(s, s, access.NewService(s))
+	h := NewHub(s, s, access.NewService(s), admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device, alice, bob := &recSender{}, &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)
@@ -44,7 +45,7 @@ func TestRouting_should_isolateLateOutput_whenAnotherSubjectReusesExecID(t *test
 
 func routingFixture(t *testing.T) (*Hub, *recSender, *recSender, *recSender) {
 	t.Helper()
-	h := NewHub(newMemStore(), nil, nil)
+	h := NewHub(newMemStore(), nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device, a, b := &recSender{}, &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)

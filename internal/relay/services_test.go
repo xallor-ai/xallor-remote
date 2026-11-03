@@ -7,6 +7,7 @@ import (
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
 	"github.com/xallor-ai/xallor-remote/internal/account"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -16,7 +17,7 @@ import (
 func TestHub_should_useInjectedServices_whenDeviceStoreExposesOnlyDevices(t *testing.T) {
 	s := openIdentityTestStore(t)
 	a := enrollment(t, s, "owner", "")
-	h := NewHub(struct{ DeviceStore }{s}, struct{ principal.Authenticator }{s}, struct{ DeviceAccess }{access.NewService(s)})
+	h := NewHub(struct{ DeviceStore }{s}, struct{ principal.Authenticator }{s}, struct{ DeviceAccess }{access.NewService(s)}, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device, client := &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)
@@ -54,7 +55,7 @@ func TestHub_should_denyAccountOperations_whenRequiredServiceIsAbsent(t *testing
 			if missing != "accounts" {
 				deviceAccess = nil
 			}
-			h := NewHub(s, auth, deviceAccess)
+			h := NewHub(s, auth, deviceAccess, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 			device := &recSender{}
 			if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 				t.Fatal(code)

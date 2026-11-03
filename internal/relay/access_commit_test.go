@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -30,7 +31,7 @@ func (s *uncertainAccessStore) WriteAccess(ctx context.Context, operation func(a
 func TestAccess_should_stopRouting_whenCommitOutcomeIsUncertain(t *testing.T) {
 	s := &uncertainAccessStore{SQLStore: openIdentityTestStore(t)}
 	a := enrollment(t, s.SQLStore, "alice", "")
-	h := NewHub(s, s, access.NewService(s))
+	h := NewHub(s, s, access.NewService(s), admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device, client := &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)
@@ -68,7 +69,7 @@ func (s *accessCommitStore) WriteAccess(ctx context.Context, operation func(acce
 func TestAccess_should_publishCommittedOwner_whenDeviceDisconnectsBeforeReply(t *testing.T) {
 	s := &accessCommitStore{SQLStore: openIdentityTestStore(t)}
 	a := enrollment(t, s.SQLStore, "alice", "")
-	h := NewHub(s, s, access.NewService(s))
+	h := NewHub(s, s, access.NewService(s), admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	device := &contextSender{ctx: ctx}
