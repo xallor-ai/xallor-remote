@@ -72,7 +72,7 @@ try:
     else:
         restricted = cluster.root / "only-sh"
         restricted.mkdir()
-        (restricted / "sh").symlink_to(Path(shell).resolve())
+        shutil.copy2(Path(shell).resolve(), restricted / "sh")
         restricted_path = str(restricted)
     cluster.cli("target", "config", "set", "--shell", selected)
     cluster.stop("target")
