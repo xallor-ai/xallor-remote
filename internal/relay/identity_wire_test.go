@@ -42,7 +42,7 @@ func TestIdentityWire_should_rejectHello_whenPersistenceFails(t *testing.T) {
 			if fault == "insert" {
 				statement = `CREATE TRIGGER reject_insert BEFORE INSERT ON devices BEGIN SELECT RAISE(ABORT, 'fixture insert failure'); END;`
 			}
-			if _, err := s.db.Exec(statement); err != nil {
+			if _, err := s.faults.Exec(statement); err != nil {
 				t.Fatal(err)
 			}
 			hub := NewHub(s, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
@@ -69,7 +69,7 @@ func TestIdentityWire_should_closeDevice_whenAuthorizationCannotPersist(t *testi
 	if reply.Type != protocol.TypeHelloOK {
 		t.Fatalf("hello: %+v", reply)
 	}
-	if _, err := s.db.Exec(`CREATE TRIGGER reject_update BEFORE UPDATE ON devices BEGIN SELECT RAISE(ABORT, 'fixture update failure'); END;`); err != nil {
+	if _, err := s.faults.Exec(`CREATE TRIGGER reject_update BEFORE UPDATE ON devices BEGIN SELECT RAISE(ABORT, 'fixture update failure'); END;`); err != nil {
 		t.Fatal(err)
 	}
 	if err := wsjson.Write(ctx, c, protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("new")}); err != nil {

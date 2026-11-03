@@ -1,4 +1,4 @@
-package relay
+package storage
 
 import (
 	"context"
@@ -14,7 +14,7 @@ func scanDevice(row *sql.Row) (access.Device, error) {
 	var record access.Device
 	err := row.Scan(&record.UID, &record.SecretHash, &record.Inbound, &record.GrantID, &record.GrantHash, &record.OwnershipID, &record.OwnerTenant, &record.OwnerPrincipal)
 	if errors.Is(err, sql.ErrNoRows) {
-		return access.Device{}, ErrDeviceNotFound
+		return access.Device{}, access.ErrDeviceNotFound
 	}
 	return record, err
 }
@@ -44,7 +44,7 @@ ON CONFLICT(id) DO NOTHING`, candidate.UID, id, secretHash, inbound, time.Now().
 			return access.Device{}, err
 		}
 		if record.SecretHash != secretHash {
-			return access.Device{}, ErrDeviceIdentity
+			return access.Device{}, access.ErrDeviceIdentity
 		}
 		return record, nil
 	})
@@ -53,14 +53,14 @@ ON CONFLICT(id) DO NOTHING`, candidate.UID, id, secretHash, inbound, time.Now().
 func (s *SQLStore) UpdateDevice(ctx context.Context, id string, requested access.Device) (access.Device, error) {
 	return storeTransaction(ctx, s.db, func(tx *sql.Tx) (access.Device, error) {
 		current, err := scanDevice(tx.QueryRowContext(ctx, selectDevice, id))
-		if errors.Is(err, ErrDeviceNotFound) {
-			return access.Device{}, ErrDeviceIdentity
+		if errors.Is(err, access.ErrDeviceNotFound) {
+			return access.Device{}, access.ErrDeviceIdentity
 		}
 		if err != nil {
 			return access.Device{}, err
 		}
 		if current.UID != requested.UID || current.SecretHash != requested.SecretHash {
-			return access.Device{}, ErrDeviceIdentity
+			return access.Device{}, access.ErrDeviceIdentity
 		}
 		record, err := current.WithAccess(requested.GrantHash, requested.Inbound)
 		if err != nil {
@@ -98,7 +98,7 @@ func requireDeviceMutation(result sql.Result, err error) error {
 		return fmt.Errorf("device mutation result: %w", err)
 	}
 	if n != 1 {
-		return ErrDeviceIdentity
+		return access.ErrDeviceIdentity
 	}
 	return nil
 }

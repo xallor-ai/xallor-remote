@@ -1,8 +1,9 @@
-package relay
+package storage
 
 import (
 	"context"
 	"errors"
+	"github.com/xallor-ai/xallor-remote/internal/access"
 	"testing"
 )
 
@@ -24,7 +25,7 @@ func TestSQLStoreDeviceRoundTrip(t *testing.T) {
 	if err := s.DeleteDevice(context.Background(), "dev_a", want.UID, "sec"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.LoadDevice(context.Background(), "dev_a"); !errors.Is(err, ErrDeviceNotFound) {
+	if _, err := s.LoadDevice(context.Background(), "dev_a"); !errors.Is(err, access.ErrDeviceNotFound) {
 		t.Fatalf("deleted row: %v", err)
 	}
 }

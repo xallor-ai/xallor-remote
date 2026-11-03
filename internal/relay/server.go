@@ -9,24 +9,16 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
-	"github.com/xallor-ai/xallor-remote/internal/access"
-	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
-func Serve(addr, dataDir string, log *slog.Logger, quota Quota) error {
-	store, err := OpenSQLStore(dataDir)
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-	hub := NewHub(store, store, access.NewService(store), admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+func Serve(addr string, hub *Hub, log *slog.Logger, quota Quota) error {
 	var lim *Limiter
 	if quota.Enabled {
 		lim = NewLimiter(quota)
 		log.Info("relay quota on")
 	}
-	log.Info("relay listen", "addr", addr, "data", dataDir)
+	log.Info("relay listen", "addr", addr)
 	srv := &http.Server{Addr: addr, Handler: HandlerQuota(hub, log, lim), ReadHeaderTimeout: 10 * time.Second}
 	return srv.ListenAndServe()
 }

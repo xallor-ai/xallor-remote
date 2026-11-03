@@ -1,4 +1,4 @@
-package relay
+package storage
 
 import (
 	"context"
@@ -37,7 +37,7 @@ func (t accessTransaction) DeviceByID(ctx context.Context, id string) (access.De
 
 func (t accessTransaction) DeviceByUID(ctx context.Context, uid string) (access.Device, error) {
 	device, err := scanDevice(t.tx.QueryRowContext(ctx, deviceFields+` WHERE d.uid=?`, uid))
-	if errors.Is(err, ErrDeviceNotFound) {
+	if errors.Is(err, access.ErrDeviceNotFound) {
 		return access.Device{}, access.ErrDenied
 	}
 	return device, err

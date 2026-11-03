@@ -1,9 +1,10 @@
-package relay
+package storage
 
 import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/xallor-ai/xallor-remote/internal/access"
 	"os"
 	"path/filepath"
 	"testing"
@@ -43,7 +44,7 @@ func TestSQLIdentity_should_notCommit_whenCancelledBehindWriterLock(t *testing.T
 	if _, err := other.Exec(`ROLLBACK`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.LoadDevice(context.Background(), "device"); !errors.Is(err, ErrDeviceNotFound) {
+	if _, err := s.LoadDevice(context.Background(), "device"); !errors.Is(err, access.ErrDeviceNotFound) {
 		t.Fatalf("cancelled registration committed: %v", err)
 	}
 }
@@ -76,7 +77,7 @@ func TestSQLIdentity_should_registerOnce_whenWriterContentionClears(t *testing.T
 	if registerErr != nil {
 		t.Fatal(registerErr)
 	}
-	if _, err := s.RegisterDevice(ctx, "device", "other", true); !errors.Is(err, ErrDeviceIdentity) {
+	if _, err := s.RegisterDevice(ctx, "device", "other", true); !errors.Is(err, access.ErrDeviceIdentity) {
 		t.Fatalf("identity replaced: %v", err)
 	}
 	var count int

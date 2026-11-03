@@ -1,12 +1,10 @@
-package relay
+package storage
 
 import (
 	"context"
 	"errors"
+	"github.com/xallor-ai/xallor-remote/internal/access"
 	"testing"
-
-	"github.com/xallor-ai/xallor-remote/internal/admission"
-	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 // UID and grant binding survive reconnects and idempotent synchronization, while
@@ -39,10 +37,10 @@ func TestSQLAccess_should_rejectStaleIdentity_whenDisplayNumberReused(t *testing
 	if err != nil || replacement.UID == first.UID {
 		t.Fatalf("recreated identity reused UID: %+v %v", replacement, err)
 	}
-	if _, err := s.UpdateDevice(ctx, "number", first); !errors.Is(err, ErrDeviceIdentity) {
+	if _, err := s.UpdateDevice(ctx, "number", first); !errors.Is(err, access.ErrDeviceIdentity) {
 		t.Fatalf("stale update accepted: %v", err)
 	}
-	if err := s.DeleteDevice(ctx, "number", first.UID, first.SecretHash); !errors.Is(err, ErrDeviceIdentity) {
+	if err := s.DeleteDevice(ctx, "number", first.UID, first.SecretHash); !errors.Is(err, access.ErrDeviceIdentity) {
 		t.Fatalf("stale deletion accepted: %v", err)
 	}
 	got, err := s.LoadDevice(ctx, "number")
@@ -71,32 +69,5 @@ func TestSQLAccess_should_rollbackDeviceChange_whenGrantWriteFails(t *testing.T)
 	after, err := s.LoadDevice(ctx, "number")
 	if err != nil || after != before {
 		t.Fatalf("partial transaction escaped: %+v %v", after, err)
-	}
-}
-
-// A freshly authenticated binding must not route to an older live incarnation
-// when storage contains a different device with the same display number.
-func TestAccess_should_requireMatchingDeviceUID_whenRoutingSnapshotIsOld(t *testing.T) {
-	s := openIdentityTestStore(t)
-	h := NewHub(s, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
-	device := &recSender{}
-	if code := h.RegisterDevice("number", "secret", true, device); code != "" {
-		t.Fatal(code)
-	}
-	old, _ := s.LoadDevice(context.Background(), "number")
-	if err := s.DeleteDevice(context.Background(), "number", old.UID, old.SecretHash); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.RegisterDevice(context.Background(), "number", "secret", true); err != nil {
-		t.Fatal(err)
-	}
-	setTestAccess(t, s, "number", protocol.SHA256Hex("new-grant"), true)
-	client := &recSender{}
-	if code := h.RegisterClient("number", "new-grant", "", client); code != "" {
-		t.Fatal(code)
-	}
-	h.Handle(client, protocol.RoleClient, "number", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "new-identity"})
-	if client.last().Code != protocol.DeviceOffline || h.requests[requestKey{client: client, id: "new-identity"}] != "" {
-		t.Fatal("new identity routed into old incarnation")
 	}
 }

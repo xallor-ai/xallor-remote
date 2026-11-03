@@ -14,8 +14,8 @@ import (
 // Real TLS sockets must observe fail-closed routing before the uncertain result,
 // then recover through persisted ownership rather than the former bearer cache.
 func TestAccessWire_should_reloadCommittedOwnership_whenCommitResultLost(t *testing.T) {
-	s := &uncertainAccessStore{SQLStore: openIdentityTestStore(t)}
-	a := enrollment(t, s.SQLStore, "alice", "")
+	s := &uncertainAccessStore{relaySQLFixture: openIdentityTestStore(t)}
+	a := enrollment(t, s.relaySQLFixture, "alice", "")
 	if _, err := s.RegisterDevice(context.Background(), "device", protocol.SHA256Hex("secret"), true); err != nil {
 		t.Fatal(err)
 	}

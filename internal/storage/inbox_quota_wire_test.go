@@ -1,7 +1,8 @@
-package relay
+package storage
 
 import (
 	"context"
+	"github.com/xallor-ai/xallor-remote/internal/relay"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -17,14 +18,14 @@ import (
 // traffic quota, and the quota error must flush before cancelling the blocked writer.
 func TestInboxWire_should_chargeDroppedOutput_whenIdentityHandlerBlocked(t *testing.T) {
 	s := openIdentityTestStore(t)
-	h := NewHub(s, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := relay.NewHub(s, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	output := protocol.Message{Type: protocol.TypeStdout, ExecID: "flood", Data: strings.Repeat("x", 512)}
 	raw, err := output.Bytes()
 	if err != nil {
 		t.Fatal(err)
 	}
-	lim := NewLimiter(Quota{Enabled: true, BytesPerMinute: int64(len(raw) * 70)})
-	srv := httptest.NewTLSServer(HandlerQuota(h, nil, lim))
+	lim := relay.NewLimiter(relay.Quota{Enabled: true, BytesPerMinute: int64(len(raw) * 70)})
+	srv := httptest.NewTLSServer(relay.HandlerQuota(h, nil, lim))
 	defer srv.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

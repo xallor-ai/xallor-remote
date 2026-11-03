@@ -1,4 +1,4 @@
-package relay
+package storage
 
 import (
 	"context"

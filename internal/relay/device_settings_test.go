@@ -70,7 +70,7 @@ func TestDeviceSettings_should_rollbackBothFields_whenGrantWriteFails(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`CREATE TRIGGER reject_grant BEFORE INSERT ON device_grants BEGIN SELECT RAISE(ABORT, 'fixture grant failure'); END;`); err != nil {
+	if _, err := s.faults.Exec(`CREATE TRIGGER reject_grant BEFORE INSERT ON device_grants BEGIN SELECT RAISE(ABORT, 'fixture grant failure'); END;`); err != nil {
 		t.Fatal(err)
 	}
 	h.Handle(d, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "change", GrantHash: protocol.SHA256Hex("grant"), Inbound: protocol.Bool(true)})

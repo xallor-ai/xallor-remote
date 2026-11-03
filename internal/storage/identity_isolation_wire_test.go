@@ -1,8 +1,10 @@
-package relay
+package storage
 
 import (
 	"context"
 	"errors"
+	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/relay"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -21,8 +23,8 @@ func TestIdentityWire_should_routeAndCancelDisconnectedHello_whenSQLPoolBlocked(
 		t.Fatal(err)
 	}
 	setTestAccess(t, s, "healthy", protocol.SHA256Hex("grant"), true)
-	h := NewHub(s, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
-	srv := httptest.NewTLSServer(Handler(h, nil))
+	h := relay.NewHub(s, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	srv := httptest.NewTLSServer(relay.Handler(h, nil))
 	defer srv.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -53,6 +55,7 @@ func TestIdentityWire_should_routeAndCancelDisconnectedHello_whenSQLPoolBlocked(
 	}
 	defer held.Close()
 	before := s.db.Stats().WaitCount
+	waited := s.db.Stats().WaitDuration
 	pending := dial(protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "pending", Secret: "other"}, false)
 	waitCondition(t, func() bool { return s.db.Stats().WaitCount > before })
 	fast, stop := context.WithTimeout(ctx, 2*time.Second)
@@ -71,18 +74,14 @@ func TestIdentityWire_should_routeAndCancelDisconnectedHello_whenSQLPoolBlocked(
 		t.Fatalf("result blocked: %+v %v", message, err)
 	}
 	_ = pending.CloseNow()
-	waitCondition(t, func() bool {
-		h.identities.mu.Lock()
-		defer h.identities.mu.Unlock()
-		return h.identities.entries["pending"] == nil
-	})
+	waitCondition(t, func() bool { return s.db.Stats().WaitDuration > waited })
 	if h.DeviceOnline("pending") {
 		t.Fatal("disconnected hello became routable")
 	}
 	if err := held.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.LoadDevice(ctx, "pending"); !errors.Is(err, ErrDeviceNotFound) {
+	if _, err := s.LoadDevice(ctx, "pending"); !errors.Is(err, access.ErrDeviceNotFound) {
 		t.Fatalf("disconnected hello persisted identity: %v", err)
 	}
 }

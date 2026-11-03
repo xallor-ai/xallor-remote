@@ -30,7 +30,7 @@ func (m *memStore) LoadDevice(ctx context.Context, id string) (access.Device, er
 	defer m.mu.Unlock()
 	r, ok := m.rows[id]
 	if !ok {
-		return access.Device{}, ErrDeviceNotFound
+		return access.Device{}, access.ErrDeviceNotFound
 	}
 	return r, nil
 }
@@ -43,7 +43,7 @@ func (m *memStore) RegisterDevice(ctx context.Context, id, secretHash string, in
 	defer m.mu.Unlock()
 	if r, ok := m.rows[id]; ok {
 		if r.SecretHash != secretHash {
-			return access.Device{}, ErrDeviceIdentity
+			return access.Device{}, access.ErrDeviceIdentity
 		}
 		return r, nil
 	}
@@ -63,7 +63,7 @@ func (m *memStore) UpdateDevice(ctx context.Context, id string, r access.Device)
 	defer m.mu.Unlock()
 	old, ok := m.rows[id]
 	if !ok || old.SecretHash != r.SecretHash || old.UID != r.UID {
-		return access.Device{}, ErrDeviceIdentity
+		return access.Device{}, access.ErrDeviceIdentity
 	}
 	r, err := old.WithAccess(r.GrantHash, r.Inbound)
 	if err != nil {
@@ -80,7 +80,7 @@ func (m *memStore) DeleteDevice(ctx context.Context, id, uid, secretHash string)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if old, ok := m.rows[id]; !ok || old.SecretHash != secretHash || old.UID != uid {
-		return ErrDeviceIdentity
+		return access.ErrDeviceIdentity
 	}
 	delete(m.rows, id)
 	return nil

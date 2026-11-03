@@ -116,13 +116,13 @@ func (h *Hub) invalidateOwnershipLocked(id string) {
 
 func accessErrorCode(err error) string {
 	switch {
-	case errors.Is(err, access.ErrDenied), errors.Is(err, principal.ErrUnauthorized), errors.Is(err, ErrDeviceIdentity):
+	case errors.Is(err, access.ErrDenied), errors.Is(err, principal.ErrUnauthorized), errors.Is(err, access.ErrDeviceIdentity):
 		return protocol.Unauthorized
 	case errors.Is(err, access.ErrInvalid):
 		return protocol.AgentError
 	case errors.Is(err, access.ErrLimit):
 		return protocol.QuotaExceeded
-	case errors.Is(err, ErrDeviceNotFound):
+	case errors.Is(err, access.ErrDeviceNotFound):
 		return protocol.UnknownDevice
 	default:
 		return protocol.RelayError

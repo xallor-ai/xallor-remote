@@ -40,7 +40,7 @@ func TestHub_should_useInjectedServices_whenDeviceStoreExposesOnlyDevices(t *tes
 	}
 }
 
-// SQLStore has incidental account/access methods, but omitted services must
+// relaySQLFixture has incidental account/access methods, but omitted services must
 // never enable account hello, device management or an owned-device downgrade.
 func TestHub_should_denyAccountOperations_whenRequiredServiceIsAbsent(t *testing.T) {
 	for _, missing := range []string{"accounts", "access", "both"} {

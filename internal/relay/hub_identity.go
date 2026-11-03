@@ -126,9 +126,9 @@ func (h *Hub) RegisterClient(targetID, grant, accountToken string, conn Sender) 
 
 func identityErrorCode(err error) string {
 	switch {
-	case errors.Is(err, ErrDeviceNotFound):
+	case errors.Is(err, access.ErrDeviceNotFound):
 		return protocol.UnknownDevice
-	case errors.Is(err, ErrDeviceIdentity):
+	case errors.Is(err, access.ErrDeviceIdentity):
 		return protocol.Unauthorized
 	default:
 		return protocol.RelayError

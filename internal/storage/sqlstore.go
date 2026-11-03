@@ -1,4 +1,7 @@
-package relay
+// Package storage implements the Relay's SQLite persistence adapters. Domain
+// contracts and errors belong to access, account and principal; routing and
+// application composition are outside this package.
+package storage
 
 import (
 	"database/sql"
