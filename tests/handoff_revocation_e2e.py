@@ -10,6 +10,7 @@ import uuid
 
 from fixtures.process_ref import ProcessRef
 from fixtures.runtime_cluster import Cluster
+from fixtures.file_stamp import stamp
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,6 +55,8 @@ def main():
         cluster.cli("target", "handoff", "configure", "--executable", str(fake))
         revision = git("rev-parse", "HEAD")
 
+        receipts = {}
+
         def receipt(request_id):
             for path in (profile / "handoff/requests").glob("*.json"):
                 value = json.loads(path.read_text(encoding="utf-8"))["receipt"]
@@ -71,7 +74,15 @@ def main():
             path = cluster.root / "request.json"
             path.write_text(json.dumps(request), encoding="utf-8")
             cluster.cli("controller", "handoff", "submit", "--device", target, "--request", str(path))
-            wait(lambda: receipt(name) and receipt(name)["state"] == "running" and (profile / "fixture-descendant-pid").exists(), "worker did not start")
+            def running():
+                value = json.loads(cluster.cli("controller", "handoff", "get", "--device", target, "--request-id", name).stdout)
+                return value["state"] == "running" and (profile / "fixture-descendant-pid").exists()
+            wait(running, "worker did not start")
+            # The IPC response observes the committed running receipt. The long
+            # fixture now waits; read once and remember metadata before revoking.
+            for file in (profile / "handoff/requests").glob("*.json"):
+                if json.loads(file.read_text(encoding="utf-8"))["receipt"]["request_id"] == name:
+                    receipts[name] = (file, stamp(file))
             current = [ProcessRef(int((profile / file).read_text())) for file in ("fixture-agent-pid", "fixture-descendant-pid")]
             references.extend(current)
             assert all(ref.alive() for ref in current) and len(jobs()) == 1
@@ -79,8 +90,13 @@ def main():
 
         def stopped(name, current):
             wait(lambda: all(not ref.alive() for ref in current), "revoked process tree is still alive")
-            wait(lambda: receipt(name)["state"] == "unknown" and not jobs(), "revoked job did not release after cleanup")
-            assert receipt(name)["code"] == "device_authorization_changed", receipt(name)
+            file, before = receipts[name]
+            # Poll metadata only: opening a receipt/jobs file while the Runtime
+            # replaces it can make Windows reject the writer's rename.
+            wait(lambda: stamp(file) != before, "terminal receipt was not persisted")
+            value = receipt(name)
+            assert value["state"] == "unknown" and value["code"] == "device_authorization_changed", value
+            assert not jobs(), "revoked job did not release after cleanup"
 
         current = start("grant-change")
         cluster.cli("target", "inbound", "on")

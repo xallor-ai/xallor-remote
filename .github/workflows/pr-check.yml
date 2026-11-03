@@ -243,6 +243,7 @@ jobs:
           go-version-file: go.mod
       - run: go build -o dist/handoff-runtime.exe ./cmd/xallor-remote
       - run: python -m unittest discover -s tests -p test_cursor_session.py
+      - run: python -m unittest discover -s tests -p test_file_stamp.py
       - run: python tests/handoff_e2e.py --binary dist/handoff-runtime.exe
       - run: python tests/handoff_scope_e2e.py --binary dist/handoff-runtime.exe
       - run: python tests/handoff_revocation_e2e.py --binary dist/handoff-runtime.exe
