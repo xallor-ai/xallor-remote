@@ -61,7 +61,7 @@ func retainedBytes(m protocol.Message) int {
 	}
 	return 512 + len(m.Type) + len(m.Role) + len(m.DeviceID) + len(m.TargetID) + len(m.Secret) + len(m.Grant) + len(m.AccountToken) + len(m.RequestID) +
 		len(m.GrantHash) + len(m.OS) + len(m.Arch) + len(m.AgentVersion) + len(m.Workspace) + len(m.ExecID) +
-		len(m.Op) + len(m.Payload) + len(m.Code) + len(m.Data) + len(m.Status) + scopeBytes
+		len(m.Op) + len(m.Payload) + len(m.Code) + len(m.Data) + len(m.Status) + len(m.Delegation) + scopeBytes
 }
 
 func (b *outbox) Enqueue(m protocol.Message) error {

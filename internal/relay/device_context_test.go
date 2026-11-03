@@ -16,7 +16,7 @@ import (
 func TestDeviceContext_should_publishCurrentBinding_onSettingsAndOwnershipChanges(t *testing.T) {
 	s := openIdentityTestStore(t)
 	a, b := enrollment(t, s, "alice", ""), enrollment(t, s, "bob", "")
-	h := NewHub(s, s, access.NewService(s), admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(s, s, access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device := &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)

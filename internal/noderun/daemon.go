@@ -39,6 +39,7 @@ type Daemon struct {
 	ensuring          map[clientKey]chan struct{}
 	accountGeneration uint64
 	accessRequests    deviceReplies
+	executionReplies  deviceReplies
 	settingsReplies   deviceReplies
 	settings          settingsGate
 	local             map[string]context.CancelFunc
@@ -69,7 +70,7 @@ func New(store *identity.Store, log *slog.Logger) *Daemon {
 		activity:  activity.Open(store.Dir),
 		jobs:      job.New(store.Dir),
 	}
-	d.handoffs = handoff.New(ctx, store.Dir, d.jobs)
+	d.handoffs = handoff.New(ctx, store.Dir, d.jobs, d.renewExecution)
 	return d
 }
 
@@ -225,6 +226,8 @@ func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
 		}
 	}
 	switch msg.Type {
+	case protocol.TypeExecutionLease:
+		d.executionReplies.deliver(link, msg)
 	case protocol.TypeDeviceSettingsResult:
 		d.settingsReplies.deliver(link, msg)
 	case protocol.TypeAccessResult:

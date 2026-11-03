@@ -37,6 +37,7 @@ v0 用 **SQLite** 单文件（`--data` 目录内），驱动见 [stack.md](stack
 | `devices` | uid（内部身份主键）, id（唯一显示号码）, secret_hash, inbound, last_seen |
 | `device_grants` | id（授权实例主键）, device_uid（设备外键）, token_hash；当前共享授权的唯一事实来源 |
 | `authority` | 本 Relay 数据域的稳定签发方 ID |
+| `execution_signing_key` | 本数据域后台执行委托的随机 32 字节 HMAC 密钥；只由 Relay 启动组装加载，不对客户端输出 |
 | `principals` / `tenants` / `memberships` | 用户或服务主体、个人或组织空间、成员角色/启用状态/版本 |
 | `principal_credentials` | 凭据 ID、token_hash、成员关系、到期时间、撤销状态；不存明文 token |
 | `device_ownership` | 设备 UID、唯一归属实例 ID、所属租户、所有者主体 |
@@ -52,7 +53,7 @@ v0 用 **SQLite** 单文件（`--data` 目录内），驱动见 [stack.md](stack
 
 SQLite 的每条连接配置短 busy wait（50ms），避免长时间原生忙等遮蔽取消。仅对 `SQLITE_BUSY` 且事务明确回滚成功的身份操作进行有取消信号的重试；提交错误和其它错误不重试。这是数据库事务处理，不会重放远程命令。
 
-SQLite 使用 `user_version` 管理结构版本。当前版本 5 加入设备归属和主体级分享，保留已有设备、主体、成员和凭据身份；更早结构升级时保留显示号码、凭据哈希、入站与 last_seen。运行时只使用最终结构，不存在双写或双读分支。结构变更在事务中完成，不支持高版本数据库由低版本程序打开。部署升级前必须备份 Relay 数据目录；生产部署仍需明确授权。删除表不承诺安全擦除 SQLite 空闲页或旧备份中的既有数据。
+SQLite 使用 `user_version` 管理结构版本。当前版本 6 加入后台委托签名密钥，升级与重开保留已有签发方、设备、归属、主体、成员和凭据身份；更早结构升级时保留显示号码、凭据哈希、入站与 last_seen。运行时只使用最终结构，不存在双写或双读分支。结构变更在事务中完成，不支持高版本数据库由低版本程序打开。部署升级前必须备份 Relay 数据目录；生产部署仍需明确授权。删除表不承诺安全擦除 SQLite 空闲页或旧备份中的既有数据。
 
 设备删除级联删除归属及分享；归属转移事务替换归属实例并级联删除旧分享。主体/成员不随设备删除。持久权限位固定为 info=1、read=2、write=4、exec=8、processes=16、handoff.submit=32、handoff.get=64，不因显示顺序变化重新赋义。存储事务只重试已经确认回滚的 busy 失败，不自动重试提交结果不确定的变更。
 

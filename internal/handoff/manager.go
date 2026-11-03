@@ -8,8 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xallor-ai/xallor-remote/internal/delegation"
 	"github.com/xallor-ai/xallor-remote/internal/invocation"
 	"github.com/xallor-ai/xallor-remote/internal/job"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 type Manager struct {
@@ -24,11 +26,12 @@ type Manager struct {
 	generation uint64
 	err        error
 	jobs       *job.Ledger
+	renew      delegation.Renew
 }
 
-func New(parent context.Context, dir string, jobs *job.Ledger) *Manager {
+func New(parent context.Context, dir string, jobs *job.Ledger, renew delegation.Renew) *Manager {
 	ctx, cancel := context.WithCancel(parent)
-	m := &Manager{ctx: ctx, cancel: cancel, dir: dir, jobs: jobs, items: map[string]record{}, active: map[string]worker{}}
+	m := &Manager{ctx: ctx, cancel: cancel, dir: dir, jobs: jobs, renew: renew, items: map[string]record{}, active: map[string]worker{}}
 	m.err = m.load()
 	return m
 }
@@ -59,7 +62,7 @@ func (m *Manager) Get(scope invocation.Scope, id string) (Receipt, error) {
 }
 func (m *Manager) Submit(ticket Ticket, r Request, root string) (Receipt, error) {
 	scope := ticket.scope
-	if !scope.Valid() {
+	if !scope.Valid() || ticket.proof == "" || len(ticket.proof) > protocol.MaxDelegationBytes {
 		return Receipt{}, fmt.Errorf("交接身份无效。")
 	}
 	if err := r.validate(); err != nil {
@@ -111,7 +114,7 @@ func (m *Manager) Submit(ticket Ticket, r Request, root string) (Receipt, error)
 		defer cancel(nil)
 		defer m.wg.Done()
 		defer func() { m.mu.Lock(); delete(m.active, key); m.mu.Unlock() }()
-		result := m.run(ctx, id, r, root, owner)
+		result := m.run(ctx, id, r, root, owner, ticket.proof)
 		if owner.Finish() != nil {
 			result.state, result.code = "unknown", "job_release_unconfirmed"
 		}

@@ -34,6 +34,8 @@ JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本
 | `revoke` | **仅 device** | device_id | 注销本机身份；踢线 |
 | `access.request` | **仅 device** | request_id, account_token, payload | 管理本连接证明的设备归属与分享 |
 | `access.result` | Relay → device | request_id, code? / payload? | 管理结果；成功为归属快照，失败为错误码 |
+| `execution.renew` | **仅 device** | request_id, delegation | 复验本设备收到的后台执行委托 |
+| `execution.lease` | Relay → device | request_id, code? / lease_ms? | 短期执行许可；不确认任务结束或释放额度 |
 
 client 连接上出现 `revoke` / `device.settings` → 忽略或 nack `unauthorized`，**不得执行**。
 
@@ -41,7 +43,11 @@ client 连接上出现 `revoke` / `device.settings` → 忽略或 nack `unauthor
 
 每条 device 连接在 `hello_ok` 后必须先提交完整设置；Relay 排入成功确认后才允许新调用路由到该连接，不能依赖上次连接的入站值提前执行。Runtime 在初始确认后才报告本机连接在线。重新连接同步本机保存的期望快照，不重新签发授权码。`revoke` 的注销语义独立于设置确认。
 
-成功的 `device.settings.result` 和 `device.access.result` 必须携带 `device_context:{authority,device_uid,ownership_id?,grant_id?,inbound}`，由 Relay 的已提交设备状态生成，仅返回 device 连接。authority/device_uid 为 32 位小写十六进制；ownership_id/grant_id 非空时格式相同且互斥，未签发共享授权的设备允许两者均空。Runtime 在初始快照有效前不上线，后续先应用快照再交付管理回执或处理后续 invoke。handoff 的 scope 须匹配其 authority、设备实例和归属/共享授权实例，且 inbound 为 true。快照不是主体权限凭据，不替代每次调用的账号与操作授权。
+成功的 `device.settings.result` 和 `access.result` 必须携带 `device_context:{authority,device_uid,ownership_id?,grant_id?,inbound}`，由 Relay 的已提交设备状态生成，仅返回 device 连接。authority/device_uid 为 32 位小写十六进制；ownership_id/grant_id 非空时格式相同且互斥，未签发共享授权的设备允许两者均空。Runtime 在初始快照有效前不上线，后续先应用快照再交付管理回执或处理后续 invoke。handoff 的 scope 须匹配其 authority、设备实例和归属/共享授权实例，且 inbound 为 true。快照不是主体权限凭据，不替代每次调用的账号与操作授权。
+
+Relay 下发 `handoff.submit` 时附带 `delegation`，客户端自报值被丢弃。它是固定用于后台交接复验的 HMAC-SHA256 委托，绑定签发方、设备显示号码/内部实例、原始共享/归属实例、账号凭据与成员版本及分享快照，不包含明文凭据、命令或 prompt。目标不得仅凭委托启动：须通过当前已认证 device 连接完成首次 `execution.renew`。委托至多 4096 字节，有效期 11 分钟且不续发，原始凭据或分享先到期时仍提前失效。续期请求 ID 非空且至多 128 字节，回复匹配请求与连接实例，其他设备和 client 角色不能使用它。
+
+`execution.lease` 成功含正数 `lease_ms`，至多 20000 毫秒，且不超过委托、原始凭据或分享的剩余有效期；拒绝返回 `unauthorized`，存储/链路故障为 `relay_error` 或没有回复。Runtime 在发出请求前记下单调时间，从该时点计算到期，网络耗时不得加到许可期限上；正常每 5 秒复验，单次最多 5 秒且不能越过现有许可到期。明确拒绝取消作业；故障不续期，到期取消，不能迟到恢复。凭据续签/重新分享不替换已运行任务绑定的原始委托。委托仅驻内存，不进入回执；无首次许可为 `unknown/execution_authorization_unconfirmed`，运行中丢失许可为 `unknown/execution_authorization_lost`，回收或落盘未确认仍优先使用原有诊断。这是执行授权期限，不是商业资源租约、计费回执或 OS 沙箱。
 
 `account_token` 用于 client hello 和 device 的授权管理请求，非空时必须通过签发方校验，失败返回 `unauthorized`，存储故障返回 `relay_error`，不能降级为无账号访问。未认领设备必须出示目标 grant；已认领设备忽略 grant，只允许所有者或明确获授权且有效的成员。主体、空间、成员版本和到期时间由 Relay 从凭据推导，不接受客户端自报身份。凭据不转发给其他设备，也不写入调用记录。账号凭据有效期由本机运维设置为 1 分钟至 90 天，默认 24 小时。
 

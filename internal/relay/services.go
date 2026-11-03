@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
 	"github.com/xallor-ai/xallor-remote/internal/principal"
@@ -17,3 +18,8 @@ type DeviceAccess interface {
 }
 
 var _ DeviceAccess = (*access.Service)(nil)
+
+type ExecutionAuthority interface {
+	Issue(string, access.Binding, principal.Identity, access.Authorization) (string, error)
+	Renew(context.Context, string, string, string) (time.Duration, error)
+}

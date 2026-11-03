@@ -23,7 +23,7 @@ func (d *Daemon) handleHandoffInvoke(link *wsConn, msg protocol.Message) bool {
 	}
 	var ticket handoff.Ticket
 	if msg.Op == protocol.OpHandoffSubmit && msg.Scope != nil && d.handoffs != nil {
-		ticket = d.handoffs.Capture(*msg.Scope)
+		ticket = d.handoffs.Capture(*msg.Scope, msg.Delegation)
 	}
 	go d.runHandoff(link, msg, ticket)
 	return true

@@ -86,13 +86,25 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.RelayError))
 		return
 	}
+	var proof string
+	if msg.Op == protocol.OpHandoffSubmit {
+		if h.executionAuthority == nil {
+			_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.Unauthorized))
+			return
+		}
+		proof, err = h.executionAuthority.Issue(targetID, binding.access, binding.identity, binding.authorization)
+		if err != nil {
+			_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.RelayError))
+			return
+		}
+	}
 	h.requests[key] = routeID
 	h.inflight[routeID] = &inflight{requestID: msg.ExecID, deviceID: targetID, client: from, identity: binding.identity, lease: lease}
 	lease = nil
 	// Reconstruct the invoke: credentials, forged scopes and unrelated envelope
 	// fields never reach the device. Cancel is separately bound to its connection.
 	scope := h.invocationScope(binding)
-	msg = protocol.Message{Type: protocol.TypeInvoke, ExecID: routeID, Op: msg.Op, Payload: msg.Payload, Scope: &scope}
+	msg = protocol.Message{Type: protocol.TypeInvoke, ExecID: routeID, Op: msg.Op, Payload: msg.Payload, Scope: &scope, Delegation: proof}
 	if err := dev.conn.Enqueue(msg); err != nil {
 		h.failDeviceLocked(targetID, protocol.DeviceOffline)
 		dev.conn.Close()

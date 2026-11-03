@@ -17,6 +17,8 @@ type Message struct {
 	Grant         string                    `json:"grant,omitempty"`
 	AccountToken  string                    `json:"account_token,omitempty"`
 	RequestID     string                    `json:"request_id,omitempty"`
+	Delegation    string                    `json:"delegation,omitempty"`
+	LeaseMS       int64                     `json:"lease_ms,omitempty"`
 	Scope         *invocation.Scope         `json:"scope,omitempty"`
 	DeviceContext *invocation.DeviceContext `json:"device_context,omitempty"`
 	GrantHash     string                    `json:"grant_hash,omitempty"`

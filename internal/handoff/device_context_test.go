@@ -71,16 +71,16 @@ func TestManager_should_denyBeforeDeviceSynchronization(t *testing.T) {
 	dir := t.TempDir()
 	ledger := job.New(dir)
 	defer ledger.Close()
-	m := New(context.Background(), dir, ledger)
+	m := New(context.Background(), dir, ledger, testRenew)
 	defer m.Close()
 	r := testRequest(t.TempDir())
-	if _, err := m.Submit(m.Capture(testScope), r, r.Workspace); err == nil || len(m.items) != 0 {
+	if _, err := m.Submit(m.Capture(testScope, "fixture"), r, r.Workspace); err == nil || len(m.items) != 0 {
 		t.Fatal("caller initialized device context")
 	}
 	if err := m.SyncDevice(testDeviceContext()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Submit(m.Capture(testScope), r, r.Workspace); err != nil {
+	if _, err := m.Submit(m.Capture(testScope, "fixture"), r, r.Workspace); err != nil {
 		t.Fatal("synchronized context denied", err)
 	}
 }

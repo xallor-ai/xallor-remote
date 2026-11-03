@@ -13,7 +13,7 @@ import (
 func TestRouting_should_isolateLateOutput_whenAnotherSubjectReusesExecID(t *testing.T) {
 	s := openIdentityTestStore(t)
 	a, b := enrollment(t, s, "alice", ""), enrollment(t, s, "bob", "")
-	h := NewHub(s, s, access.NewService(s), admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(s, s, access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device, alice, bob := &recSender{}, &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)
@@ -45,7 +45,7 @@ func TestRouting_should_isolateLateOutput_whenAnotherSubjectReusesExecID(t *test
 
 func routingFixture(t *testing.T) (*Hub, *recSender, *recSender, *recSender) {
 	t.Helper()
-	h := NewHub(newMemStore(), nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device, a, b := &recSender{}, &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)

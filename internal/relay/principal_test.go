@@ -19,7 +19,7 @@ func TestPrincipal_should_rejectNewInvoke_whenCredentialRevoked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := NewHub(s, s, access.NewService(s), admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(s, s, access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	dev, client := &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, dev); code != "" {
 		t.Fatal(code)
