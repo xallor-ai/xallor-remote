@@ -26,8 +26,7 @@ func (h *Hub) handleAccess(from Sender, msg protocol.Message) {
 		reply(protocol.AgentError, nil)
 		return
 	}
-	auth, authOK := h.store.(principal.Authenticator)
-	if h.accessService == nil || !authOK {
+	if h.accessService == nil || h.accounts == nil {
 		reply(protocol.Unauthorized, nil)
 		return
 	}
@@ -59,7 +58,7 @@ func (h *Hub) handleAccess(from Sender, msg protocol.Message) {
 	}
 	expected := device.record
 	h.mu.Unlock()
-	actor, err := auth.Authenticate(ctx, msg.AccountToken)
+	actor, err := h.accounts.Authenticate(ctx, msg.AccountToken)
 	if err != nil {
 		reply(accessErrorCode(err), nil)
 		return

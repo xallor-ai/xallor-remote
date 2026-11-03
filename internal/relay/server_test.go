@@ -13,7 +13,7 @@ import (
 )
 
 func TestHelloDeviceStaysOpenAfterHandlerReturns(t *testing.T) {
-	hub := NewHub(newMemStore())
+	hub := NewHub(newMemStore(), nil, nil)
 	srv := httptest.NewServer(Handler(hub, nil))
 	defer srv.Close()
 

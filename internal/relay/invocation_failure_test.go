@@ -24,7 +24,7 @@ func (s *routingFaultSender) Enqueue(m protocol.Message) error {
 func TestRouting_should_retireAllMappings_whenEitherQueueRejects(t *testing.T) {
 	for _, side := range []string{"device", "client"} {
 		t.Run(side, func(t *testing.T) {
-			h := NewHub(newMemStore())
+			h := NewHub(newMemStore(), nil, nil)
 			d, c := &routingFaultSender{}, &routingFaultSender{}
 			if code := h.RegisterDevice("device", "secret", true, d); code != "" {
 				t.Fatal(code)
@@ -68,7 +68,7 @@ func TestRouting_should_retireAllMappings_whenEitherQueueRejects(t *testing.T) {
 func TestRouting_should_discardFormerOwnerEvents_whenOwnershipTransfers(t *testing.T) {
 	s := openIdentityTestStore(t)
 	a, b := enrollment(t, s, "alice", ""), enrollment(t, s, "bob", "")
-	h := NewHub(s)
+	h := NewHub(s, s, access.NewService(s))
 	d, old, newOwner := &recSender{}, &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, d); code != "" {
 		t.Fatal(code)

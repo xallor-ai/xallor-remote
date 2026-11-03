@@ -62,7 +62,7 @@ func TestInbox_should_rejectControlOverload_and_countMetadata(t *testing.T) {
 
 // A source connection cannot mark another device's execution as truncated.
 func TestInbox_should_requireOwningDevice_whenMarkingDroppedOutput(t *testing.T) {
-	h := NewHub(nil)
+	h := NewHub(nil, nil, nil)
 	a, b, client := &recSender{}, &recSender{}, &recSender{}
 	h.RegisterDevice("dev_a", "a", true, a)
 	h.RegisterDevice("dev_b", "b", true, b)

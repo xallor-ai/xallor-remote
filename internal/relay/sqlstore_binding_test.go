@@ -77,7 +77,7 @@ func TestSQLAccess_should_rollbackDeviceChange_whenGrantWriteFails(t *testing.T)
 // when storage contains a different device with the same display number.
 func TestAccess_should_requireMatchingDeviceUID_whenRoutingSnapshotIsOld(t *testing.T) {
 	s := openIdentityTestStore(t)
-	h := NewHub(s)
+	h := NewHub(s, nil, nil)
 	device := &recSender{}
 	if code := h.RegisterDevice("number", "secret", true, device); code != "" {
 		t.Fatal(code)

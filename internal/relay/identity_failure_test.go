@@ -23,7 +23,7 @@ func openIdentityTestStore(t *testing.T) *SQLStore {
 // A storage outage must reject registration and client authentication, not act as an absent identity.
 func TestIdentity_should_rejectRegistrationAndClient_whenStoreFails(t *testing.T) {
 	s := openIdentityTestStore(t)
-	h := NewHub(s)
+	h := NewHub(s, nil, nil)
 	dev := &recSender{}
 	if code := h.RegisterDevice("existing", "original", true, dev); code != "" {
 		t.Fatal(code)
@@ -51,7 +51,7 @@ func TestIdentity_should_preserveAuthorization_whenMutationFails(t *testing.T) {
 	for _, kind := range []string{protocol.TypeDeviceSettings, protocol.TypeRevoke} {
 		t.Run(kind, func(t *testing.T) {
 			s := openIdentityTestStore(t)
-			h := NewHub(s)
+			h := NewHub(s, nil, nil)
 			dev := &recSender{}
 			if code := h.RegisterDevice("device", "secret", true, dev); code != "" {
 				t.Fatal(code)

@@ -22,7 +22,7 @@ func (c *observedContext) Err() error {
 
 // Cancellation after the entry check but before routing admission must not start a queued invoke.
 func TestIdentity_should_recheckConnection_whenInvokeWaitsForRoutingLock(t *testing.T) {
-	h := NewHub(nil)
+	h := NewHub(nil, nil, nil)
 	device := &recSender{}
 	client := &contextSender{ctx: context.Background()}
 	if code := h.RegisterDevice("dev_a", "secret", true, device); code != "" {

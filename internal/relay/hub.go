@@ -49,23 +49,24 @@ type Hub struct {
 	inflight      map[string]*inflight
 	requests      map[requestKey]string
 	store         DeviceStore
-	accessService *access.Service
+	accounts      principal.Authenticator
+	accessService DeviceAccess
 	identities    identityGates
 }
 
-func NewHub(store DeviceStore) *Hub {
-	h := &Hub{
-		devices:  map[string]*deviceSlot{},
-		access:   map[string]access.Binding{},
-		clients:  map[Sender]clientSlot{},
-		inflight: map[string]*inflight{},
-		requests: map[requestKey]string{},
-		store:    store,
+// NewHub receives independently composed services. Nil account/access services
+// disable their operations; a store's incidental methods never enable them.
+func NewHub(store DeviceStore, accounts principal.Authenticator, accessService DeviceAccess) *Hub {
+	return &Hub{
+		devices:       map[string]*deviceSlot{},
+		access:        map[string]access.Binding{},
+		clients:       map[Sender]clientSlot{},
+		inflight:      map[string]*inflight{},
+		requests:      map[requestKey]string{},
+		store:         store,
+		accounts:      accounts,
+		accessService: accessService,
 	}
-	if storage, ok := store.(access.Store); ok {
-		h.accessService = access.NewService(storage)
-	}
-	return h
 }
 
 func (h *Hub) Handle(from Sender, role string, targetID string, msg protocol.Message) {

@@ -12,7 +12,7 @@ import (
 func TestRouting_should_isolateLateOutput_whenAnotherSubjectReusesExecID(t *testing.T) {
 	s := openIdentityTestStore(t)
 	a, b := enrollment(t, s, "alice", ""), enrollment(t, s, "bob", "")
-	h := NewHub(s)
+	h := NewHub(s, s, access.NewService(s))
 	device, alice, bob := &recSender{}, &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)
@@ -44,7 +44,7 @@ func TestRouting_should_isolateLateOutput_whenAnotherSubjectReusesExecID(t *test
 
 func routingFixture(t *testing.T) (*Hub, *recSender, *recSender, *recSender) {
 	t.Helper()
-	h := NewHub(newMemStore())
+	h := NewHub(newMemStore(), nil, nil)
 	device, a, b := &recSender{}, &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)

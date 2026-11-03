@@ -10,7 +10,7 @@ import (
 // 目的：GET /health 必须是普通 HTTP，不能走 WebSocket Accept。
 // 前置：空 Hub。预期：200 且 ok=true。
 func TestShould_returnOK_whenHealthRequested(t *testing.T) {
-	srv := httptest.NewServer(Handler(NewHub(newMemStore()), nil))
+	srv := httptest.NewServer(Handler(NewHub(newMemStore(), nil, nil), nil))
 	defer srv.Close()
 
 	res, err := http.Get(srv.URL + "/health")

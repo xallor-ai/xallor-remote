@@ -9,6 +9,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
+	"github.com/xallor-ai/xallor-remote/internal/access"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -18,7 +19,7 @@ func Serve(addr, dataDir string, log *slog.Logger, quota Quota) error {
 		return err
 	}
 	defer store.Close()
-	hub := NewHub(store)
+	hub := NewHub(store, store, access.NewService(store))
 	var lim *Limiter
 	if quota.Enabled {
 		lim = NewLimiter(quota)

@@ -29,7 +29,7 @@ func (s *blockedIdentityStore) LoadDevice(ctx context.Context, id string) (acces
 // An unrelated routing lookup must complete while another identity lookup is blocked.
 func TestIdentity_should_isolateRouting_whenStoreLookupBlocks(t *testing.T) {
 	s := &blockedIdentityStore{DeviceStore: newMemStore(), entered: make(chan struct{}), release: make(chan struct{})}
-	h := NewHub(s)
+	h := NewHub(s, nil, nil)
 	if code := h.RegisterDevice("healthy", "secret", true, &recSender{}); code != "" {
 		t.Fatal(code)
 	}

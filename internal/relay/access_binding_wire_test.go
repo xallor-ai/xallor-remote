@@ -17,7 +17,7 @@ func TestAccessWire_should_rejectOldBinding_whenCredentialReused(t *testing.T) {
 	for _, scenario := range []string{"rotate", "recreate"} {
 		t.Run(scenario, func(t *testing.T) {
 			s := openIdentityTestStore(t)
-			h := NewHub(s)
+			h := NewHub(s, nil, nil)
 			srv := httptest.NewTLSServer(Handler(h, nil))
 			defer srv.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

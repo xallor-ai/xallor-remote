@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"encoding/json"
+	"github.com/xallor-ai/xallor-remote/internal/access"
 	"testing"
 
 	"github.com/coder/websocket/wsjson"
@@ -18,7 +19,7 @@ func TestAccessWire_should_reloadCommittedOwnership_whenCommitResultLost(t *test
 		t.Fatal(err)
 	}
 	setTestAccess(t, s, "device", protocol.SHA256Hex("bearer"), true)
-	h := NewHub(s)
+	h := NewHub(s, s, access.NewService(s))
 	dctx, device, hello := identityWire(t, h, protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "device", Secret: "secret"})
 	if hello.Type != protocol.TypeHelloOK {
 		t.Fatal(hello.Code)

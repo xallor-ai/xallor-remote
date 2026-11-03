@@ -20,7 +20,7 @@ func TestIdentityWire_should_routeAndCancelDisconnectedHello_whenSQLPoolBlocked(
 		t.Fatal(err)
 	}
 	setTestAccess(t, s, "healthy", protocol.SHA256Hex("grant"), true)
-	h := NewHub(s)
+	h := NewHub(s, nil, nil)
 	srv := httptest.NewTLSServer(Handler(h, nil))
 	defer srv.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

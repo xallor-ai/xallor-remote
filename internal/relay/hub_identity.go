@@ -73,11 +73,10 @@ func (h *Hub) RegisterClient(targetID, grant, accountToken string, conn Sender) 
 	defer release()
 	var identity principal.Identity
 	if accountToken != "" {
-		auth, ok := h.store.(principal.Authenticator)
-		if !ok {
+		if h.accounts == nil {
 			return protocol.Unauthorized
 		}
-		identity, err = auth.Authenticate(ctx, accountToken)
+		identity, err = h.accounts.Authenticate(ctx, accountToken)
 		if err != nil {
 			return principalErrorCode(err)
 		}

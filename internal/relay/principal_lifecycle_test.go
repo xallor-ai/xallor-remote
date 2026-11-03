@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"errors"
+	"github.com/xallor-ai/xallor-remote/internal/access"
 	"testing"
 	"time"
 
@@ -71,7 +72,7 @@ func TestPrincipal_should_keepRoutingAndCancelLookup_whenVerificationBlocks(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := NewHub(s)
+	h := NewHub(s, s, access.NewService(s))
 	device, anonymous := &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)

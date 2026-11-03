@@ -16,7 +16,7 @@ import (
 // traffic quota, and the quota error must flush before cancelling the blocked writer.
 func TestInboxWire_should_chargeDroppedOutput_whenIdentityHandlerBlocked(t *testing.T) {
 	s := openIdentityTestStore(t)
-	h := NewHub(s)
+	h := NewHub(s, nil, nil)
 	output := protocol.Message{Type: protocol.TypeStdout, ExecID: "flood", Data: strings.Repeat("x", 512)}
 	raw, err := output.Bytes()
 	if err != nil {

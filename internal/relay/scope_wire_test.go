@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"github.com/xallor-ai/xallor-remote/internal/access"
 	"strings"
 	"testing"
 
@@ -20,7 +21,7 @@ func TestScopeWire_should_replaceForgedIdentity_whenRoutingInvocation(t *testing
 		t.Fatal(err)
 	}
 	device = setTestAccess(t, s, "device", protocol.SHA256Hex("bearer"), true)
-	h := NewHub(s)
+	h := NewHub(s, s, access.NewService(s))
 	dctx, target, hello := identityWire(t, h, protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "device", Secret: "secret"})
 	if hello.Type != protocol.TypeHelloOK {
 		t.Fatal(hello)
