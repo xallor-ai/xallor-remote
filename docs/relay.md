@@ -6,9 +6,9 @@ SSOT：职责边界、落盘、官方预算、运维。**连接 / inflight / 流
 
 ## 1. 做 / 不做
 
-**Relay 是有鉴权的实时消息路由器**：device 连接登记、grant 校验、按 `exec_id` 转发、生命周期错误。不是执行服务器。
+**Relay 是有鉴权的实时消息路由器**：device 连接登记、连接认证与设备访问授权、按 `exec_id` 转发、生命周期错误。不是执行服务器。
 
-做：登记 device / client 连接；校验 grant；按 `exec_id` 转发；online/offline 与踢线；**接受 device 侧的** rotate/revoke/inbound；官方实例连接/注册预算。
+做：登记 device / client 连接；调用身份与设备授权服务；按 `exec_id` 转发；online/offline 与踢线；**接受 device 侧的** rotate/revoke/inbound；官方实例连接/注册预算。
 
 不做：解释命令、读目标盘、**持久化** stdout/文件正文/命令及其片段、策略判定、P2P、远程桌面、账号登录（v0）、为 invoke 另开 HTTP API。
 

@@ -91,4 +91,4 @@ Agent 或人
 
 ## 6. 部署
 
-默认连官方 hosted Relay。自托管：`xallor-remote relay`。公网 WSS；localhost 可用 WS。目标机连的是 Relay，不是 Cursor 所在机器。v0 hosted 无账号。见 [decisions.md](decisions.md)。
+默认连官方 hosted Relay。自托管：`xallor-remote relay`。公网 WSS；localhost 可用 WS。目标机连的是 Relay，不是 Cursor 所在机器。身份授权基础与后续托管登录/订阅的边界见 [platform.md](platform.md) 和 [decisions.md](decisions.md)。
