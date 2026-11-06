@@ -53,11 +53,17 @@ func HandlerQuota(hub *Hub, log *slog.Logger, lim *Limiter) http.Handler {
 
 func serveConn(parent context.Context, hub *Hub, c *websocket.Conn, log *slog.Logger, lim *Limiter, ip string) {
 	ctx, cancel := context.WithCancel(parent)
-	defer cancel()
 	s := newOutbox(ctx, func(writeCtx context.Context, m protocol.Message) error {
 		return wsjson.Write(writeCtx, c, m)
 	}, func() { _ = c.CloseNow() })
-	defer s.shutdown()
+	var incoming *inbox
+	defer func() {
+		s.shutdown()
+		cancel()
+		if incoming != nil {
+			<-incoming.done
+		}
+	}()
 
 	c.SetReadLimit(int64(protocol.MaxWSMessageBytes))
 	var hello protocol.Message
@@ -67,6 +73,17 @@ func serveConn(parent context.Context, hub *Hub, c *websocket.Conn, log *slog.Lo
 	if err != nil {
 		return
 	}
+	incoming = newInbox(ctx, c, cancel, func(m protocol.Message) bool {
+		// Charge received traffic before queue admission, including discarded output.
+		if b, e := m.Bytes(); e == nil {
+			if code := lim.AddBytes(ip, len(b)); code != "" {
+				_ = s.Enqueue(protocol.Message{Type: protocol.TypeError, ExecID: m.ExecID, Code: code})
+				s.shutdown()
+				return false
+			}
+		}
+		return true
+	}, func(m protocol.Message) { hub.noteDroppedOutput(s, m) })
 
 	var role, bindID string
 	switch hello.Type {
@@ -104,20 +121,9 @@ func serveConn(parent context.Context, hub *Hub, c *websocket.Conn, log *slog.Lo
 
 	defer hub.Drop(s, role, bindID)
 
-	for {
-		ctxRead, cancelRead = context.WithTimeout(ctx, protocol.ConnStaleAfter)
-		var msg protocol.Message
-		err := wsjson.Read(ctxRead, c, &msg)
-		cancelRead()
-		if err != nil {
-			return
-		}
-		if b, e := msg.Bytes(); e == nil {
-			if code := lim.AddBytes(ip, len(b)); code != "" {
-				_ = s.Enqueue(protocol.Message{Type: protocol.TypeError, ExecID: msg.ExecID, Code: code})
-				return
-			}
-		}
+	for frame := range incoming.frames {
+		incoming.bytes.Add(-frame.bytes)
+		msg := frame.message
 		hub.Handle(s, role, bindID, msg)
 	}
 }

@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"context"
 	"sync"
 
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
@@ -9,6 +10,7 @@ import (
 // Sender admits messages to a bounded queue. Neither method may perform I/O or
 // wait for a peer; the connection owner drains the queue independently.
 type Sender interface {
+	Context() context.Context
 	Enqueue(protocol.Message) error
 	Close()
 }
@@ -34,12 +36,13 @@ type inflight struct {
 
 // Hub is the in-memory router. Identity persistence is owned by DeviceStore.
 type Hub struct {
-	mu       sync.Mutex
-	devices  map[string]*deviceSlot
-	grants   map[string]string // device_id -> grant hash
-	clients  map[Sender]clientSlot
-	inflight map[string]*inflight
-	store    DeviceStore
+	mu         sync.Mutex
+	devices    map[string]*deviceSlot
+	grants     map[string]string // device_id -> grant hash
+	clients    map[Sender]clientSlot
+	inflight   map[string]*inflight
+	store      DeviceStore
+	identities identityGates
 }
 
 func NewHub(store DeviceStore) *Hub {
@@ -53,6 +56,9 @@ func NewHub(store DeviceStore) *Hub {
 }
 
 func (h *Hub) Handle(from Sender, role string, targetID string, msg protocol.Message) {
+	if role == protocol.RoleClient && from.Context().Err() != nil {
+		return
+	}
 	switch msg.Type {
 	case protocol.TypeHeartbeat:
 		return
@@ -116,16 +122,9 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 	}
 	dev := h.devices[targetID]
 	if dev == nil || !dev.online || dev.conn == nil {
-		code := protocol.UnknownDevice
-		if h.store != nil {
-			if _, err := h.store.LoadDevice(targetID); err == nil {
-				code = protocol.DeviceOffline
-			} else {
-				code = identityErrorCode(err)
-			}
-		} else if dev != nil {
-			code = protocol.DeviceOffline
-		}
+		// A live authenticated binding already proves that the identity exists.
+		// Revocation removes its grant before routing can reach this branch.
+		code := protocol.DeviceOffline
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, code))
 		h.record(targetID, msg.Op, msg.ExecID, "nack", code, msg.Payload)
 		return
@@ -144,6 +143,10 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 	if n >= protocol.MaxConcurrentExec {
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.QuotaExceeded))
 		h.record(targetID, msg.Op, msg.ExecID, "nack", protocol.QuotaExceeded, msg.Payload)
+		return
+	}
+	// Recheck at admission: disconnect can race with waiting for the routing lock.
+	if from.Context().Err() != nil {
 		return
 	}
 	h.inflight[msg.ExecID] = &inflight{deviceID: targetID, client: from}

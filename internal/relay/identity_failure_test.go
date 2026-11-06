@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"testing"
@@ -30,7 +31,7 @@ func TestIdentity_should_rejectRegistrationAndClient_whenStoreFails(t *testing.T
 	if _, err := s.db.Exec(`DROP TABLE devices`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.LoadDevice("existing"); err == nil || errors.Is(err, ErrDeviceNotFound) {
+	if _, err := s.LoadDevice(context.Background(), "existing"); err == nil || errors.Is(err, ErrDeviceNotFound) {
 		t.Fatalf("storage failure masked: %v", err)
 	}
 	if code := h.RegisterDevice("existing", "other", true, &recSender{}); code != protocol.RelayError {
@@ -55,7 +56,7 @@ func TestIdentity_should_preserveAuthorization_whenMutationFails(t *testing.T) {
 				t.Fatal(code)
 			}
 			h.Handle(dev, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: "original"})
-			before, err := s.LoadDevice("device")
+			before, err := s.LoadDevice(context.Background(), "device")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -70,7 +71,10 @@ func TestIdentity_should_preserveAuthorization_whenMutationFails(t *testing.T) {
 			if dev.last().Code != protocol.RelayError {
 				t.Fatalf("mutation failure not reported: %+v", dev.last())
 			}
-			after, err := s.LoadDevice("device")
+			if h.DeviceOnline("device") {
+				t.Fatal("failed authorization remained routable during close")
+			}
+			after, err := s.LoadDevice(context.Background(), "device")
 			if err != nil || before != after || h.grants["device"] != before.GrantHash || !h.devices["device"].inbound {
 				t.Fatalf("failed mutation changed identity: %+v %v", after, err)
 			}
@@ -99,7 +103,7 @@ func TestIdentity_should_preserveFirstClaim_whenRegistrationsRace(t *testing.T) 
 		go func(s *SQLStore, secret string) {
 			defer wg.Done()
 			<-start
-			_, err := s.RegisterDevice("same-device", secret, true)
+			_, err := s.RegisterDevice(context.Background(), "same-device", secret, true)
 			results <- err
 		}(store, []string{"one", "two"}[i])
 	}
@@ -119,7 +123,7 @@ func TestIdentity_should_preserveFirstClaim_whenRegistrationsRace(t *testing.T) 
 	if success != 1 || rejected != 1 {
 		t.Fatalf("success=%d rejected=%d", success, rejected)
 	}
-	r, err := a.LoadDevice("same-device")
+	r, err := a.LoadDevice(context.Background(), "same-device")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,13 +131,13 @@ func TestIdentity_should_preserveFirstClaim_whenRegistrationsRace(t *testing.T) 
 	if r.SecretHash == other {
 		other = "two"
 	}
-	if err := b.UpdateDevice("same-device", DeviceRecord{SecretHash: other}); !errors.Is(err, ErrDeviceIdentity) {
+	if err := b.UpdateDevice(context.Background(), "same-device", DeviceRecord{SecretHash: other}); !errors.Is(err, ErrDeviceIdentity) {
 		t.Fatal(err)
 	}
-	if err := b.DeleteDevice("same-device", other); !errors.Is(err, ErrDeviceIdentity) {
+	if err := b.DeleteDevice(context.Background(), "same-device", other); !errors.Is(err, ErrDeviceIdentity) {
 		t.Fatal(err)
 	}
-	if got, err := a.LoadDevice("same-device"); err != nil || got != r {
+	if got, err := a.LoadDevice(context.Background(), "same-device"); err != nil || got != r {
 		t.Fatalf("identity overwritten: %+v %v", got, err)
 	}
 }
@@ -144,16 +148,16 @@ func TestIdentity_should_returnErrors_whenStoreClosed(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.LoadDevice("device"); err == nil || errors.Is(err, ErrDeviceNotFound) {
+	if _, err := s.LoadDevice(context.Background(), "device"); err == nil || errors.Is(err, ErrDeviceNotFound) {
 		t.Fatal(err)
 	}
-	if _, err := s.RegisterDevice("device", "secret", true); err == nil {
+	if _, err := s.RegisterDevice(context.Background(), "device", "secret", true); err == nil {
 		t.Fatal("register succeeded")
 	}
-	if err := s.UpdateDevice("device", DeviceRecord{}); err == nil {
+	if err := s.UpdateDevice(context.Background(), "device", DeviceRecord{}); err == nil {
 		t.Fatal("update succeeded")
 	}
-	if err := s.DeleteDevice("device", "secret"); err == nil {
+	if err := s.DeleteDevice(context.Background(), "device", "secret"); err == nil {
 		t.Fatal("delete succeeded")
 	}
 	s.AppendAudit(AuditEntry{})

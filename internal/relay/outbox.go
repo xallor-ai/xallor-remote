@@ -47,6 +47,8 @@ func outputMessage(m protocol.Message) bool {
 	return m.Type == protocol.TypeStdout || m.Type == protocol.TypeStderr
 }
 
+func (b *outbox) Context() context.Context { return b.ctx }
+
 // retainedBytes includes all variable-size envelope fields, including fields that
 // are not meaningful for this message type but can still arrive from a peer.
 func retainedBytes(m protocol.Message) int {

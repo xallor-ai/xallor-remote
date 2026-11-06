@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"testing"
@@ -17,7 +18,10 @@ func newMemStore() *memStore {
 	return &memStore{rows: map[string]DeviceRecord{}}
 }
 
-func (m *memStore) LoadDevice(id string) (DeviceRecord, error) {
+func (m *memStore) LoadDevice(ctx context.Context, id string) (DeviceRecord, error) {
+	if err := ctx.Err(); err != nil {
+		return DeviceRecord{}, err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r, ok := m.rows[id]
@@ -27,7 +31,10 @@ func (m *memStore) LoadDevice(id string) (DeviceRecord, error) {
 	return r, nil
 }
 
-func (m *memStore) RegisterDevice(id, secretHash string, inbound bool) (DeviceRecord, error) {
+func (m *memStore) RegisterDevice(ctx context.Context, id, secretHash string, inbound bool) (DeviceRecord, error) {
+	if err := ctx.Err(); err != nil {
+		return DeviceRecord{}, err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if r, ok := m.rows[id]; ok {
@@ -41,7 +48,10 @@ func (m *memStore) RegisterDevice(id, secretHash string, inbound bool) (DeviceRe
 	return r, nil
 }
 
-func (m *memStore) UpdateDevice(id string, r DeviceRecord) error {
+func (m *memStore) UpdateDevice(ctx context.Context, id string, r DeviceRecord) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if old, ok := m.rows[id]; !ok || old.SecretHash != r.SecretHash {
@@ -51,7 +61,10 @@ func (m *memStore) UpdateDevice(id string, r DeviceRecord) error {
 	return nil
 }
 
-func (m *memStore) DeleteDevice(id, secretHash string) error {
+func (m *memStore) DeleteDevice(ctx context.Context, id, secretHash string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if old, ok := m.rows[id]; !ok || old.SecretHash != secretHash {
@@ -74,6 +87,8 @@ func (r *recSender) Enqueue(m protocol.Message) error {
 }
 
 func (r *recSender) Close() {}
+
+func (r *recSender) Context() context.Context { return context.Background() }
 
 func (r *recSender) last() protocol.Message {
 	r.mu.Lock()
