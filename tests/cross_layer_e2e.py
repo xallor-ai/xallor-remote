@@ -1,9 +1,11 @@
 """Run real IPC/Relay executions, then verify reconnection and actual MCP calls."""
 import argparse
+from contextlib import closing
 import json
 import os
 from pathlib import Path
 import subprocess
+import sqlite3
 import sys
 import time
 from fixtures.runtime_cluster import Cluster
@@ -51,6 +53,13 @@ def main():
         subprocess.run(["node", str(ROOT / "tests/helpers/mcp-release-smoke.mjs")],
                        env=dict(cluster.env("controller"), XALLOR_TEST_CLI=str(cluster.binary), XALLOR_TEST_TARGET=target), check=True, timeout=60)
         results.append({"name":"actual_mcp_executes_and_recovers_after_runtime_restart", "status":"pass"})
+        # Inspect the real Relay database after exec, files, cancellation, and restart.
+        # Operation payloads and output must not acquire a persistence collection.
+        with closing(sqlite3.connect((cluster.root / "relay/relay.db").as_uri() + "?mode=ro", uri=True)) as db:
+            assert db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall() == [("devices",)]
+            assert db.execute("PRAGMA user_version").fetchone() == (2,)
+            assert db.execute("SELECT inbound FROM devices WHERE id=?", (target,)).fetchone() == (1,)
+        results.append({"name":"relay_persists_identity_without_operation_payloads", "status":"pass"})
     finally:
         cluster.close()
         output = ROOT / "dist/verification/cross-layer.json"

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 )
 
 func TestSQLStoreDeviceRoundTrip(t *testing.T) {
@@ -30,36 +29,5 @@ func TestSQLStoreDeviceRoundTrip(t *testing.T) {
 	}
 	if _, err := s.LoadDevice(context.Background(), "dev_a"); !errors.Is(err, ErrDeviceNotFound) {
 		t.Fatalf("deleted row: %v", err)
-	}
-}
-
-func TestSQLStoreAuditOmitsFullCommand(t *testing.T) {
-	s, err := OpenSQLStore(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	s.AppendAudit(AuditEntry{
-		DeviceID: "dev_a", Op: "exec", ExecID: "ex_1",
-		Decision: "accept", ArgsPreview: "whoami", ArgsDigest: "abc",
-	})
-	time.Sleep(20 * time.Millisecond)
-	var n int
-	if err := s.db.QueryRow(`SELECT count(*) FROM audit WHERE args_preview=?`, "whoami").Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	if n != 1 {
-		t.Fatalf("audit rows %d", n)
-	}
-}
-
-func TestAuditPreviewWriteIsPathOnly(t *testing.T) {
-	payload := []byte(`{"path":"a.txt","content":"SECRET-BODY-SHOULD-NOT-PREVIEW"}`)
-	prev, dig := auditPreview("write", payload)
-	if prev != "a.txt" {
-		t.Fatalf("preview %q", prev)
-	}
-	if dig == "" || prev == "SECRET-BODY-SHOULD-NOT-PREVIEW" {
-		t.Fatal("digest/preview leaked body")
 	}
 }

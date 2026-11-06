@@ -38,7 +38,7 @@ INSERT INTO grants VALUES ('device','stale-mirror',0);`)
 		if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 			t.Fatal(err)
 		}
-		if count != 0 || version != 1 {
+		if count != 0 || version != 2 {
 			t.Fatalf("schema count=%d version=%d", count, version)
 		}
 		if err := s.Close(); err != nil {
@@ -76,7 +76,7 @@ func TestSQLStore_should_rollbackSchema_whenInitializationFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if _, err := db.Exec(`CREATE TABLE grants (device_id TEXT); INSERT INTO grants VALUES ('fixture'); CREATE TABLE audit (unexpected_column TEXT);`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE grants (device_id TEXT); INSERT INTO grants VALUES ('fixture'); CREATE VIEW audit AS SELECT 'fixture';`); err != nil {
 		t.Fatal(err)
 	}
 	if s, err := OpenSQLStore(dir); err == nil {
