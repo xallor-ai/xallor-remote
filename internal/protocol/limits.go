@@ -6,6 +6,9 @@ const (
 	MaxFrameBytes       = 64 * 1024
 	MaxExecOutputBytes  = 4 * 1024 * 1024
 	MaxRelayBufferBytes = 1 * 1024 * 1024
+	MaxRelayQueueFrames = 256
+	MaxRelayQueueBytes  = MaxConcurrentExec*MaxRelayBufferBytes + MaxWSMessageBytes
+	RelayWriteTimeout   = 5 * time.Second
 	MaxWriteBytes       = 1 * 1024 * 1024
 	MaxReadBytes        = 1 * 1024 * 1024
 	MaxReadOffsetBytes  = 1 * 1024 * 1024 * 1024

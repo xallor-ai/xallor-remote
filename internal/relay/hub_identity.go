@@ -23,6 +23,11 @@ func (h *Hub) RegisterDevice(id, secret string, inbound bool, conn Sender) strin
 		}
 		record.Inbound = old.inbound
 	}
+	// Queue the greeting before publishing a routable connection, so an invoke
+	// racing with registration can never be the peer's first received frame.
+	if err := conn.Enqueue(protocol.Message{Type: protocol.TypeHelloOK, Role: protocol.RoleDevice}); err != nil {
+		return protocol.RelayError
+	}
 	if old := h.devices[id]; old != nil && old.conn != nil && old.conn != conn {
 		h.failDeviceLocked(id, protocol.DeviceOffline)
 		old.conn.Close()
@@ -49,6 +54,9 @@ func (h *Hub) RegisterClient(targetID, grant string, conn Sender) string {
 	}
 	if gh == "" || gh != want {
 		return protocol.Unauthorized
+	}
+	if err := conn.Enqueue(protocol.Message{Type: protocol.TypeHelloOK, Role: protocol.RoleClient}); err != nil {
+		return protocol.RelayError
 	}
 	h.clients[conn] = clientSlot{targetID: targetID, grantHex: want}
 	return ""
@@ -99,7 +107,7 @@ func (h *Hub) handleAuth(from Sender, msg protocol.Message) {
 	}
 	if err != nil {
 		// Persisted and live authorization must not diverge on a failed write.
-		_ = from.Send(protocol.Message{Type: protocol.TypeError, Code: identityErrorCode(err)})
+		_ = from.Enqueue(protocol.Message{Type: protocol.TypeError, Code: identityErrorCode(err)})
 		from.Close()
 		return
 	}

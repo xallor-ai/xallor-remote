@@ -66,7 +66,7 @@ type recSender struct {
 	got []protocol.Message
 }
 
-func (r *recSender) Send(m protocol.Message) error {
+func (r *recSender) Enqueue(m protocol.Message) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.got = append(r.got, m)

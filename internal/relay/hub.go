@@ -6,9 +6,10 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
-// Sender is a live WSS connection. Writes must be serialized by the impl.
+// Sender admits messages to a bounded queue. Neither method may perform I/O or
+// wait for a peer; the connection owner drains the queue independently.
 type Sender interface {
-	Send(protocol.Message) error
+	Enqueue(protocol.Message) error
 	Close()
 }
 
@@ -57,13 +58,13 @@ func (h *Hub) Handle(from Sender, role string, targetID string, msg protocol.Mes
 		return
 	case protocol.TypeGrantRotate, protocol.TypeRevoke, protocol.TypeInboundSet:
 		if role != protocol.RoleDevice {
-			_ = from.Send(protocol.Message{Type: protocol.TypeError, Code: protocol.Unauthorized})
+			_ = from.Enqueue(protocol.Message{Type: protocol.TypeError, Code: protocol.Unauthorized})
 			return
 		}
 		h.handleAuth(from, msg)
 	case protocol.TypeInvoke:
 		if role != protocol.RoleClient {
-			_ = from.Send(protocol.Nack(msg.ExecID, protocol.Unauthorized))
+			_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.Unauthorized))
 			return
 		}
 		h.handleInvoke(from, targetID, msg)
@@ -100,16 +101,16 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if binding, ok := h.clients[from]; !ok || binding.targetID != targetID || binding.grantHex != h.grants[targetID] {
-		_ = from.Send(protocol.Nack(msg.ExecID, protocol.Unauthorized))
+		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.Unauthorized))
 		return
 	}
 	if msg.ExecID == "" {
-		_ = from.Send(protocol.Nack(msg.ExecID, protocol.AgentError))
+		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.AgentError))
 		h.record(targetID, msg.Op, msg.ExecID, "nack", protocol.AgentError, msg.Payload)
 		return
 	}
 	if _, dup := h.inflight[msg.ExecID]; dup {
-		_ = from.Send(protocol.Nack(msg.ExecID, protocol.AgentError))
+		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.AgentError))
 		h.record(targetID, msg.Op, msg.ExecID, "nack", protocol.AgentError, msg.Payload)
 		return
 	}
@@ -125,12 +126,12 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 		} else if dev != nil {
 			code = protocol.DeviceOffline
 		}
-		_ = from.Send(protocol.Nack(msg.ExecID, code))
+		_ = from.Enqueue(protocol.Nack(msg.ExecID, code))
 		h.record(targetID, msg.Op, msg.ExecID, "nack", code, msg.Payload)
 		return
 	}
 	if !dev.inbound {
-		_ = from.Send(protocol.Nack(msg.ExecID, protocol.InboundDisabled))
+		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.InboundDisabled))
 		h.record(targetID, msg.Op, msg.ExecID, "nack", protocol.InboundDisabled, msg.Payload)
 		return
 	}
@@ -141,13 +142,18 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 		}
 	}
 	if n >= protocol.MaxConcurrentExec {
-		_ = from.Send(protocol.Nack(msg.ExecID, protocol.QuotaExceeded))
+		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.QuotaExceeded))
 		h.record(targetID, msg.Op, msg.ExecID, "nack", protocol.QuotaExceeded, msg.Payload)
 		return
 	}
 	h.inflight[msg.ExecID] = &inflight{deviceID: targetID, client: from}
 	h.record(targetID, msg.Op, msg.ExecID, "accept", "", msg.Payload)
-	_ = dev.conn.Send(msg)
+	if err := dev.conn.Enqueue(msg); err != nil {
+		h.failDeviceLocked(targetID, protocol.DeviceOffline)
+		dev.conn.Close()
+		dev.online = false
+		dev.conn = nil
+	}
 }
 
 func (h *Hub) handleCancel(from Sender, execID string) {
@@ -155,11 +161,11 @@ func (h *Hub) handleCancel(from Sender, execID string) {
 	defer h.mu.Unlock()
 	inf := h.inflight[execID]
 	if inf == nil || inf.client != from {
-		_ = from.Send(protocol.Err(execID, protocol.UnknownExec))
+		_ = from.Enqueue(protocol.Err(execID, protocol.UnknownExec))
 		return
 	}
 	if d := h.devices[inf.deviceID]; d != nil && d.conn != nil {
-		_ = d.conn.Send(protocol.Message{Type: protocol.TypeInvoke, ExecID: execID, Op: protocol.OpCancel})
+		_ = d.conn.Enqueue(protocol.Message{Type: protocol.TypeInvoke, ExecID: execID, Op: protocol.OpCancel})
 	}
 }
 
@@ -174,17 +180,31 @@ func (h *Hub) forwardToClient(from Sender, msg protocol.Message) {
 		return
 	}
 	if msg.Type == protocol.TypeStdout || msg.Type == protocol.TypeStderr {
-		inf.outBytes += len(msg.Data)
-		if inf.outBytes > protocol.MaxExecOutputBytes || len(msg.Data) > protocol.MaxFrameBytes {
+		if len(msg.Data) > protocol.MaxFrameBytes {
 			inf.trunc = true
 			return
 		}
+		if len(msg.Data) > protocol.MaxExecOutputBytes-inf.outBytes {
+			inf.outBytes = protocol.MaxExecOutputBytes
+			inf.trunc = true
+			return
+		}
+		inf.outBytes += len(msg.Data)
 	}
 	out := msg
 	if inf.trunc && msg.Type == protocol.TypeExit {
 		out.Truncated = protocol.Bool(true)
 	}
-	_ = inf.client.Send(out)
+	if err := inf.client.Enqueue(out); err != nil {
+		if err == errOutputDropped {
+			inf.trunc = true
+			return
+		}
+		h.cancelClientLocked(inf.client)
+		delete(h.clients, inf.client)
+		inf.client.Close()
+		return
+	}
 	if msg.Type == protocol.TypeExit || msg.Type == protocol.TypeError || msg.Type == protocol.TypeInvokeNack {
 		decision := "exit"
 		code := msg.Status
@@ -200,7 +220,7 @@ func (h *Hub) forwardToClient(from Sender, msg protocol.Message) {
 func (h *Hub) failDeviceLocked(id, code string) {
 	for execID, inf := range h.inflight {
 		if inf.deviceID == id {
-			_ = inf.client.Send(protocol.Err(execID, code))
+			_ = inf.client.Enqueue(protocol.Err(execID, code))
 			delete(h.inflight, execID)
 		}
 	}
@@ -212,7 +232,7 @@ func (h *Hub) cancelClientLocked(from Sender) {
 			continue
 		}
 		if d := h.devices[inf.deviceID]; d != nil && d.conn != nil {
-			_ = d.conn.Send(protocol.Message{Type: protocol.TypeInvoke, ExecID: execID, Op: protocol.OpCancel})
+			_ = d.conn.Enqueue(protocol.Message{Type: protocol.TypeInvoke, ExecID: execID, Op: protocol.OpCancel})
 		}
 		delete(h.inflight, execID)
 	}
