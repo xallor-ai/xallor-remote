@@ -226,8 +226,10 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 	}
 	if p.Head > 0 {
 		lineBudget := p.Limit
-		if lineBudget <= 0 || lineBudget > protocol.MaxReadBytes {
+		if lineBudget == 0 {
 			lineBudget = protocol.DefaultReadBytes
+		} else if lineBudget > protocol.MaxReadBytes {
+			lineBudget = protocol.MaxReadBytes
 		}
 		reader := bufio.NewReader(f)
 		var out []byte
@@ -245,34 +247,44 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 	}
 	if p.Tail > 0 {
 		reader := bufio.NewReader(io.LimitReader(f, int64(size)))
-		lines := make([][]byte, 0, minInt(p.Tail, 64))
+		lines := make([]tailLine, 0, minInt(p.Tail, 64))
 		lineBudget := p.Limit
-		if lineBudget <= 0 || lineBudget > protocol.MaxReadBytes {
+		if lineBudget == 0 {
 			lineBudget = protocol.DefaultReadBytes
+		} else if lineBudget > protocol.MaxReadBytes {
+			lineBudget = protocol.MaxReadBytes
+		}
+		perLineBudget := protocol.MaxReadBytes / p.Tail
+		if lineBudget > perLineBudget {
+			lineBudget = perLineBudget
 		}
 		truncated := false
 		total := 0
 		for {
-			var evicted []byte
+			var evicted tailLine
 			if len(lines) >= p.Tail {
 				evicted = lines[0]
-				total -= len(evicted)
+				total -= len(evicted.data)
 				lines = lines[1:]
 			}
 			line, clipped, readErr := readLinePrefix(reader, lineBudget, protocol.MaxReadBytes-total)
 			truncated = truncated || clipped
 			if readErr == io.EOF && len(line) == 0 {
-				if evicted != nil {
-					lines = append([][]byte{evicted}, lines...)
-					total += len(evicted)
+				if evicted.data != nil {
+					lines = append([]tailLine{evicted}, lines...)
+					total += len(evicted.data)
 				}
 				break
 			}
-			lines = append(lines, line)
+			lines = append(lines, tailLine{data: line, clipped: clipped})
 			total += len(line)
 			if readErr == io.EOF {
 				break
 			}
+		}
+		truncated = false
+		for _, item := range lines {
+			truncated = truncated || item.clipped
 		}
 		return joinTail(lines, protocol.MaxReadBytes), truncated, nil
 	}
@@ -326,10 +338,15 @@ func minInt(a, b int) int {
 	return b
 }
 
-func joinTail(lines [][]byte, max int) []byte {
+type tailLine struct {
+	data    []byte
+	clipped bool
+}
+
+func joinTail(lines []tailLine, max int) []byte {
 	var out []byte
-	for _, line := range lines {
-		out = append(out, clampUTF8Prefix(line)...)
+	for _, item := range lines {
+		out = append(out, clampUTF8Prefix(item.data)...)
 		if len(out) > max {
 			out = out[len(out)-max:]
 		}

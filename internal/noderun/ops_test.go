@@ -97,6 +97,32 @@ func TestReadWorkspaceWindow_should_keepFinalTailLineAfterFullPreviousLine(t *te
 	}
 }
 
+func TestReadWorkspaceWindow_should_not_loseLaterTailLinesAfterLargeEarlierLine(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "tail-window.txt")
+	body := append(bytes.Repeat([]byte("A"), protocol.MaxReadBytes), []byte("\nB\nC\n")...)
+	if err := os.WriteFile(path, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, truncated, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 2, Limit: protocol.MaxReadBytes, Path: "tail-window.txt"}, int64(len(body)))
+	if err != nil || string(got) != "B\nC\n" || truncated {
+		t.Fatalf("got=%q truncated=%v err=%v", got, truncated, err)
+	}
+}
+
+func TestReadWorkspaceWindow_should_clampOversizedLineLimitToMax(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "limit.txt")
+	body := bytes.Repeat([]byte("x"), 100*1024)
+	if err := os.WriteFile(path, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Head: 1, Limit: protocol.MaxReadBytes * 2, Path: "limit.txt"}, int64(len(body)))
+	if err != nil || len(got) != len(body) {
+		t.Fatalf("len=%d err=%v", len(got), err)
+	}
+}
+
 func TestSliceRead_should_keep_last_line_when_file_ends_with_newline(t *testing.T) {
 	raw := []byte("a\nb\n")
 	got, trunc := sliceRead(raw, protocol.ReadPayload{Tail: 1}, 64*1024)
