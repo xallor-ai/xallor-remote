@@ -92,7 +92,7 @@ func ReadExec(requestID string, read func() (Frame, error), emit func(ExecEvent)
 			if result.ExitCode == nil {
 				return unknown("缺少退出码，执行结果未确认。")
 			}
-		case protocol.ExitCancelled, protocol.ExitTimeout:
+		case protocol.ExitCancelled, protocol.ExitTimeout, protocol.ExitAuthorizationLost:
 		default:
 			return unknown("缺少有效终态，执行结果未确认。")
 		}
@@ -104,6 +104,8 @@ func ReadExec(requestID string, read func() (Frame, error), emit func(ExecEvent)
 			return fmt.Errorf("%s", Human(protocol.Cancelled))
 		case protocol.ExitTimeout:
 			return fmt.Errorf("%s", Human(protocol.ExecTimeout))
+		case protocol.ExitAuthorizationLost:
+			return fmt.Errorf("授权已失效，任务已停止。")
 		}
 		if *result.ExitCode != 0 {
 			return fmt.Errorf("任务失败，退出码 %d。", *result.ExitCode)
