@@ -22,7 +22,7 @@ func TestScopeWire_should_replaceForgedIdentity_whenRoutingInvocation(t *testing
 		t.Fatal(err)
 	}
 	device = setTestAccess(t, s, "device", protocol.SHA256Hex("bearer"), true)
-	h := NewHub(s, s, access.NewService(s), admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(s, s, access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	dctx, target, hello := identityWire(t, h, protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "device", Secret: "secret"})
 	if hello.Type != protocol.TypeHelloOK {
 		t.Fatal(hello)
@@ -34,7 +34,8 @@ func TestScopeWire_should_replaceForgedIdentity_whenRoutingInvocation(t *testing
 			t.Fatal(hello)
 		}
 		forged := invocation.Scope{Authority: strings.Repeat("f", 32), DeviceUID: strings.Repeat("f", 32), GrantID: strings.Repeat("f", 32), PrincipalID: strings.Repeat("f", 32), TenantID: strings.Repeat("f", 32)}
-		if err := wsjson.Write(cctx, caller, protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpHandoffGet, ExecID: "request", Scope: &forged, Secret: "must-not-forward", Grant: "must-not-forward", AccountToken: "must-not-forward"}); err != nil {
+		forgedDevice := invocation.DeviceContext{Authority: forged.Authority, DeviceUID: forged.DeviceUID, GrantID: forged.GrantID, Inbound: true}
+		if err := wsjson.Write(cctx, caller, protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpHandoffGet, ExecID: "request", Scope: &forged, DeviceContext: &forgedDevice, Secret: "must-not-forward", Grant: "must-not-forward", AccountToken: "must-not-forward"}); err != nil {
 			t.Fatal(err)
 		}
 		var got protocol.Message
@@ -46,7 +47,7 @@ func TestScopeWire_should_replaceForgedIdentity_whenRoutingInvocation(t *testing
 			want.PrincipalID = a.PrincipalID
 			want.TenantID = a.TenantID
 		}
-		if got.Scope == nil || *got.Scope != want || !got.Scope.Valid() || got.Secret != "" || got.Grant != "" || got.AccountToken != "" {
+		if got.Scope == nil || *got.Scope != want || !got.Scope.Valid() || got.DeviceContext != nil || got.Secret != "" || got.Grant != "" || got.AccountToken != "" {
 			t.Fatal("untrusted context forwarded", got.Scope)
 		}
 		if err := wsjson.Write(dctx, target, protocol.Message{Type: protocol.TypeExit, ExecID: got.ExecID, ExitCode: protocol.Int(0)}); err != nil {

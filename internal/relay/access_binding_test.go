@@ -16,7 +16,7 @@ func TestAccess_should_requireFreshBinding_whenCredentialValueReused(t *testing.
 			name = "device-recreation"
 		}
 		t.Run(name, func(t *testing.T) {
-			h := NewHub(newMemStore(), nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+			h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 			dev, stale := &recSender{}, &recSender{}
 			if code := h.RegisterDevice("123456789", "initial", true, dev); code != "" {
 				t.Fatal(code)

@@ -11,7 +11,7 @@ import (
 
 // Pending requests share a device transport budget; cancellation needs no new slot.
 func TestHub_should_boundRequests_and_allowCancel_whenTransportFull(t *testing.T) {
-	h := NewHub(nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(nil, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device, client, other := &recSender{}, &recSender{}, &recSender{}
 	h.RegisterDevice("dev_a", "secret", true, device)
 	authorizeTestClient(t, h, device, client)

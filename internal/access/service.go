@@ -16,18 +16,21 @@ type Service struct {
 
 func NewService(store Store) *Service { return &Service{store: store, now: time.Now} }
 
-func (s *Service) verifyActor(ctx context.Context, reader Reader, actor principal.Identity, now int64) error {
-	current, err := reader.Principal(ctx, actor.CredentialID, now)
+func (s *Service) verifyActor(ctx context.Context, reader Reader, actor principal.Identity) error {
+	current, err := reader.CredentialByID(ctx, actor.CredentialID)
 	if err != nil {
 		return err
 	}
-	if current != actor {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if current.Verify(actor, s.now().Unix()) != nil {
 		return ErrDenied
 	}
 	return nil
 }
 
-func (s *Service) resolve(ctx context.Context, reader Reader, uid string, actor principal.Identity, now int64) (Authorization, error) {
+func (s *Service) resolve(ctx context.Context, reader Reader, uid string, actor principal.Identity) (Authorization, error) {
 	device, err := reader.DeviceByUID(ctx, uid)
 	if err != nil {
 		return Authorization{}, err
@@ -35,7 +38,7 @@ func (s *Service) resolve(ctx context.Context, reader Reader, uid string, actor 
 	if device.OwnershipID == "" {
 		return Authorization{}, ErrDenied
 	}
-	if err := s.verifyActor(ctx, reader, actor, now); err != nil {
+	if err := s.verifyActor(ctx, reader, actor); err != nil {
 		return Authorization{}, err
 	}
 	a := Authorization{Binding: device.Binding()}
@@ -47,7 +50,7 @@ func (s *Service) resolve(ctx context.Context, reader Reader, uid string, actor 
 	if err != nil {
 		return Authorization{}, err
 	}
-	if share.ExpiresAt <= now {
+	if share.ExpiresAt <= s.now().Unix() {
 		return Authorization{}, ErrDenied
 	}
 	a.ShareID, a.Permissions, a.ExpiresAt = share.ID, share.Permissions, share.ExpiresAt
@@ -58,7 +61,7 @@ func (s *Service) Resolve(ctx context.Context, expected Device, actor principal.
 	var result Authorization
 	err := s.store.ReadAccess(ctx, func(reader Reader) error {
 		var err error
-		result, err = s.resolve(ctx, reader, expected.UID, actor, s.now().Unix())
+		result, err = s.resolve(ctx, reader, expected.UID, actor)
 		if err != nil {
 			return err
 		}
@@ -75,7 +78,7 @@ func (s *Service) Resolve(ctx context.Context, expected Device, actor principal.
 
 func (s *Service) Verify(ctx context.Context, actor principal.Identity, expected Authorization, operation string) error {
 	return s.store.ReadAccess(ctx, func(reader Reader) error {
-		current, err := s.resolve(ctx, reader, expected.Binding.DeviceUID, actor, s.now().Unix())
+		current, err := s.resolve(ctx, reader, expected.Binding.DeviceUID, actor)
 		if err != nil {
 			return err
 		}

@@ -10,7 +10,7 @@ import (
 // Hub must release an injected transport lease only at a terminal event; a
 // custom limit proves routing no longer owns a second hidden counter.
 func TestHub_should_useInjectedAdmissionLease_whenTerminalArrives(t *testing.T) {
-	h := NewHub(nil, nil, nil, admission.New(admission.Limits{PerDevice: 1}))
+	h := NewHub(nil, nil, nil, nil, admission.New(admission.Limits{PerDevice: 1}))
 	device, client := &recSender{}, &recSender{}
 	if code := h.RegisterDevice("dev_a", "secret", true, device); code != "" {
 		t.Fatal(code)
