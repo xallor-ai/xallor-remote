@@ -9,6 +9,7 @@ import tempfile
 import time
 import urllib.request
 from fixtures.process_ref import ProcessRef
+from fixtures.ready_url import wait_ready_url
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,11 +45,7 @@ def main():
         subprocess.run([args.go, "build", "-o", str(fixture), "./tests/fixtures/unconfirmed-relay"], cwd=ROOT, check=True, timeout=180)
         ready = root / "ready"
         server = subprocess.Popen([str(fixture), "--ready", str(ready)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        deadline = time.monotonic() + 15
-        while not ready.exists():
-            assert server.poll() is None and time.monotonic() < deadline, "fixture did not start"
-            time.sleep(.05)
-        url = ready.read_text(encoding="utf-8")
+        url = wait_ready_url(ready, server)
         env["XALLOR_REMOTE_RELAY_URL"] = url.replace("http://", "ws://") + "/remote"
         (profile / "config.json").write_text(json.dumps({"relay_url": env["XALLOR_REMOTE_RELAY_URL"], "workspace": str(root / "workspace")}), encoding="utf-8")
         cli("ensure")
