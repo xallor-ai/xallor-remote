@@ -63,6 +63,30 @@ func LoadFrom(dir string) (*Store, error) {
 		if bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
 			return nil, fmt.Errorf("invalid %s: null is not valid state", name)
 		}
+		if name == "config.json" {
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(b, &fields); err != nil {
+				return nil, fmt.Errorf("invalid %s: %w", name, err)
+			}
+			for field, value := range fields {
+				if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+					return nil, fmt.Errorf("invalid %s: null field %s", name, field)
+				}
+			}
+		}
+		if name == "peers.json" {
+			var fields []map[string]json.RawMessage
+			if err := json.Unmarshal(b, &fields); err != nil {
+				return nil, fmt.Errorf("invalid %s: %w", name, err)
+			}
+			for _, peer := range fields {
+				for field, value := range peer {
+					if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+						return nil, fmt.Errorf("invalid %s: null field %s", name, field)
+					}
+				}
+			}
+		}
 		if err := json.Unmarshal(b, target); err != nil {
 			return nil, fmt.Errorf("invalid %s: %w", name, err)
 		}

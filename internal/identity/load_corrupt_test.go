@@ -46,3 +46,18 @@ func TestLoadFrom_should_rejectNullConfigAndPeers(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadFrom_should_rejectNullStateFields(t *testing.T) {
+	for name, data := range map[string]string{
+		"config.json": `{"relay_url":null}`,
+		"peers.json":  `[{"device_id":null,"grant":"x"}]`,
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadFrom(dir); err == nil {
+			t.Fatalf("%s accepted null field", name)
+		}
+	}
+}

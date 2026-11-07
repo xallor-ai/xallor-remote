@@ -25,7 +25,7 @@ func TestReadWorkspaceWindow_should_boundSelectedWindows(t *testing.T) {
 		t.Fatalf("tail window len=%d err=%v", len(got), err)
 	}
 	got, _, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Offset: protocol.MaxReadBytes + 1, Limit: 8, Path: "large.txt"}, int64(protocol.MaxReadBytes*2))
-	if err != nil || len(got) != 9 {
+	if err != nil || len(got) != 8 {
 		t.Fatalf("offset window len=%d err=%v", len(got), err)
 	}
 }
@@ -39,6 +39,28 @@ func TestReadWorkspaceWindow_should_boundHugeTailLineAndMarkTruncated(t *testing
 	got, truncated, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1, Path: "one-line.txt"}, int64(protocol.MaxReadBytes*3))
 	if err != nil || !truncated || len(got) > protocol.MaxReadBytes+4 || !utf8.Valid(got) {
 		t.Fatalf("tail len=%d truncated=%v valid=%v err=%v", len(got), truncated, utf8.Valid(got), err)
+	}
+}
+
+func TestReadWorkspaceWindow_should_preserveUTF8OffsetAndLineSelection(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "utf.txt"), []byte("中x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Offset: 1, Limit: 4, Path: "utf.txt"}, 4)
+	if err != nil || string(got) != "中x" {
+		t.Fatalf("offset=%q err=%v", got, err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "lines.txt"), []byte("a\nb\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Head: 1, Path: "lines.txt"}, 64)
+	if err != nil || string(got) != "a\n" {
+		t.Fatalf("head window=%q err=%v", got, err)
+	}
+	_, trunc := sliceRead(got, protocol.ReadPayload{Head: 1}, 64)
+	if trunc {
+		t.Fatal("head should not truncate")
 	}
 }
 

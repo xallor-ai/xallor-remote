@@ -61,10 +61,7 @@ func (d *Daemon) runLocalRead(link *wsConn, msg protocol.Message) {
 	// readWorkspaceWindow already applied the selector while streaming. Apply
 	// only the final byte/rune budget here; applying offset a second time would
 	// treat the selected window as the original file and lose truncation state.
-	selector := p
-	if p.Head != 0 || p.Tail != 0 || p.Offset != 0 || p.Limit != 0 {
-		selector = protocol.ReadPayload{}
-	}
+	selector := protocol.ReadPayload{Head: p.Head, Tail: p.Tail}
 	out, trunc := sliceRead(raw, selector, limit)
 	trunc = trunc || preTruncated
 	if err := sendStdoutFrames(link, msg.ExecID, out); err != nil {
@@ -204,11 +201,19 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 		limit = protocol.MaxReadBytes
 	}
 	if p.Offset != 0 || p.Limit != 0 {
-		if _, err := f.Seek(int64(p.Offset), io.SeekStart); err != nil {
+		start := p.Offset - 4
+		if start < 0 {
+			start = 0
+		}
+		if _, err := f.Seek(int64(start), io.SeekStart); err != nil {
 			return nil, false, err
 		}
-		data, err := io.ReadAll(io.LimitReader(f, int64(limit)+1))
-		return data, len(data) > limit, err
+		data, err := io.ReadAll(io.LimitReader(f, int64(limit+p.Offset-start+1)))
+		if err != nil {
+			return nil, false, err
+		}
+		out, truncated := sliceRead(data, protocol.ReadPayload{Offset: p.Offset - start, Limit: p.Limit}, limit)
+		return out, truncated, nil
 	}
 	if p.Head > 0 {
 		reader := bufio.NewReader(io.LimitReader(f, int64(protocol.MaxReadBytes)))
