@@ -239,6 +239,9 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 		truncated := false
 		for i := 0; i < p.Head; i++ {
 			line, clipped, readErr := readLinePrefix(reader, lineBudget, protocol.MaxReadBytes-len(out))
+			if readErr != nil && readErr != io.EOF {
+				return nil, false, readErr
+			}
 			truncated = truncated || clipped
 			out = append(out, line...)
 			if len(out) >= protocol.MaxReadBytes || readErr == io.EOF {
@@ -275,6 +278,9 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 			}
 			line, clipped, readErr := readLinePrefix(reader, lineBudget, protocol.MaxReadBytes-total)
 			truncated = truncated || clipped
+			if readErr != nil && readErr != io.EOF {
+				return nil, false, readErr
+			}
 			if readErr == io.EOF && len(line) == 0 {
 				if evicted.data != nil {
 					lines = append([]tailLine{evicted}, lines...)
@@ -343,6 +349,7 @@ func readLinePrefix(reader *bufio.Reader, lineBudget, aggregateBudget int) ([]by
 					if len(line) >= keep {
 						line = line[:keep-1]
 					}
+					line = clampUTF8Prefix(line)
 					line = append(line, '\n')
 				}
 			}

@@ -149,6 +149,20 @@ func TestReadWorkspaceWindow_should_preserveSeparatorAfterClippedTailLine(t *tes
 	}
 }
 
+func TestReadWorkspaceWindow_should_preserveSeparatorAfterClippedUTF8TailLines(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "clipped-utf-tail.txt")
+	body := append(bytes.Repeat([]byte("中"), 600*1024), []byte("\n")...)
+	body = append(body, append(bytes.Repeat([]byte("中"), 600*1024), []byte("\n")...)...)
+	if err := os.WriteFile(path, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 2, Limit: protocol.MaxReadBytes, Path: "clipped-utf-tail.txt"}, int64(len(body)))
+	if err != nil || bytes.Count(got, []byte("\n")) != 2 || !utf8.Valid(got) {
+		t.Fatalf("len=%d newlines=%d valid=%v err=%v", len(got), bytes.Count(got, []byte("\n")), utf8.Valid(got), err)
+	}
+}
+
 func TestReadWorkspaceWindow_should_notMarkExactFitLineTruncated(t *testing.T) {
 	workspace := t.TempDir()
 	path := filepath.Join(workspace, "exact.txt")
