@@ -19,7 +19,9 @@ SSOT：本机执行、策略、workspace、本地数据。CLI 见 [clients.md](c
 
 ### 本机作业占用
 
-`internal/job` 管理前台 exec、后台 handoff（包括预检）的共享容量。启动进程前，在 profile 的 `jobs.json` 原子持久化占用，OS 文件锁 `jobs.lock` 保证同一 profile 只有一个账本写入者；写入失败不授予启动能力。所有进程统一通过该作业的 Owner 启动，真实监督回收完成并持久更新后才释放。容量和大小见 [protocol.md](protocol.md)。
+同一作业 Owner 同时只能拥有一个未完成监督回收的进程边界。handoff 的预检和主进程可以依次启动；前一个进程仍在运行时，下一次 Start 立即拒绝，不排队。前一次回收未确认则禁止后续启动并在 Finish 保留 uncertain 占用。非零退出但监督回收确认的进程不阻止下一次启动。作业在两次启动之间继续占用容量，只有 Finish 确认后才释放。
+
+`internal/job` 通过明确的 `ReserveExec` / `ReserveHandoff` 管理前台 exec、后台 handoff（包括预检）的共享容量。启动进程前，在 profile 的 `jobs.json` 原子持久化占用，OS 文件锁 `jobs.lock` 保证同一 profile 只有一个账本写入者；写入失败不授予启动能力。所有进程统一通过该作业的 Owner 启动，真实监督回收完成并持久更新后才释放。容量和大小见 [protocol.md](protocol.md)。
 
 账本只含随机内部作业 ID、Relay 推导的稳定 scope、作业种类、内部关联键和 reserved/occupied/uncertain；不保存命令、提示、路径、凭据或输出。预留为 reserved，也计入容量；Owner 首次启动任意进程（包括预检）之前必须成功持久写为 occupied，写入失败或结果不明则不启动。后续同作业进程继续占用，直到 Finish 确认回收并持久释放。前台内部关联键为本次路由 ID，handoff 为会话 UUID。交接回执继续负责结果和请求去重，不能拿它的 completed/failed/unknown 推断资源占用。非零退出但回收确认可以释放；回收或释放持久化未确认时，前台返回错误，handoff 为 unknown/job_release_unconfirmed。
 
@@ -106,12 +108,12 @@ on disconnect: 退避重连；不恢复旧子进程
 
 v0 **不**解析「这是 `npm install` 还是 `rm`」来当沙箱。命令分类器一定会被绕过。
 
-**grant 持有者 ≈ 这台机器上的当前用户，作用域缩在 workspace + denylist。** Policy 是减伤，不是隔离。
+**获准 exec 的控制者 ≈ 这台机器上的当前用户。文件 API 受 workspace 与 denylist 约束；exec 不是 OS 沙箱。** Policy 是减伤，不是隔离。
 
 判定顺序（任一拒绝即停）：
 
 ```text
-1. Relay 已校验 grant / inbound（本步不再验码）
+1. Relay 已校验身份、设备访问权与 inbound（目标不重复校验原始凭据）
 2. 该 op 的 capability 已打开；未知 capability → deny
 3. 文件类：规范化后的路径必须在 workspace 内
 4. 命中 [os.md](os.md) denylist → policy_deny
@@ -119,7 +121,7 @@ v0 **不**解析「这是 `npm install` 还是 `rm`」来当沙箱。命令分�
      有 TTY 或本机 UI → 等待；超时 → approval_timeout
      无 TTY 且无 UI（典型无头 Linux）→ **直接 policy_deny**
      不要挂死等一个不存在的人
-6. 否则 allow
+6. 通过上述检查后执行；exec 另须在启动前及运行中确认授权，见 dataplane.md
 ```
 
 v0 capability：
@@ -141,3 +143,9 @@ Relay 已鉴权不能替代本步。
 ## 8. 卸载
 
 断开；本机 `revoke` 通知 Relay；删数据目录。只删二进制会留下 identity，重装抢同一 ID。
+
+### 本机数据格式与回滚
+
+构建记录的 `profile_format` 来自 `internal/buildinfo/profile_format.txt`，表示 Runtime 本机持久化格式，独立于网络协议和 Relay 数据库迁移版本。修改到旧二进制无法安全读取的格式时必须递增。托管安装、回滚与自动启动只接受相同格式，缺失标识也会在停止服务前拒绝；MCP 与 GUI 启动时传入内部格式断言，旧程序会在打开数据前拒绝未知参数。
+
+同格式回滚仅切换二进制，不恢复数据。跨格式切换必须先停服务，备份完整数据目录与对应二进制，再按配套备份整体恢复；不能把旧二进制直接指向升级后的目录。没有配套备份时不要降级。此限制避免旧版本忽略 identity.db 并生成新设备身份。

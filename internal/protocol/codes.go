@@ -54,9 +54,10 @@ const (
 )
 
 const (
-	ExitCompleted = "completed"
-	ExitCancelled = "cancelled"
-	ExitTimeout   = "timeout"
-	RoleDevice    = "device"
-	RoleClient    = "client"
+	ExitCompleted         = "completed"
+	ExitCancelled         = "cancelled"
+	ExitTimeout           = "timeout"
+	ExitAuthorizationLost = "authorization_lost"
+	RoleDevice            = "device"
+	RoleClient            = "client"
 )

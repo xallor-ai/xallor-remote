@@ -9,11 +9,12 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 func TestHelloDeviceStaysOpenAfterHandlerReturns(t *testing.T) {
-	hub := NewHub(newMemStore())
+	hub := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	srv := httptest.NewServer(Handler(hub, nil))
 	defer srv.Close()
 
