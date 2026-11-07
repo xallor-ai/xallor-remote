@@ -200,7 +200,7 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 	if limit <= 0 || limit > protocol.MaxReadBytes {
 		limit = protocol.MaxReadBytes
 	}
-	if p.Offset != 0 || p.Limit != 0 {
+	if p.Head == 0 && p.Tail == 0 && (p.Offset != 0 || p.Limit != 0) {
 		start := p.Offset - 4
 		if start < 0 {
 			start = 0
@@ -242,7 +242,7 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 				chunk, readErr = reader.ReadSlice('\n')
 				line = append(line, chunk...)
 				if len(line) > protocol.MaxReadBytes+4 {
-					line = line[len(line)-(protocol.MaxReadBytes+4):]
+					line = line[:protocol.MaxReadBytes+4]
 					truncated = true
 				}
 				if readErr != bufio.ErrBufferFull {
@@ -256,7 +256,7 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 				break
 			}
 			if len(line) > protocol.MaxReadBytes {
-				line = line[len(line)-protocol.MaxReadBytes:]
+				line = line[:protocol.MaxReadBytes]
 				truncated = true
 			}
 			lines = append(lines, line)
@@ -308,7 +308,7 @@ func joinTail(lines [][]byte, max int) []byte {
 	for len(out) > 0 && !utf8.RuneStart(out[0]) {
 		out = out[1:]
 	}
-	return out
+	return clampUTF8Prefix(out)
 }
 
 func pathDenied(err error) bool {

@@ -62,6 +62,10 @@ func TestReadWorkspaceWindow_should_preserveUTF8OffsetAndLineSelection(t *testin
 	if trunc {
 		t.Fatal("head should not truncate")
 	}
+	got, _, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1, Limit: 2, Path: "lines.txt"}, 64)
+	if err != nil || string(got) != "b\n" {
+		t.Fatalf("tail selected window=%q err=%v", got, err)
+	}
 }
 
 func TestSliceRead_should_keep_last_line_when_file_ends_with_newline(t *testing.T) {
