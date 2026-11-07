@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
+	"github.com/xallor-ai/xallor-remote/internal/process"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/shell"
 	"net"
 	"testing"
 	"time"
@@ -27,9 +29,12 @@ func TestForward_should_notDispatch_afterHeadClosed(t *testing.T) {
 // Cancel after constructing the child but before Start: classify the proven cancellation.
 func TestStart_should_reportCancellation_whenCancelWinsBeforeStart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := buildCmd(ctx, "echo must-not-run", t.TempDir())
+	cmd, err := shell.Build("auto", "echo must-not-run", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	cancel()
-	if err := cmd.Start(); err == nil {
+	if _, err := process.Start(ctx, cmd); err == nil {
 		t.Fatal("cancelled command started")
 	}
 	if code := startFailureCode(ctx); code != protocol.Cancelled {

@@ -39,9 +39,12 @@ def main():
             time.sleep(.1)
 
     def snapshot():
-        return {str(f.relative_to(cluster.root)):hashlib.sha256(f.read_bytes()).hexdigest()
+        files = {str(f.relative_to(cluster.root)):hashlib.sha256(f.read_bytes()).hexdigest()
                 for name in cluster.profiles for f in (cluster.root / name).glob("*")
-                if f.is_file() and f.name in ("identity.json", "device_secret", "grant", "peers.json", "config.json")}
+                if f.is_file() and f.name in ("peers.json", "config.json")}
+        for name in cluster.profiles:
+            files[name + "/identity"] = hashlib.sha256(json.dumps(cluster.device_state(name), sort_keys=True).encode()).hexdigest()
+        return files
 
     try:
         cluster.start()
@@ -51,7 +54,7 @@ def main():
         target = cluster.add("target")
         cluster.add("controller")
         cluster.cli("target", "inbound", "on")
-        grant = (cluster.root / "target/grant").read_text()
+        grant = cluster.grant("target")
         expect("peer", "fail", "not_paired", target)
         cluster.cli("controller", "peer", "add", "--id", target, "--grant", "wrong-grant")
         expect("authorization", "fail", "unauthorized", target)

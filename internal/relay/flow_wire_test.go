@@ -11,6 +11,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -39,7 +40,7 @@ func TestFlowWire_should_routeOtherClient_whenSocketConsumerStopsReading(t *test
 		t.Fatal(err)
 	}
 	setTestAccess(t, s, "device", grant, true)
-	h := NewHub(s)
+	h := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	// Bound both TCP buffers so the fixture does not depend on OS autotuning
 	// or on JSON parsing being faster than a socket writer.
 	srv := httptest.NewUnstartedServer(Handler(h, nil))
@@ -79,18 +80,26 @@ func TestFlowWire_should_routeOtherClient_whenSocketConsumerStopsReading(t *test
 		return c
 	}
 	device := dial(protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "device", Secret: "secret"}, nil)
+	if err := wsjson.Write(ctx, device, protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "ready", GrantHash: grant, Inbound: protocol.Bool(true)}); err != nil {
+		t.Fatal(err)
+	}
+	var settingsAck protocol.Message
+	if err := wsjson.Read(ctx, device, &settingsAck); err != nil || settingsAck.Type != protocol.TypeDeviceSettingsResult || settingsAck.Code != "" {
+		t.Fatalf("settings: %+v %v", settingsAck, err)
+	}
 	slow := dial(protocol.Message{Type: protocol.TypeHelloClient, TargetID: "device", Grant: "grant"}, &websocket.DialOptions{HTTPClient: &http.Client{Transport: transport}})
 	healthy := dial(protocol.Message{Type: protocol.TypeHelloClient, TargetID: "device", Grant: "grant"}, nil)
 	if err := wsjson.Write(ctx, slow, protocol.Message{Type: protocol.TypeInvoke, ExecID: "flood", Op: protocol.OpExec}); err != nil {
 		t.Fatal(err)
 	}
 	var invoke protocol.Message
-	if err := wsjson.Read(ctx, device, &invoke); err != nil || invoke.ExecID != "flood" {
+	if err := wsjson.Read(ctx, device, &invoke); err != nil || invoke.Type != protocol.TypeInvoke || invoke.Op != protocol.OpExec {
 		t.Fatalf("invoke: %+v %v", invoke, err)
 	}
+	floodID := invoke.ExecID
 	chunk := strings.Repeat("x", protocol.MaxFrameBytes)
 	for i := 0; i < 48; i++ {
-		if err := wsjson.Write(ctx, device, protocol.Message{Type: protocol.TypeStdout, ExecID: "flood", Data: chunk}); err != nil {
+		if err := wsjson.Write(ctx, device, protocol.Message{Type: protocol.TypeStdout, ExecID: floodID, Data: chunk}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -101,10 +110,10 @@ func TestFlowWire_should_routeOtherClient_whenSocketConsumerStopsReading(t *test
 	if err := wsjson.Write(fastCtx, healthy, protocol.Message{Type: protocol.TypeInvoke, ExecID: "healthy", Op: protocol.OpInfo}); err != nil {
 		t.Fatal(err)
 	}
-	if err := wsjson.Read(fastCtx, device, &invoke); err != nil || invoke.ExecID != "healthy" {
+	if err := wsjson.Read(fastCtx, device, &invoke); err != nil || invoke.Type != protocol.TypeInvoke || invoke.Op != protocol.OpInfo {
 		t.Fatalf("shared device stalled: %+v %v", invoke, err)
 	}
-	if err := wsjson.Write(fastCtx, device, protocol.Message{Type: protocol.TypeExit, ExecID: "healthy", ExitCode: protocol.Int(0), Status: protocol.ExitCompleted}); err != nil {
+	if err := wsjson.Write(fastCtx, device, protocol.Message{Type: protocol.TypeExit, ExecID: invoke.ExecID, ExitCode: protocol.Int(0), Status: protocol.ExitCompleted}); err != nil {
 		t.Fatal(err)
 	}
 	var terminal protocol.Message
@@ -112,7 +121,7 @@ func TestFlowWire_should_routeOtherClient_whenSocketConsumerStopsReading(t *test
 		t.Fatalf("healthy client stalled: %+v %v", terminal, err)
 	}
 	h.mu.Lock()
-	inf := h.inflight["flood"]
+	inf := h.inflight[floodID]
 	truncated := inf != nil && inf.trunc
 	h.mu.Unlock()
 	if !truncated {

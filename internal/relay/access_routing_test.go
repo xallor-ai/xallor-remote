@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -32,12 +33,12 @@ func TestAccess_should_rejectControllerClaimAndInvalidateBearer_whenDeviceClaims
 	s := openIdentityTestStore(t)
 	a := enrollment(t, s, "alice", "")
 	b := enrollment(t, s, "bob", "")
-	h := NewHub(s)
+	h := NewHub(s, s, access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device, controller := &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)
 	}
-	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("grant")})
+	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("grant")})
 	if code := h.RegisterClient("device", "grant", b.Token, controller); code != "" {
 		t.Fatal(code)
 	}
@@ -65,18 +66,18 @@ func TestAccess_should_rejectControllerClaimAndInvalidateBearer_whenDeviceClaims
 		t.Fatal(code)
 	}
 	h.Handle(guest, protocol.RoleClient, "device", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpExec, ExecID: "forbidden"})
-	if guest.last().Code != protocol.Unauthorized || h.inflight["forbidden"] != nil {
+	if guest.last().Code != protocol.Unauthorized || h.requests[requestKey{client: guest, id: "forbidden"}] != "" {
 		t.Fatal("operation permission bypassed")
 	}
 	h.Handle(guest, protocol.RoleClient, "device", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "allowed"})
-	if device.last().ExecID != "allowed" {
+	if device.last().Type != protocol.TypeInvoke || device.last().ExecID != h.requests[requestKey{client: guest, id: "allowed"}] {
 		t.Fatal("shared operation was not routed")
 	}
 	before, _ := s.LoadDevice(context.Background(), "device")
 	controlAccess(t, h, device, a.Token, access.Request{Action: "transfer", MembershipID: b.MembershipID})
 	controlAccess(t, h, device, b.Token, access.Request{Action: "transfer", MembershipID: a.MembershipID})
 	h.Handle(owner, protocol.RoleClient, "device", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "resurrected"})
-	if owner.last().Code != protocol.Unauthorized || h.inflight["resurrected"] != nil {
+	if owner.last().Code != protocol.Unauthorized || h.requests[requestKey{client: owner, id: "resurrected"}] != "" {
 		t.Fatal("transfer back revived old owner")
 	}
 	after, _ := s.LoadDevice(context.Background(), "device")
@@ -102,7 +103,7 @@ func TestAccess_should_commitOneOwner_whenClaimsRace(t *testing.T) {
 	for _, actor := range []principal.Identity{a.Identity, b.Identity} {
 		go func() {
 			<-start
-			_, err := s.ManageAccess(ctx, "device", device, actor, access.Request{Action: "claim"})
+			_, err := access.NewService(s).Manage(ctx, "device", device, actor, access.Request{Action: "claim"})
 			results <- err
 		}()
 	}
