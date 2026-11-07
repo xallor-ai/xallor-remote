@@ -252,53 +252,15 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 		return out, truncated, nil
 	}
 	if p.Tail > 0 {
-		reader := bufio.NewReader(io.LimitReader(f, int64(size)))
-		lines := make([]tailLine, 0, minInt(p.Tail, 64))
-		lineBudget := p.Limit
-		if lineBudget == 0 {
-			lineBudget = protocol.DefaultReadBytes
-		} else if lineBudget > protocol.MaxReadBytes {
-			lineBudget = protocol.MaxReadBytes
+		start, err := tailStart(f, size, p.Tail)
+		if err != nil {
+			return nil, false, err
 		}
-		if size <= int64(protocol.MaxReadBytes) {
-			lineBudget = protocol.MaxReadBytes
+		if _, err := f.Seek(start, io.SeekStart); err != nil {
+			return nil, false, err
 		}
-		perLineBudget := protocol.MaxReadBytes / p.Tail
-		if size > int64(protocol.MaxReadBytes) && lineBudget > perLineBudget {
-			lineBudget = perLineBudget
-		}
-		truncated := false
-		total := 0
-		for {
-			var evicted tailLine
-			if len(lines) >= p.Tail {
-				evicted = lines[0]
-				total -= len(evicted.data)
-				lines = lines[1:]
-			}
-			line, clipped, readErr := readLinePrefix(reader, lineBudget, protocol.MaxReadBytes-total)
-			truncated = truncated || clipped
-			if readErr != nil && readErr != io.EOF {
-				return nil, false, readErr
-			}
-			if readErr == io.EOF && len(line) == 0 {
-				if evicted.data != nil {
-					lines = append([]tailLine{evicted}, lines...)
-					total += len(evicted.data)
-				}
-				break
-			}
-			lines = append(lines, tailLine{data: line, clipped: clipped})
-			total += len(line)
-			if readErr == io.EOF {
-				break
-			}
-		}
-		truncated = false
-		for _, item := range lines {
-			truncated = truncated || item.clipped
-		}
-		return joinTail(lines, protocol.MaxReadBytes), truncated, nil
+		data, err := io.ReadAll(io.LimitReader(f, int64(protocol.MaxReadBytes)+1))
+		return data, len(data) > protocol.MaxReadBytes, err
 	}
 	if size > int64(protocol.MaxReadBytes) {
 		return nil, false, os.ErrInvalid
@@ -368,23 +330,35 @@ func minInt(a, b int) int {
 	return b
 }
 
-type tailLine struct {
-	data    []byte
-	clipped bool
-}
-
-func joinTail(lines []tailLine, max int) []byte {
-	var out []byte
-	for _, item := range lines {
-		out = append(out, clampUTF8Prefix(item.data)...)
-		if len(out) > max {
-			out = out[len(out)-max:]
+func tailStart(f *os.File, size int64, lines int) (int64, error) {
+	if size <= 0 {
+		return 0, nil
+	}
+	buf := make([]byte, 64*1024)
+	pos, remaining := size, lines
+	for pos > 0 {
+		n := int64(len(buf))
+		if n > pos {
+			n = pos
+		}
+		pos -= n
+		if _, err := f.ReadAt(buf[:n], pos); err != nil && err != io.EOF {
+			return 0, err
+		}
+		for i := int(n) - 1; i >= 0; i-- {
+			absolute := pos + int64(i)
+			if absolute == size-1 {
+				continue
+			} // trailing newline is not an empty line
+			if buf[i] == '\n' {
+				remaining--
+				if remaining == 0 {
+					return absolute + 1, nil
+				}
+			}
 		}
 	}
-	for len(out) > 0 && !utf8.RuneStart(out[0]) {
-		out = out[1:]
-	}
-	return clampUTF8Prefix(out)
+	return 0, nil
 }
 
 func pathDenied(err error) bool {

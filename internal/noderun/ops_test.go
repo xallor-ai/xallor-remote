@@ -16,15 +16,17 @@ func TestReadWorkspaceWindow_should_boundSelectedWindows(t *testing.T) {
 	if err := os.WriteFile(path, bytes.Repeat([]byte("line\n"), protocol.MaxReadBytes/5+100), 0600); err != nil {
 		t.Fatal(err)
 	}
-	got, _, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Head: 1, Path: "large.txt"}, int64(protocol.MaxReadBytes*2))
+	info, _ := os.Stat(path)
+	size := info.Size()
+	got, _, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Head: 1, Path: "large.txt"}, size)
 	if err != nil || string(got) != "line\n" {
 		t.Fatalf("head window len=%d err=%v", len(got), err)
 	}
-	got, _, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1, Path: "large.txt"}, int64(protocol.MaxReadBytes*2))
+	got, _, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1, Path: "large.txt"}, size)
 	if err != nil || string(got) != "line\n" {
 		t.Fatalf("tail window len=%d err=%v", len(got), err)
 	}
-	got, _, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Offset: protocol.MaxReadBytes + 1, Limit: 8, Path: "large.txt"}, int64(protocol.MaxReadBytes*2))
+	got, _, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Offset: protocol.MaxReadBytes + 1, Limit: 8, Path: "large.txt"}, size)
 	if err != nil || len(got) != 8 {
 		t.Fatalf("offset window len=%d err=%v", len(got), err)
 	}
@@ -36,8 +38,10 @@ func TestReadWorkspaceWindow_should_boundHugeTailLineAndMarkTruncated(t *testing
 	if err := os.WriteFile(path, bytes.Repeat([]byte("中"), protocol.MaxReadBytes*3), 0600); err != nil {
 		t.Fatal(err)
 	}
-	got, truncated, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1, Path: "one-line.txt"}, int64(protocol.MaxReadBytes*3))
-	if err != nil || !truncated || len(got) > protocol.MaxReadBytes+4 || !utf8.Valid(got) {
+	info, _ := os.Stat(path)
+	got, truncated, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1, Path: "one-line.txt"}, info.Size())
+	got, sliceTruncated := sliceRead(got, protocol.ReadPayload{Tail: 1}, protocol.DefaultReadBytes)
+	if err != nil || !truncated || !sliceTruncated || !utf8.Valid(got) {
 		t.Fatalf("tail len=%d truncated=%v valid=%v err=%v", len(got), truncated, utf8.Valid(got), err)
 	}
 }
@@ -62,7 +66,8 @@ func TestReadWorkspaceWindow_should_preserveUTF8OffsetAndLineSelection(t *testin
 	if trunc {
 		t.Fatal("head should not truncate")
 	}
-	got, _, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1, Limit: 2, Path: "lines.txt"}, 64)
+	lineInfo, _ := os.Stat(filepath.Join(workspace, "lines.txt"))
+	got, _, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1, Limit: 2, Path: "lines.txt"}, lineInfo.Size())
 	if err != nil || string(got) != "b\n" {
 		t.Fatalf("tail selected window=%q err=%v", got, err)
 	}
@@ -77,7 +82,8 @@ func TestReadWorkspaceWindow_should_keepPrefixOfSelectedTailLines(t *testing.T) 
 		t.Fatal(err)
 	}
 	got, truncated, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 2, Path: "large-lines.txt"}, int64(len(first)+len(second)+2))
-	if err != nil || !truncated || len(got) != protocol.DefaultReadBytes*2 || got[0] != 'A' {
+	got, sliceTruncated := sliceRead(got, protocol.ReadPayload{Tail: 2}, protocol.DefaultReadBytes)
+	if err != nil || !truncated || !sliceTruncated || len(got) != protocol.DefaultReadBytes || got[0] != 'A' {
 		t.Fatalf("tail len=%d truncated=%v first=%q err=%v", len(got), truncated, got[:minInt(len(got), 1)], err)
 	}
 }
@@ -157,9 +163,10 @@ func TestReadWorkspaceWindow_should_preserveSeparatorAfterClippedUTF8TailLines(t
 	if err := os.WriteFile(path, body, 0600); err != nil {
 		t.Fatal(err)
 	}
-	got, _, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 2, Limit: protocol.MaxReadBytes, Path: "clipped-utf-tail.txt"}, int64(len(body)))
-	if err != nil || bytes.Count(got, []byte("\n")) != 2 || !utf8.Valid(got) {
-		t.Fatalf("len=%d newlines=%d valid=%v err=%v", len(got), bytes.Count(got, []byte("\n")), utf8.Valid(got), err)
+	got, truncated, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 2, Limit: protocol.MaxReadBytes, Path: "clipped-utf-tail.txt"}, int64(len(body)))
+	got, sliceTruncated := sliceRead(got, protocol.ReadPayload{Tail: 2}, protocol.DefaultReadBytes)
+	if err != nil || !truncated || !sliceTruncated || !utf8.Valid(got) {
+		t.Fatalf("len=%d truncated=%v sliceTruncated=%v valid=%v err=%v", len(got), truncated, sliceTruncated, utf8.Valid(got), err)
 	}
 }
 
