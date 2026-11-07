@@ -77,11 +77,11 @@ func (m *Manager) load() error {
 		if e.IsDir() || e.Type()&os.ModeSymlink != 0 || !strings.HasSuffix(e.Name(), ".json") {
 			return fmt.Errorf("交接回执目录包含未知文件。")
 		}
-		var r Receipt
+		var r record
 		if err := readJSON(filepath.Join(m.receiptDir(), e.Name()), maxReceiptBytes, &r); err != nil {
 			return err
 		}
-		if !idPattern.MatchString(r.ID) || e.Name() != r.ID+".json" || len(r.Fingerprint) != 64 {
+		if !r.Scope.Valid() || !idPattern.MatchString(r.ID) || !sessionPattern.MatchString(r.Session) || e.Name() != requestKey(r.Scope, r.ID)+".json" || len(r.Fingerprint) != 64 || !m.ownsSession(r.Scope, r.Session) {
 			return fmt.Errorf("交接回执损坏。")
 		}
 		if !terminal(r.State) {
@@ -92,12 +92,12 @@ func (m *Manager) load() error {
 				return err
 			}
 		}
-		m.items[r.ID] = r
+		m.items[requestKey(r.Scope, r.ID)] = r
 	}
 	return nil
 }
-func (m *Manager) receiptDir() string { return filepath.Join(m.dir, "handoff", "receipts") }
-func (m *Manager) persist(r Receipt) error {
+func (m *Manager) receiptDir() string { return filepath.Join(m.dir, "handoff", "requests") }
+func (m *Manager) persist(r record) error {
 	if err := os.MkdirAll(m.receiptDir(), 0700); err != nil {
 		return err
 	}
@@ -108,5 +108,5 @@ func (m *Manager) persist(r Receipt) error {
 	if len(b) > maxReceiptBytes {
 		return fmt.Errorf("交接回执超过上限。")
 	}
-	return atomicfile.Write(filepath.Join(m.receiptDir(), r.ID+".json"), b)
+	return atomicfile.Write(filepath.Join(m.receiptDir(), requestKey(r.Scope, r.ID)+".json"), b)
 }

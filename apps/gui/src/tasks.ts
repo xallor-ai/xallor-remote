@@ -16,7 +16,7 @@ export function run(command: string, device: string) {
   while (tasks.length >= 20) { const i = tasks.findIndex(t => !t.live); if (i < 0) break; tasks.splice(i, 1); }
   const task: Task = { id: crypto.randomUUID(), command, device, output: "", status: "正在提交…", live: true, truncated: false, cancelRequested: false };
   tasks.push(task); notify();
-  void connection.request("exec", { command, device_id: device, timeout_ms: 60_000 }, frame => {
+  void connection.request("exec", { script: { text: command }, device_id: device, timeout_ms: 60_000 }, frame => {
     if (frame.exec_id && !task.execID) {
       task.execID = frame.exec_id; task.status = "等待执行结果…";
       if (task.cancelRequested) void cancel(task);

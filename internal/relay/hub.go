@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -21,40 +22,61 @@ type deviceSlot struct {
 	conn   Sender
 	record access.Device
 	online bool
+	ready  bool
 }
 
 type clientSlot struct {
-	targetID string
-	access   access.Binding
-	identity principal.Identity
+	targetID      string
+	access        access.Binding
+	identity      principal.Identity
+	authorization access.Authorization
 }
 
 type inflight struct {
-	deviceID string
-	client   Sender
-	outBytes int
-	trunc    bool
-	identity principal.Identity
+	requestID string
+	deviceID  string
+	client    Sender
+	outBytes  int
+	trunc     bool
+	binding   clientSlot
+	operation string
+	cancelled bool
+	lease     *admission.Lease
 }
 
 // Hub is the in-memory router. Identity persistence is owned by DeviceStore.
 type Hub struct {
-	mu         sync.Mutex
-	devices    map[string]*deviceSlot
-	access     map[string]access.Binding
-	clients    map[Sender]clientSlot
-	inflight   map[string]*inflight
-	store      DeviceStore
-	identities identityGates
+	mu                 sync.Mutex
+	devices            map[string]*deviceSlot
+	access             map[string]access.Binding
+	clients            map[Sender]clientSlot
+	inflight           map[string]*inflight
+	requests           map[requestKey]string
+	store              DeviceStore
+	accounts           principal.Authenticator
+	accessService      DeviceAccess
+	executionAuthority ExecutionAuthority
+	admission          *admission.Service
+	identities         identityGates
 }
 
-func NewHub(store DeviceStore) *Hub {
+// NewHub receives independently composed services. Nil account/access services
+// disable their operations; a store's incidental methods never enable them.
+func NewHub(store DeviceStore, accounts principal.Authenticator, accessService DeviceAccess, executionAuthority ExecutionAuthority, transport *admission.Service) *Hub {
+	if transport == nil {
+		panic("relay: transport admission is required")
+	}
 	return &Hub{
-		devices:  map[string]*deviceSlot{},
-		access:   map[string]access.Binding{},
-		clients:  map[Sender]clientSlot{},
-		inflight: map[string]*inflight{},
-		store:    store,
+		devices:            map[string]*deviceSlot{},
+		access:             map[string]access.Binding{},
+		clients:            map[Sender]clientSlot{},
+		inflight:           map[string]*inflight{},
+		requests:           map[requestKey]string{},
+		store:              store,
+		accounts:           accounts,
+		accessService:      accessService,
+		executionAuthority: executionAuthority,
+		admission:          transport,
 	}
 }
 
@@ -63,9 +85,22 @@ func (h *Hub) Handle(from Sender, role string, targetID string, msg protocol.Mes
 		return
 	}
 	switch msg.Type {
+	case protocol.TypeExecutionRenewRoute:
+		h.renewExecutionRoute(from, role, msg)
+	case protocol.TypeExecutionRenew:
+		h.renewExecution(from, role, msg)
+	case protocol.TypeAccessRequest:
+		if role != protocol.RoleDevice {
+			if len(msg.RequestID) > 128 {
+				msg.RequestID = ""
+			}
+			_ = from.Enqueue(protocol.Message{Type: protocol.TypeAccessResult, RequestID: msg.RequestID, Code: protocol.Unauthorized})
+			return
+		}
+		h.handleAccess(from, msg)
 	case protocol.TypeHeartbeat:
 		return
-	case protocol.TypeGrantRotate, protocol.TypeRevoke, protocol.TypeInboundSet:
+	case protocol.TypeDeviceSettings, protocol.TypeRevoke:
 		if role != protocol.RoleDevice {
 			_ = from.Enqueue(protocol.Message{Type: protocol.TypeError, Code: protocol.Unauthorized})
 			return
@@ -100,142 +135,6 @@ func (h *Hub) Drop(from Sender, role, deviceOrTarget string) {
 	}
 	h.cancelClientLocked(from)
 	delete(h.clients, from)
-}
-
-func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
-	if msg.Op == protocol.OpCancel {
-		h.handleCancel(from, msg.ExecID)
-		return
-	}
-	if code := h.verifyPrincipal(from); code != "" {
-		_ = from.Enqueue(protocol.Nack(msg.ExecID, code))
-		return
-	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	binding, ok := h.clients[from]
-	if !ok || binding.targetID != targetID || !binding.access.Matches(h.access[targetID]) {
-		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.Unauthorized))
-		return
-	}
-	if msg.ExecID == "" {
-		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.AgentError))
-		return
-	}
-	if _, dup := h.inflight[msg.ExecID]; dup {
-		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.AgentError))
-		return
-	}
-	dev := h.devices[targetID]
-	if dev == nil || !dev.online || dev.conn == nil || dev.record.UID != binding.access.DeviceUID {
-		// A live authenticated binding already proves that the identity exists.
-		// Revocation removes its grant before routing can reach this branch.
-		code := protocol.DeviceOffline
-		_ = from.Enqueue(protocol.Nack(msg.ExecID, code))
-		return
-	}
-	if !dev.record.Inbound {
-		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.InboundDisabled))
-		return
-	}
-	n := 0
-	for _, inf := range h.inflight {
-		if inf.deviceID == targetID {
-			n++
-		}
-	}
-	if n >= protocol.MaxConcurrentExec {
-		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.QuotaExceeded))
-		return
-	}
-	// Recheck at admission: disconnect can race with waiting for the routing lock.
-	if from.Context().Err() != nil {
-		return
-	}
-	h.inflight[msg.ExecID] = &inflight{deviceID: targetID, client: from, identity: binding.identity}
-	// Credentials belong only to the hello. Never forward caller-supplied secrets.
-	msg.AccountToken = ""
-	if err := dev.conn.Enqueue(msg); err != nil {
-		h.failDeviceLocked(targetID, protocol.DeviceOffline)
-		dev.conn.Close()
-		dev.online = false
-		dev.conn = nil
-	}
-}
-
-func (h *Hub) handleCancel(from Sender, execID string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	inf := h.inflight[execID]
-	if inf == nil || inf.client != from {
-		_ = from.Enqueue(protocol.Err(execID, protocol.UnknownExec))
-		return
-	}
-	if d := h.devices[inf.deviceID]; d != nil && d.conn != nil {
-		_ = d.conn.Enqueue(protocol.Message{Type: protocol.TypeInvoke, ExecID: execID, Op: protocol.OpCancel})
-	}
-}
-
-func (h *Hub) forwardToClient(from Sender, msg protocol.Message) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	inf := h.inflight[msg.ExecID]
-	if inf == nil {
-		return
-	}
-	if device := h.devices[inf.deviceID]; device == nil || device.conn != from {
-		return
-	}
-	if msg.Type == protocol.TypeStdout || msg.Type == protocol.TypeStderr {
-		if len(msg.Data) > protocol.MaxFrameBytes {
-			inf.trunc = true
-			return
-		}
-		if len(msg.Data) > protocol.MaxExecOutputBytes-inf.outBytes {
-			inf.outBytes = protocol.MaxExecOutputBytes
-			inf.trunc = true
-			return
-		}
-		inf.outBytes += len(msg.Data)
-	}
-	out := msg
-	if inf.trunc && msg.Type == protocol.TypeExit {
-		out.Truncated = protocol.Bool(true)
-	}
-	if err := inf.client.Enqueue(out); err != nil {
-		if err == errOutputDropped {
-			inf.trunc = true
-			return
-		}
-		h.cancelClientLocked(inf.client)
-		delete(h.clients, inf.client)
-		inf.client.Close()
-		return
-	}
-	if msg.Type == protocol.TypeExit || msg.Type == protocol.TypeError || msg.Type == protocol.TypeInvokeNack {
-		delete(h.inflight, msg.ExecID)
-	}
-}
-
-func (h *Hub) failDeviceLocked(id, code string) {
-	for execID, inf := range h.inflight {
-		if inf.deviceID == id {
-			_ = inf.client.Enqueue(protocol.Err(execID, code))
-			delete(h.inflight, execID)
-		}
-	}
-}
-
-func (h *Hub) cancelClientLocked(from Sender) {
-	for execID, inf := range h.inflight {
-		if inf.client != from {
-			continue
-		}
-		if d := h.devices[inf.deviceID]; d != nil && d.conn != nil {
-			_ = d.conn.Enqueue(protocol.Message{Type: protocol.TypeInvoke, ExecID: execID, Op: protocol.OpCancel})
-		}
-		delete(h.inflight, execID)
-	}
 }
 
 func (h *Hub) DeviceOnline(id string) bool {

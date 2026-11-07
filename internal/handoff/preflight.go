@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,9 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/xallor-ai/xallor-remote/internal/job"
+	"github.com/xallor-ai/xallor-remote/internal/process"
 )
 
 func samePath(a, b string) bool {
@@ -26,13 +30,17 @@ func beneath(root, target string) bool {
 	rel, err := filepath.Rel(root, target)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && !filepath.IsAbs(rel)
 }
-func (m *Manager) preflight(ctx context.Context, r Request, root string) (Config, string, string, error) {
+func (m *Manager) preflight(ctx context.Context, r Request, root string, owner *job.Owner) (Config, string, string, error) {
 	// Official Windows CLI startup can exceed eight seconds under memory pressure.
 	// Bound the whole preflight while retaining any shorter request deadline.
 	probe, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	phase := "workspace"
+	var processErr error
 	fail := func(code string) (Config, string, string, error) {
+		if errors.Is(processErr, process.ErrCleanup) {
+			return Config{}, "", "", process.ErrCleanup
+		}
 		if probe.Err() == context.DeadlineExceeded {
 			code = "preflight_timeout_" + phase
 		}
@@ -51,7 +59,9 @@ func (m *Manager) preflight(ctx context.Context, r Request, root string) (Config
 	}
 	git := func(args ...string) (string, error) {
 		cmd := exec.Command("git", append([]string{"-C", workspace}, args...)...)
-		return m.output(probe, cmd)
+		var value string
+		value, processErr = m.output(probe, cmd, owner)
+		return value, processErr
 	}
 	phase = "git_root"
 	top, err := git("rev-parse", "--show-toplevel")
@@ -95,7 +105,9 @@ func (m *Manager) preflight(ctx context.Context, r Request, root string) (Config
 		return fail("adapter_not_configured")
 	}
 	call := func(arg string) (string, error) {
-		return m.output(probe, exec.Command(cfg.Executable, append(append([]string{}, cfg.Prefix...), arg)...))
+		var value string
+		value, processErr = m.output(probe, exec.Command(cfg.Executable, append(append([]string{}, cfg.Prefix...), arg)...), owner)
+		return value, processErr
 	}
 	phase = "cli_help"
 	help, err := call("--help")

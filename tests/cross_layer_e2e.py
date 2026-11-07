@@ -30,7 +30,7 @@ def main():
         target = cluster.add("target")
         cluster.add("controller")
         cluster.cli("target", "inbound", "on")
-        grant = (cluster.root / "target/grant").read_text(encoding="utf-8")
+        grant = cluster.grant("target")
         cluster.cli("controller", "peer", "add", "--id", target, "--grant", grant)
         bad_exit = cluster.cli("controller", "exec", "--device", target, "--", "exit 7", check=False)
         assert bad_exit.returncode != 0, "CLI falsely reported nonzero remote exit as success"
@@ -57,12 +57,13 @@ def main():
         # Inspect the real Relay database after exec, files, cancellation, and restart.
         # Operation payloads and output must not acquire a persistence collection.
         with closing(sqlite3.connect((cluster.root / "relay/relay.db").as_uri() + "?mode=ro", uri=True)) as db:
-            assert db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall() == [(name,) for name in ("authority", "device_grants", "devices", "memberships", "principal_credentials", "principals", "tenants")]
-            assert db.execute("PRAGMA user_version").fetchone() == (4,)
+            assert db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall() == [(name,) for name in ("authority", "device_grants", "device_ownership", "device_shares", "devices", "execution_signing_key", "memberships", "principal_credentials", "principals", "tenants")]
+            assert db.execute("PRAGMA user_version").fetchone() == (6,)
+            assert db.execute("SELECT singleton,typeof(key),length(key) FROM execution_signing_key").fetchall() == [(1, "blob", 32)]
             assert db.execute("SELECT inbound FROM devices WHERE id=?", (target,)).fetchone() == (1,)
             uid, grant_id, token_hash = db.execute("SELECT d.uid,g.id,g.token_hash FROM devices d JOIN device_grants g ON g.device_uid=d.uid WHERE d.id=?", (target,)).fetchone()
             assert len(uid) == 32 and len(grant_id) == 32 and uid != target
-            current_grant = (cluster.root / "target/grant").read_text(encoding="utf-8")
+            current_grant = cluster.grant("target")
             assert token_hash == hashlib.sha256(current_grant.encode("utf-8")).hexdigest()
         results.append({"name":"relay_persists_identity_without_operation_payloads", "status":"pass"})
     finally:

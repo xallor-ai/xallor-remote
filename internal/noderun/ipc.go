@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/xallor-ai/xallor-remote/internal/activity"
+	"github.com/xallor-ai/xallor-remote/internal/execution"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -16,18 +17,10 @@ func (d *Daemon) serveIPC(c *ipc.Conn) {
 		if err != nil {
 			return
 		}
-		if d.handleAccount(c, req) || d.handleObservation(c, req) || d.handleHeadState(c, req) || d.handleHandoffIPC(c, req) || d.handleLocal(c, req) {
+		if d.handleDeviceSettings(c, req) || d.handleDeviceAccess(c, req) || d.handleAccount(c, req) || d.handleObservation(c, req) || d.handleHeadState(c, req) || d.handleHandoffIPC(c, req) || d.handleLocal(c, req) {
 			continue
 		}
 		switch req.Method {
-		case "grant.issue":
-			g, err := d.store.IssueGrant()
-			if err != nil {
-				_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, err.Error()))
-				continue
-			}
-			d.pushGrant(g)
-			_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"grant": g}))
 		case "grant.show":
 			_, _, g, _, _, _, _ := d.store.Snapshot()
 			_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"grant": g}))
@@ -37,8 +30,8 @@ func (d *Daemon) serveIPC(c *ipc.Conn) {
 				Grant    string `json:"grant"`
 			}
 			_ = json.Unmarshal(req.Params, &p)
-			if p.DeviceID == "" || p.Grant == "" {
-				_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "需要 device_id 与 grant"))
+			if p.DeviceID == "" {
+				_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "需要 device_id"))
 				continue
 			}
 			if err := d.store.AddPeer(p.DeviceID, p.Grant); err != nil {
@@ -84,13 +77,17 @@ func (d *Daemon) serveIPC(c *ipc.Conn) {
 
 func (d *Daemon) ipcExec(c *ipc.Conn, req ipc.Request) {
 	var p struct {
-		DeviceID  string `json:"device_id"`
-		Command   string `json:"command"`
-		Cwd       string `json:"cwd"`
-		TimeoutMS int    `json:"timeout_ms"`
+		DeviceID string `json:"device_id"`
+		execution.Request
 	}
-	if err := json.Unmarshal(req.Params, &p); err != nil || p.Command == "" {
-		_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "需要 command"))
+	if err := execution.DecodeJSON(req.Params, &p); err != nil {
+		code := executionErrorCode(err)
+		_ = c.WriteFrame(ipc.Fail(req.ID, code, ipc.Human(code)))
+		return
+	}
+	if err := p.Validate(); err != nil {
+		code := executionErrorCode(err)
+		_ = c.WriteFrame(ipc.Fail(req.ID, code, ipc.Human(code)))
 		return
 	}
 	peer, ok := d.store.Peer(p.DeviceID)
@@ -109,7 +106,7 @@ func (d *Daemon) ipcExec(c *ipc.Conn, req ipc.Request) {
 		_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, err.Error()))
 		return
 	}
-	payload, _ := json.Marshal(protocol.ExecPayload{Command: p.Command, Cwd: p.Cwd, TimeoutMS: p.TimeoutMS})
+	payload, _ := json.Marshal(p.Request)
 	d.forwardInvoke(c, req.ID, peer.DeviceID, link, cl, protocol.OpExec, execID, payload, true)
 }
 

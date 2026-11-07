@@ -1,10 +1,13 @@
 package noderun
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/shell"
 )
 
 func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
@@ -23,40 +26,30 @@ func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
 			return true
 		}
 		_ = c.WriteFrame(ipc.OK(req.ID, map[string]bool{"ok": true}))
-	case "grant.rotate":
-		g, err := d.store.RotateGrant()
-		if err != nil {
-			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, err.Error()))
-			return true
-		}
-		d.pushGrant(g)
-		_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"grant": g}))
-	case "inbound.set":
-		var p struct {
-			Enabled *bool `json:"enabled"`
-		}
-		_ = json.Unmarshal(req.Params, &p)
-		if p.Enabled == nil {
-			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "需要 enabled"))
-			return true
-		}
-		g, err := d.store.SetInbound(*p.Enabled)
-		if err != nil {
-			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, err.Error()))
-			return true
-		}
-		if *p.Enabled {
-			d.pushGrant(g)
-			_ = c.WriteFrame(ipc.OK(req.ID, map[string]any{"inbound": true, "grant": g}))
-		} else {
-			d.pushInbound(false)
-			_ = c.WriteFrame(ipc.OK(req.ID, map[string]any{"inbound": false}))
-		}
 	case "revoke":
-		d.pushRevoke()
-		_ = d.store.ClearGrant()
+		ctx, cancel := context.WithTimeout(d.ctx, protocol.RelayIdentityTimeout)
+		defer cancel()
+		release, err := d.settings.acquire(ctx)
+		if err != nil {
+			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.QuotaExceeded, "设备设置正在更新，请稍后再试。"))
+			return true
+		}
+		defer release()
+		if err := d.store.ClearGrant(); err != nil {
+			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "无法清除本机授权码。"))
+			return true
+		}
+		d.pushRevoke(ctx)
 		_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
 	case "reset":
+		ctx, cancel := context.WithTimeout(d.ctx, protocol.RelayIdentityTimeout)
+		defer cancel()
+		release, err := d.settings.acquire(ctx)
+		if err != nil {
+			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.QuotaExceeded, "设备设置正在更新，请稍后再试。"))
+			return true
+		}
+		defer release()
 		var p struct {
 			Confirm bool `json:"confirm"`
 		}
@@ -65,8 +58,12 @@ func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
 			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "需要 confirm=true"))
 			return true
 		}
-		d.pushRevoke()
-		_ = d.store.Wipe()
+		d.pushRevoke(ctx)
+		if err := d.store.Wipe(); err != nil {
+			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "本机重置未完成，请检查数据目录后重启服务。"))
+			d.Stop()
+			return true
+		}
 		_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
 		d.Stop()
 	case "stop":
@@ -95,18 +92,56 @@ func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
 		d.dropClient(p.DeviceID, nil)
 		_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
 	case "config.get":
-		_, _, _, ws, relay, _, _ := d.store.Snapshot()
-		_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"relay_url": relay, "workspace": ws}))
+		cfg := d.store.ConfigSnapshot()
+		if cfg.Shell == "" {
+			cfg.Shell = "auto"
+		}
+		_ = c.WriteFrame(ipc.OK(req.ID, cfg))
 	case "config.set":
+		ctx, cancel := context.WithTimeout(d.ctx, protocol.RelayIdentityTimeout)
+		defer cancel()
+		release, err := d.settings.acquire(ctx)
+		if err != nil {
+			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.QuotaExceeded, "设备设置正在更新，请稍后再试。"))
+			return true
+		}
+		defer release()
 		var p struct {
 			RelayURL  string `json:"relay_url"`
 			Workspace string `json:"workspace"`
 			Shell     string `json:"shell"`
 		}
-		_ = json.Unmarshal(req.Params, &p)
-		if err := d.store.SetConfig(p.RelayURL, p.Workspace, p.Shell); err != nil {
-			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, err.Error()))
+		if json.Unmarshal(req.Params, &p) != nil {
+			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "配置格式无效。"))
 			return true
+		}
+		oldConfig := d.store.ConfigSnapshot()
+		if err := d.store.SetConfig(p.RelayURL, p.Workspace, p.Shell); err != nil {
+			code := protocol.AgentError
+			if errors.Is(err, shell.ErrUnsupported) {
+				code = protocol.UnsupportedShell
+			}
+			_ = c.WriteFrame(ipc.Fail(req.ID, code, ipc.Human(code)))
+			return true
+		}
+		newConfig := d.store.ConfigSnapshot()
+		if oldConfig.RelayURL != newConfig.RelayURL {
+			d.mu.Lock()
+			device := d.device
+			clients := make([]*clientLink, 0, len(d.clients))
+			for key, client := range d.clients {
+				delete(d.clients, key)
+				clients = append(clients, client)
+			}
+			d.mu.Unlock()
+			if device != nil {
+				_ = device.conn.CloseNow()
+			}
+			for _, client := range clients {
+				d.cancelRemotesForLink(client.ws)
+				client.failWaiters()
+				client.closeConn()
+			}
 		}
 		_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
 	default:
@@ -115,22 +150,12 @@ func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
 	return true
 }
 
-func (d *Daemon) pushInbound(on bool) {
+func (d *Daemon) pushRevoke(ctx context.Context) {
 	d.mu.Lock()
 	link := d.device
 	d.mu.Unlock()
 	if link == nil {
 		return
 	}
-	_ = link.send(protocol.Message{Type: protocol.TypeInboundSet, Inbound: protocol.Bool(on)})
-}
-
-func (d *Daemon) pushRevoke() {
-	d.mu.Lock()
-	link := d.device
-	d.mu.Unlock()
-	if link == nil {
-		return
-	}
-	_ = link.send(protocol.Message{Type: protocol.TypeRevoke})
+	_ = link.sendContext(ctx, protocol.Message{Type: protocol.TypeRevoke})
 }

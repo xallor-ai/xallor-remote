@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -27,12 +28,12 @@ func TestIdentity_should_publishCommittedGrant_whenCancellationFollowsCommit(t *
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	s := &cancelAfterCommitStore{DeviceStore: newMemStore(), cancel: cancel}
-	h := NewHub(s)
+	h := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device := &contextSender{ctx: ctx}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)
 	}
-	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("committed")})
+	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("committed")})
 	if ctx.Err() == nil {
 		t.Fatal("fixture did not cancel after commit")
 	}

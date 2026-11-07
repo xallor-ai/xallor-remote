@@ -52,8 +52,8 @@ func (d *Daemon) diagnose(device string) diagnostics.Report {
 		return r
 	}
 	peer, ok := d.store.Peer(device)
-	if !ok || peer.Grant == "" {
-		r.Set("peer", "fail", "not_paired", "请先添加对方设备 ID 和授权码。")
+	if !ok {
+		r.Set("peer", "fail", "not_paired", "请先添加对方设备 ID。")
 		return r
 	}
 	r.Set("peer", "ok", "", "")

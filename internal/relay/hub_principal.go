@@ -11,23 +11,31 @@ import (
 // A new invocation revalidates the authority-issued credential and membership.
 // This database wait is outside the routing mutex and is never on output frames.
 // Cancellation remains available to the original connection even after revocation.
-func (h *Hub) verifyPrincipal(from Sender) string {
+func (h *Hub) verifyClientAccess(from Sender, operation string) string {
 	h.mu.Lock()
 	client, ok := h.clients[from]
 	h.mu.Unlock()
 	if !ok {
 		return protocol.Unauthorized
 	}
+	ctx, cancel := context.WithTimeout(from.Context(), protocol.RelayIdentityTimeout)
+	defer cancel()
+	if client.access.OwnershipID != "" {
+		if h.accessService == nil {
+			return protocol.Unauthorized
+		}
+		if err := h.accessService.Verify(ctx, client.identity, client.authorization, operation); err != nil {
+			return accessErrorCode(err)
+		}
+		return ""
+	}
 	if client.identity.PrincipalID == "" {
 		return ""
 	}
-	auth, ok := h.store.(principal.Authenticator)
-	if !ok {
+	if h.accounts == nil {
 		return protocol.Unauthorized
 	}
-	ctx, cancel := context.WithTimeout(from.Context(), protocol.RelayIdentityTimeout)
-	defer cancel()
-	if err := auth.Verify(ctx, client.identity); err != nil {
+	if err := h.accounts.Verify(ctx, client.identity); err != nil {
 		return principalErrorCode(err)
 	}
 	return ""

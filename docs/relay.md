@@ -1,16 +1,16 @@
 # Relay
 
-SSOT：职责边界、落盘、官方预算、运维。**连接 / inflight / 流式 / cancel / 断线 / 背压**只在 [dataplane.md](dataplane.md)。消息与限额见 [protocol.md](protocol.md)。策略不在这里执行。授权角色见 [credentials.md](credentials.md)。
+SSOT：职责边界、落盘、官方预算、运维。**连接 / inflight / 流式 / cancel / 断线 / 背压**只在 [dataplane.md](dataplane.md)。消息与限额见 [protocol.md](protocol.md)。目标命令/文件策略不在这里执行。授权角色见 [credentials.md](credentials.md)。
 
 ---
 
 ## 1. 做 / 不做
 
-**Relay 是有鉴权的实时消息路由器**：device 连接登记、grant 校验、按 `exec_id` 转发、生命周期错误。不是执行服务器。
+**Relay 是有鉴权的实时消息路由器**：device 连接登记、连接认证与设备访问授权、按 `exec_id` 转发、生命周期错误。不是执行服务器。
 
-做：登记 device / client 连接；校验 grant；按 `exec_id` 转发；online/offline 与踢线；**接受 device 侧的** rotate/revoke/inbound；官方实例连接/注册预算。
+做：登记 device / client 连接；调用身份与设备授权服务；按 `exec_id` 转发；online/offline 与踢线；**接受 device 侧的** rotate/revoke/inbound；官方实例连接/注册预算。
 
-不做：解释命令、读目标盘、**持久化** stdout/文件正文/命令及其片段、策略判定、P2P、远程桌面、账号登录（v0）、为 invoke 另开 HTTP API。
+不做：解释命令、读目标盘、**持久化** stdout/文件正文/命令及其片段、目标命令/文件策略判定、P2P、远程桌面、账号登录（v0）、为 invoke 另开 HTTP API。
 
 **飞行中的 invoke 与 stdout，官方 Relay 在 TLS 终止后看得见。** 这是 v0 产品事实。自托管可换。E2E 以后再说。
 
@@ -24,7 +24,7 @@ SSOT：职责边界、落盘、官方预算、运维。**连接 / inflight / 流
 
 同一 `device_id`：**一条** device 连接（新的踢旧的）。**多条** client 连接，v0 一条 client 只绑一个目标。细节与踢线后果见 [dataplane.md](dataplane.md)。
 
-`grant_rotate` / `revoke` / `inbound_set`：**只处理来自对应 device 连接的消息**。client 连接上的同类消息丢弃或 `unauthorized`。
+`device.settings` / `revoke`：**只处理来自对应 device 连接的消息**。client 连接上的同类消息丢弃或 `unauthorized`。
 
 ---
 
@@ -37,8 +37,11 @@ v0 用 **SQLite** 单文件（`--data` 目录内），驱动见 [stack.md](stack
 | `devices` | uid（内部身份主键）, id（唯一显示号码）, secret_hash, inbound, last_seen |
 | `device_grants` | id（授权实例主键）, device_uid（设备外键）, token_hash；当前共享授权的唯一事实来源 |
 | `authority` | 本 Relay 数据域的稳定签发方 ID |
+| `execution_signing_key` | 本数据域后台执行委托的随机 32 字节 HMAC 密钥；只由 Relay 启动组装加载，不对客户端输出 |
 | `principals` / `tenants` / `memberships` | 用户或服务主体、个人或组织空间、成员角色/启用状态/版本 |
 | `principal_credentials` | 凭据 ID、token_hash、成员关系、到期时间、撤销状态；不存明文 token |
+| `device_ownership` | 设备 UID、唯一归属实例 ID、所属租户、所有者主体 |
+| `device_shares` | 分享 ID、归属实例外键、接收者成员关系、固定操作位集合、到期时间 |
 
 禁止持久：grant/secret 明文、stdout、文件正文、路径、命令及其片段或载荷摘要。
 
@@ -50,7 +53,9 @@ v0 用 **SQLite** 单文件（`--data` 目录内），驱动见 [stack.md](stack
 
 SQLite 的每条连接配置短 busy wait（50ms），避免长时间原生忙等遮蔽取消。仅对 `SQLITE_BUSY` 且事务明确回滚成功的身份操作进行有取消信号的重试；提交错误和其它错误不重试。这是数据库事务处理，不会重放远程命令。
 
-SQLite 使用 `user_version` 管理结构版本。当前版本 4 加入主体、空间、成员和账号凭据，保留版本 3 的设备 UID 与授权实例 ID；更早结构升级时保留显示号码、凭据哈希、入站与 last_seen。运行时只使用最终结构，不存在双写或双读分支。结构变更在事务中完成，不支持高版本数据库由低版本程序打开。部署升级前必须备份 Relay 数据目录；生产部署仍需明确授权。删除表不承诺安全擦除 SQLite 空闲页或旧备份中的既有数据。
+SQLite 使用 `user_version` 管理结构版本。当前版本 6 加入后台委托签名密钥，升级与重开保留已有签发方、设备、归属、主体、成员和凭据身份；更早结构升级时保留显示号码、凭据哈希、入站与 last_seen。运行时只使用最终结构，不存在双写或双读分支。结构变更在事务中完成，不支持高版本数据库由低版本程序打开。部署升级前必须备份 Relay 数据目录；生产部署仍需明确授权。删除表不承诺安全擦除 SQLite 空闲页或旧备份中的既有数据。
+
+设备删除级联删除归属及分享；归属转移事务替换归属实例并级联删除旧分享。主体/成员不随设备删除。持久权限位固定为 info=1、read=2、write=4、exec=8、processes=16、handoff.submit=32、handoff.get=64，不因显示顺序变化重新赋义。存储事务只重试已经确认回滚的 busy 失败，不自动重试提交结果不确定的变更。
 
 已鉴权请求的转发和终态处理不写数据库，也不为每次操作创建后台持久化任务。Relay 不提供命令审计功能。后续会员用量应由独立的可信主体、资源租约和最小计量模块负责，不能从命令内容或一次转发完成推算计费与真实作业结束。此处尚未实现该计量模型。备份 Relay 数据目录不等于备份用户文件。
 
@@ -58,13 +63,19 @@ SQLite 使用 `user_version` 管理结构版本。当前版本 4 加入主体、
 
 ### 本机身份管理
 
-以下命令要求 Relay 数据目录的本机操作系统权限，不是公开管理接口。`relay --data <dir> principal create --name <name>` 创建主体和个人空间并输出 JSON 凭据；指定 `--tenant <id>` 将新主体加入已有空间，`--kind service` 创建服务主体。`principal space --name <name>` 创建团队空间。此处角色用于成员建模，尚未对设备访问实施租户 ACL。
+以下命令要求 Relay 数据目录的本机操作系统权限，不是公开管理接口。`relay --data <dir> principal create --name <name>` 创建主体和个人空间并输出 JSON 凭据；指定 `--tenant <id>` 将新主体加入已有空间，`--kind service` 创建服务主体。`principal space --name <name>` 创建团队空间。成员角色不自动赋予设备访问权；设备访问由归属和明确分享决定。
 
 `principal issue --membership <id>` 为同一成员签发新凭据，旧凭据独立存在；`principal revoke --credential <id>` 撤销指定凭据；`principal membership --membership <id> --active=false` 停用成员，`true` 恢复并推进成员版本。签发支持 `--ttl`，期限见协议合同。
 
 将签发输出保存为 UTF-8 JSON 后，在控制侧运行 `xallor-remote account use --credential-file <file>`，`account status` 只显示是否配置，`account clear` 明确移除配置。Windows PowerShell 5 的 `>` 会生成 UTF-16 文件，不可直接用于保存此 JSON；可通过 `[System.IO.File]::WriteAllText(path, json, [System.Text.UTF8Encoding]::new($false))` 保存无 BOM UTF-8。凭据只交给需要使用它的控制侧；CLI/MCP 的普通远程调用仍通过同一个 Runtime。
 
-## 4. 官方实例预算（无账号）
+### 被控机的归属与分享
+
+被控机导入身份凭据并连接 Relay 后，`device claim` 将本机设备认领到当前空间。`device owner` 查看归属和分享；`device share --member <成员关系ID> --allow info,read --ttl 24h` 授予指定操作；`device unshare --share <分享ID>` 撤销；`device transfer --member <接收者成员关系ID>` 转移并作废原分享。这些命令经本机 Runtime 的 device 连接完成，不把设备密钥交给控制方，也没有公开的 HTTP 管理入口。
+
+控制方导入对应成员的账号凭据后可用 `peer add --id <设备ID>` 添加已认领设备，无需共享码。权限、未认领模式和作业边界见 [platform.md](platform.md)；超时或断线不能推断事务是否提交，先核对归属/分享，转移时可由接收者确认，再决定下一步。
+
+## 4. 官方实例保护上限
 
 开放 `hello_device` 会被滥用（占连接、当 C2）。v0 硬顶，超限 `quota_exceeded`：
 

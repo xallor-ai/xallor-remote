@@ -3,21 +3,48 @@ package handoff
 import (
 	"context"
 	"encoding/json"
-	"io"
+	"errors"
+	"os"
 	"os/exec"
 	"time"
+
+	"github.com/xallor-ai/xallor-remote/internal/delegation"
+	"github.com/xallor-ai/xallor-remote/internal/job"
+	"github.com/xallor-ai/xallor-remote/internal/process"
 )
 
-func (m *Manager) run(r Request, root string) {
-	ctx, cancel := context.WithTimeout(m.ctx, time.Duration(r.TimeoutSeconds)*time.Second)
+type outcome struct {
+	state, code, version, text string
+	truncated                  bool
+}
+
+func (m *Manager) run(parent context.Context, key string, r Request, root string, owner *job.Owner, proof string) (result outcome) {
+	ctx, cancel := context.WithTimeout(parent, time.Duration(r.TimeoutSeconds)*time.Second)
 	defer cancel()
-	cfg, version, workspace, err := m.preflight(ctx, r, root)
+	guard, stop, err := delegation.Maintain(ctx, proof, m.renew)
 	if err != nil {
-		_ = m.update(r.ID, "failed", err.Error(), "", "", false)
-		return
+		return outcome{state: "unknown", code: "execution_authorization_unconfirmed"}
 	}
-	if m.update(r.ID, "accepted", "", version, "", false) != nil {
-		return
+	defer stop()
+	ctx = guard
+	defer func() {
+		if errors.Is(context.Cause(ctx), errDeviceContextChanged) && result.code != "process_cleanup_unconfirmed" {
+			result.state, result.code = "unknown", "device_authorization_changed"
+		}
+		if (errors.Is(context.Cause(ctx), delegation.ErrDenied) || errors.Is(context.Cause(ctx), delegation.ErrExpired)) && result.code != "process_cleanup_unconfirmed" {
+			result.state, result.code = "unknown", "execution_authorization_lost"
+		}
+	}()
+	cfg, version, workspace, err := m.preflight(ctx, r, root, owner)
+	if err != nil {
+		state, code := "failed", err.Error()
+		if errors.Is(err, process.ErrCleanup) {
+			state, code = "unknown", "process_cleanup_unconfirmed"
+		}
+		return outcome{state: state, code: code}
+	}
+	if m.update(key, "accepted", "", version, "", false) != nil {
+		return outcome{state: "unknown", code: "receipt_unavailable"}
 	}
 	args := append([]string{}, cfg.Prefix...)
 	args = append(args, "--workspace", workspace, "--resume", r.Session, "--print", "--output-format", "stream-json")
@@ -33,16 +60,16 @@ func (m *Manager) run(r Request, root string) {
 	args = append(args, "--", prompt)
 	cmd := exec.Command(cfg.Executable, args...)
 	cmd.Dir = workspace
-	cmd.Stderr = io.Discard
-	stdout, err := cmd.StdoutPipe()
+	stdout, output, err := os.Pipe()
 	if err != nil {
-		_ = m.update(r.ID, "failed", "cli_start_failed", version, "", false)
-		return
+		return outcome{state: "failed", code: "cli_start_failed", version: version}
 	}
-	kill, wait, err := m.start(ctx, cmd)
+	defer stdout.Close()
+	cmd.Stdout = output
+	child, err := owner.Start(ctx, cmd)
+	_ = output.Close()
 	if err != nil {
-		_ = m.update(r.ID, "failed", "cli_start_failed", version, "", false)
-		return
+		return outcome{state: "failed", code: "cli_start_failed", version: version}
 	}
 	// Unblock reads even if a descendant escapes the supervised process group.
 	readDone := make(chan struct{})
@@ -53,21 +80,23 @@ func (m *Manager) run(r Request, root string) {
 		case <-readDone:
 		}
 	}()
-	result, parseErr := readCursor(stdout, r.Session, workspace, func() error { return m.update(r.ID, "running", "", version, "", false) })
+	outputResult, parseErr := readCursor(stdout, r.Session, workspace, func() error { return m.update(key, "running", "", version, "", false) })
 	close(readDone)
 	if parseErr != nil {
-		kill()
+		_ = child.Stop()
 	}
-	waitErr := wait()
+	waitErr := child.Wait()
 	state, code := "completed", ""
-	if ctx.Err() != nil {
+	if errors.Is(waitErr, process.ErrCleanup) {
+		state, code = "unknown", "process_cleanup_unconfirmed"
+	} else if ctx.Err() != nil {
 		state, code = "unknown", "interrupted"
 	} else if parseErr != nil {
 		state, code = "unknown", parseErr.Error()
-	} else if result.isError {
+	} else if outputResult.isError {
 		state, code = "failed", "cli_result_error"
 	} else if waitErr != nil {
 		state, code = "unknown", "cli_exit_nonzero"
 	}
-	_ = m.update(r.ID, state, code, version, result.text, result.truncated)
+	return outcome{state: state, code: code, version: version, text: outputResult.text, truncated: outputResult.truncated}
 }

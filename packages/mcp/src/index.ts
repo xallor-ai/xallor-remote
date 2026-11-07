@@ -4,11 +4,13 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
 import { findBinary, INSTALL_HINT } from "./ensure.js";
-import { bindHostCancel, execToolText, newExecProgress, type ToolCtx } from "./exec-result.js";
+import { bindHostCancel, execFrameText, newExecProgress, type ToolCtx } from "./exec-result.js";
 import { readToolText } from "./read-result.js";
 import { failText, RuntimeIpc, type Frame } from "./ipc.js";
-import { MCP_VERSION, versionsMatch } from "./version.js";
+import { MCP_VERSION } from "./version.js";
+import { guardedArgs, checkRuntimeBuild } from "./profile-format.js";
 import { packageBuild } from "./buildinfo.js";
+import { execInputSchema } from "./exec-input.js";
 
 let session: RuntimeIpc | undefined;
 
@@ -20,38 +22,40 @@ async function ensureRuntime(): Promise<RuntimeIpc> {
   session = undefined;
   const ipc = new RuntimeIpc();
   try {
-    await ipc.connect(400);
-  } catch {
-    const bin = findBinary();
-    if (!bin) {
-      throw new Error(INSTALL_HINT);
+    try {
+      await ipc.connect(400);
+    } catch {
+      const bin = findBinary();
+      if (!bin) {
+        throw new Error(INSTALL_HINT);
+      }
+      await runEnsure(bin);
+      await ipc.connect(8000);
     }
-    await runEnsure(bin);
-    await ipc.connect(8000);
-  }
-  const st = await ipc.call("status");
-  if (st.ok === false) {
-    throw new Error(failText(st));
-  }
-  const ver = String(st.result?.version ?? "");
-  if (ver && !versionsMatch(ver, MCP_VERSION)) {
-    throw new Error(`Runtime 版本 ${ver} 与 MCP ${MCP_VERSION} 主版本不一致。`);
-  }
-  const id = process.env.XALLOR_REMOTE_DEVICE_ID;
-  const grant = process.env.XALLOR_REMOTE_DEVICE_GRANT;
-  if (id && grant) {
-    const add = await ipc.call("peer.add", { device_id: id, grant });
-    if (add.ok === false) {
-      throw new Error(failText(add));
+    const st = await ipc.call("status");
+    if (st.ok === false) {
+      throw new Error(failText(st));
     }
+    checkRuntimeBuild(st.result);
+    const id = process.env.XALLOR_REMOTE_DEVICE_ID;
+    const grant = process.env.XALLOR_REMOTE_DEVICE_GRANT;
+    if (id && grant) {
+      const add = await ipc.call("peer.add", { device_id: id, grant });
+      if (add.ok === false) {
+        throw new Error(failText(add));
+      }
+    }
+    session = ipc;
+    return ipc;
+  } catch (error) {
+    ipc.close();
+    throw error;
   }
-  session = ipc;
-  return ipc;
 }
 
 function runEnsure(bin: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, ["ensure"], {
+    const child = spawn(bin, guardedArgs(["ensure"]), {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: process.env,
@@ -144,21 +148,10 @@ function createServer(): McpServer {
   server.registerTool(
     "remote.exec",
     {
-      description: "在对方设备执行命令，流式回收 stdout/stderr。cwd 默认对方 workspace。",
-      inputSchema: z.object({
-        command: z.string().describe("要执行的命令"),
-        device_id: z.string().optional(),
-        cwd: z.string().optional(),
-        timeout_ms: z
-          .number()
-          .int()
-          .positive()
-          .max(3_600_000)
-          .optional()
-          .describe("超时毫秒，最长 1 小时"),
-      }),
+      description: "在对方执行脚本或程序，script 与 program 二选一，流式回收 stdout/stderr。解释器和路径均属于对方。",
+      inputSchema: execInputSchema,
     },
-    async ({ command, device_id, cwd, timeout_ms }, ctx) => {
+    async ({ script, program, device_id, cwd, timeout_ms }, ctx) => {
       if (!process.env.XALLOR_REMOTE_DEVICE_GRANT && !process.env.XALLOR_REMOTE_DEVICE_ID) {
         const ipc = await ensureRuntime();
         const st = await ipc.call("status");
@@ -175,18 +168,18 @@ function createServer(): McpServer {
       });
       const stdout: string[] = [];
       const stderr: string[] = [];
-      let announced = false;
+      let observedExecID = "";
       const f = await ipc.stream(
         "exec",
         {
-          command,
+          ...(script ? { script } : { program }),
           ...(device_id ? { device_id } : {}),
           ...(cwd ? { cwd } : {}),
           ...(timeout_ms ? { timeout_ms } : {}),
         },
         (ev) => {
-          if (ev.exec_id && !announced) {
-            announced = true;
+          if (ev.exec_id && !observedExecID) {
+            observedExecID = ev.exec_id;
             onExec(ev.exec_id);
             void report(ev.exec_id);
           }
@@ -199,19 +192,8 @@ function createServer(): McpServer {
             void report(ev.data);
           }
         },
-      );
-      if (f.ok === false) {
-        return textResult(failText(f), true);
-      }
-      const got = execToolText(
-        String(f.result?.status ?? ""),
-        f.result?.exit_code,
-        f.result?.duration_ms,
-        f.result?.truncated,
-        f.result?.exec_id,
-        stdout.join(""),
-        stderr.join(""),
-      );
+      ).catch((): Frame => ({ ok: false, message: "连接已断开，执行结果未确认。" }));
+      const got = execFrameText(f, stdout.join(""), stderr.join(""), observedExecID);
       return textResult(got.text, got.isError);
     },
   );

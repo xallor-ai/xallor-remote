@@ -29,7 +29,7 @@ async fn native_bridge_should_multiplex_and_cancel_on_its_connection() {
     send(&s,"subscribe","approval.subscribe",json!({})).await;
     assert_eq!(next(&s).await["ok"], true);
     let command = if cfg!(windows) {"Write-Output native-stream; Start-Sleep -Seconds 30"} else {"echo native-stream; sleep 30"};
-    send(&s,"exec","exec",json!({"device_id":std::env::var("XR_GUI_TARGET").unwrap(),"command":command,"timeout_ms":45000})).await;
+    send(&s,"exec","exec",json!({"device_id":std::env::var("XR_GUI_TARGET").unwrap(),"script":{"text":command},"timeout_ms":45000})).await;
     let mut exec_id = String::new();
     loop {
         let frame = next(&s).await;
