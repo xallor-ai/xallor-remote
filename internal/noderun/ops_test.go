@@ -68,6 +68,20 @@ func TestReadWorkspaceWindow_should_preserveUTF8OffsetAndLineSelection(t *testin
 	}
 }
 
+func TestReadWorkspaceWindow_should_keepPrefixOfSelectedTailLines(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "large-lines.txt")
+	first := bytes.Repeat([]byte("A"), 600*1024)
+	second := bytes.Repeat([]byte("B"), 600*1024)
+	if err := os.WriteFile(path, append(append(first, '\n'), append(second, '\n')...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, truncated, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 2, Path: "large-lines.txt"}, int64(len(first)+len(second)+2))
+	if err != nil || !truncated || len(got) != protocol.DefaultReadBytes*2 || got[0] != 'A' {
+		t.Fatalf("tail len=%d truncated=%v first=%q err=%v", len(got), truncated, got[:minInt(len(got), 1)], err)
+	}
+}
+
 func TestSliceRead_should_keep_last_line_when_file_ends_with_newline(t *testing.T) {
 	raw := []byte("a\nb\n")
 	got, trunc := sliceRead(raw, protocol.ReadPayload{Tail: 1}, 64*1024)

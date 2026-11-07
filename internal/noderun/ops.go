@@ -172,6 +172,19 @@ func readTooLarge(size int64, p protocol.ReadPayload) bool {
 	if p.Offset < 0 || p.Limit < 0 || p.Head < 0 || p.Tail < 0 || p.Offset > protocol.MaxReadOffsetBytes {
 		return true
 	}
+	if p.Head > 0 || p.Tail > 0 {
+		budget := p.Limit
+		if budget <= 0 || budget > protocol.MaxReadBytes {
+			budget = protocol.DefaultReadBytes
+		}
+		count := p.Head
+		if count == 0 {
+			count = p.Tail
+		}
+		if int64(count)*int64(budget) > int64(protocol.MaxReadBytes) {
+			return true
+		}
+	}
 	if p.Head != 0 || p.Tail != 0 || p.Limit != 0 || p.Offset != 0 {
 		return false
 	}
@@ -216,11 +229,19 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 		return out, truncated, nil
 	}
 	if p.Head > 0 {
-		reader := bufio.NewReader(io.LimitReader(f, int64(protocol.MaxReadBytes)))
+		lineBudget := p.Limit
+		if lineBudget <= 0 || lineBudget > protocol.MaxReadBytes {
+			lineBudget = protocol.DefaultReadBytes
+		}
+		reader := bufio.NewReader(io.LimitReader(f, int64(p.Head)*(int64(lineBudget)+1)))
 		var out []byte
 		truncated := false
 		for i := 0; i < p.Head; i++ {
 			line, readErr := reader.ReadBytes('\n')
+			if len(line) > lineBudget {
+				line = line[:lineBudget]
+				truncated = true
+			}
 			out = append(out, line...)
 			if len(out) >= protocol.MaxReadBytes || readErr == io.EOF {
 				truncated = readErr != io.EOF || len(out) >= protocol.MaxReadBytes
@@ -232,7 +253,10 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 	if p.Tail > 0 {
 		reader := bufio.NewReader(io.LimitReader(f, int64(size)))
 		lines := make([][]byte, 0, minInt(p.Tail, 64))
-		total := 0
+		lineBudget := p.Limit
+		if lineBudget <= 0 || lineBudget > protocol.MaxReadBytes {
+			lineBudget = protocol.DefaultReadBytes
+		}
 		truncated := false
 		for {
 			var line []byte
@@ -241,8 +265,8 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 				var chunk []byte
 				chunk, readErr = reader.ReadSlice('\n')
 				line = append(line, chunk...)
-				if len(line) > protocol.MaxReadBytes+4 {
-					line = line[:protocol.MaxReadBytes+4]
+				if len(line) > lineBudget {
+					line = line[:lineBudget]
 					truncated = true
 				}
 				if readErr != bufio.ErrBufferFull {
@@ -255,27 +279,13 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 			if readErr == io.EOF && len(line) == 0 {
 				break
 			}
-			if len(line) > protocol.MaxReadBytes {
-				line = line[:protocol.MaxReadBytes]
+			if len(line) > lineBudget {
+				line = line[:lineBudget]
 				truncated = true
 			}
 			lines = append(lines, line)
-			total += len(line)
 			if len(lines) > p.Tail {
-				total -= len(lines[0])
 				lines = lines[1:]
-			}
-			for total > protocol.MaxReadBytes && len(lines) > 0 {
-				cut := total - protocol.MaxReadBytes
-				if cut >= len(lines[0]) {
-					total -= len(lines[0])
-					lines = lines[1:]
-					truncated = true
-					continue
-				}
-				lines[0] = lines[0][cut:]
-				total -= cut
-				truncated = true
 			}
 			if readErr == io.EOF {
 				break
@@ -300,7 +310,7 @@ func minInt(a, b int) int {
 func joinTail(lines [][]byte, max int) []byte {
 	var out []byte
 	for _, line := range lines {
-		out = append(out, line...)
+		out = append(out, clampUTF8Prefix(line)...)
 		if len(out) > max {
 			out = out[len(out)-max:]
 		}
