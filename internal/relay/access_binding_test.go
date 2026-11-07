@@ -3,6 +3,7 @@ package relay
 import (
 	"testing"
 
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -15,13 +16,13 @@ func TestAccess_should_requireFreshBinding_whenCredentialValueReused(t *testing.
 			name = "device-recreation"
 		}
 		t.Run(name, func(t *testing.T) {
-			h := NewHub(newMemStore())
+			h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 			dev, stale := &recSender{}, &recSender{}
 			if code := h.RegisterDevice("123456789", "initial", true, dev); code != "" {
 				t.Fatal(code)
 			}
 			rotate := func(hash string) {
-				h.Handle(dev, protocol.RoleDevice, "123456789", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex(hash)})
+				h.Handle(dev, protocol.RoleDevice, "123456789", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex(hash)})
 			}
 			rotate("shared")
 			if code := h.RegisterClient("123456789", "shared", "", stale); code != "" {

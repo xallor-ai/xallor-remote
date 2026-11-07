@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -24,12 +25,12 @@ func (s *routingFaultSender) Enqueue(m protocol.Message) error {
 func TestRouting_should_retireAllMappings_whenEitherQueueRejects(t *testing.T) {
 	for _, side := range []string{"device", "client"} {
 		t.Run(side, func(t *testing.T) {
-			h := NewHub(newMemStore())
+			h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 			d, c := &routingFaultSender{}, &routingFaultSender{}
 			if code := h.RegisterDevice("device", "secret", true, d); code != "" {
 				t.Fatal(code)
 			}
-			h.Handle(d, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("grant")})
+			h.Handle(d, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("grant")})
 			if code := h.RegisterClient("device", "grant", "", c); code != "" {
 				t.Fatal(code)
 			}
@@ -59,6 +60,9 @@ func TestRouting_should_retireAllMappings_whenEitherQueueRejects(t *testing.T) {
 			if len(h.requests) != 0 || len(h.inflight) != 0 {
 				t.Fatal("queue failure leaked mappings")
 			}
+			if h.admission.Active(h.devices["device"].record.UID) != 0 {
+				t.Fatal("queue failure leaked transport capacity")
+			}
 		})
 	}
 }
@@ -68,18 +72,19 @@ func TestRouting_should_retireAllMappings_whenEitherQueueRejects(t *testing.T) {
 func TestRouting_should_discardFormerOwnerEvents_whenOwnershipTransfers(t *testing.T) {
 	s := openIdentityTestStore(t)
 	a, b := enrollment(t, s, "alice", ""), enrollment(t, s, "bob", "")
-	h := NewHub(s)
+	h := NewHub(s, s, access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	d, old, newOwner := &recSender{}, &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, d); code != "" {
 		t.Fatal(code)
 	}
+	h.Handle(d, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", GrantHash: protocol.SHA256Hex("grant"), Inbound: protocol.Bool(true)})
 	controlAccess(t, h, d, a.Token, access.Request{Action: "claim"})
 	if code := h.RegisterClient("device", "", a.Token, old); code != "" {
 		t.Fatal(code)
 	}
 	first := routeRequest(h, d, old, "same")
 	controlAccess(t, h, d, a.Token, access.Request{Action: "transfer", MembershipID: b.MembershipID})
-	if len(h.requests) != 0 || old.last().Code != protocol.Unauthorized || old.last().ExecID != "same" {
+	if len(h.requests) != 0 || old.last().Code != protocol.ResultUnknown || old.last().ExecID != "same" {
 		t.Fatal("old ownership retained correlation")
 	}
 	if code := h.RegisterClient("device", "", b.Token, newOwner); code != "" {

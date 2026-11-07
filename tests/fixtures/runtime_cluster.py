@@ -4,11 +4,22 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import sqlite3
 import stat
 import subprocess
 import tempfile
 import time
 import urllib.request
+
+
+def device_state(profile):
+    """Read only the canonical local state; tests never fall back to old files."""
+    db = sqlite3.connect((Path(profile) / "identity.db").resolve().as_uri() + "?mode=ro", timeout=3, uri=True)
+    try:
+        db.row_factory = sqlite3.Row
+        return dict(db.execute("SELECT device_id,secret,grant,inbound,active,revision FROM identity WHERE singleton=1").fetchone())
+    finally:
+        db.close()
 
 
 class Cluster:
@@ -19,6 +30,12 @@ class Cluster:
         self.profiles = []
         self.relay = None
         self.log = None
+
+    def device_state(self, name):
+        return device_state(self.root / name)
+
+    def grant(self, name):
+        return self.device_state(name)["grant"]
 
     def env(self, name):
         env = dict(os.environ, XALLOR_REMOTE_DATA_DIR=str(self.root / name),

@@ -3,6 +3,8 @@ package identity
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 func (s *Store) RotateGrant() (string, error) {
@@ -10,29 +12,29 @@ func (s *Store) RotateGrant() (string, error) {
 }
 
 func (s *Store) SetInbound(on bool) (string, error) {
-	if on {
-		s.mu.Lock()
-		has := s.Grant != ""
-		s.mu.Unlock()
-		if !has {
-			return s.IssueGrant()
-		}
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Inbound = on
-	return s.Grant, s.persistIdentity()
+	next := s.device
+	if on && next.Grant == "" {
+		var err error
+		next.Grant, err = protocol.NewGrant()
+		if err != nil {
+			return "", err
+		}
+	}
+	next.Inbound = on
+	if err := s.publishDevice(next); err != nil {
+		return "", err
+	}
+	return next.Grant, nil
 }
 
 func (s *Store) ClearGrant() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Grant = ""
-	s.Inbound = false
-	if err := s.persistGrant(); err != nil {
-		return err
-	}
-	return s.persistIdentity()
+	next := s.device
+	next.Grant, next.Inbound = "", false
+	return s.publishDevice(next)
 }
 
 func (s *Store) RemovePeer(id string) error {
@@ -48,37 +50,29 @@ func (s *Store) RemovePeer(id string) error {
 	return s.persistPeers()
 }
 
-func (s *Store) SetConfig(relayURL, workspace, shell string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if relayURL != "" {
-		s.Config.RelayURL = relayURL
-	}
-	if workspace != "" {
-		s.Config.Workspace = workspace
-		if err := os.MkdirAll(workspace, 0o700); err != nil {
-			return err
-		}
-	}
-	if shell != "" {
-		s.Config.Shell = shell
-	}
-	return s.persistConfig()
-}
-
 func (s *Store) Wipe() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, name := range []string{"identity.json", "device_secret", "grant", "peers.json", "config.json", "account.json"} {
-		_ = os.Remove(filepath.Join(s.Dir, name))
+	if err := s.publishDevice(deviceRecord{}); err != nil {
+		return err
 	}
-	s.DeviceID = ""
-	s.Secret = ""
-	s.Grant = ""
-	s.Inbound = false
+	if err := finishProfileReset(s.Dir); err != nil {
+		return err
+	}
 	s.Peers = nil
 	s.Config = Config{}
 	s.account = accountCredential{}
 	s.accountErr = nil
+	return nil
+}
+
+// The inactive database row remains a recovery marker until these ancillary
+// files are cleared. Startup must finish cleanup before creating a new identity.
+func finishProfileReset(dir string) error {
+	for _, name := range []string{"peers.json", "config.json", "account.json"} {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
 	return nil
 }

@@ -47,7 +47,7 @@ try {
   await info("ok");
   assert.equal((await call("read", { path: "shared.txt" })).result.content, "allowed-read");
   assert.equal((await call("write", { path: "forbidden.txt", content: "no" })).code, "unauthorized");
-  assert.equal((await client.stream("exec", { device_id: target, command: "echo forbidden" }, () => {})).code, "unauthorized");
+  assert.equal((await client.stream("exec", { device_id: target, script: { text: "echo forbidden" } }, () => {})).code, "unauthorized");
   assert.equal((await call("handoff.submit", { request: {} })).code, "unauthorized");
   assert(!fs.existsSync(path.join(root, "workspaces/target/forbidden.txt")));
   pass("cross_tenant_share_allows_only_explicit_operations");
@@ -77,7 +77,10 @@ try {
   await info("ok");
   pass("transfer_revokes_owner_and_removes_prior_shares");
   await cli("controller", "account", "clear");
-  await cli("controller", "peer", "add", "--id", target, "--grant", fs.readFileSync(path.join(root, "target/grant"), "utf8"));
+  const shown = await cli("target", "grant", "show");
+  const grant = shown.stdout.match(/授权码:\s*(\S+)/)?.[1];
+  assert(grant, "target grant show did not return an authorization code");
+  await cli("controller", "peer", "add", "--id", target, "--grant", grant);
   await info("unauthorized");
   pass("clearing_account_cannot_bypass_claimed_device_access");
   await account("controller", "bob");

@@ -6,17 +6,13 @@ import (
 
 	"log/slog"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/xallor-ai/xallor-remote/internal/appdata"
 	"github.com/xallor-ai/xallor-remote/internal/identity"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 	"github.com/xallor-ai/xallor-remote/internal/noderun"
-
-	"github.com/xallor-ai/xallor-remote/internal/relay"
 )
 
 func Execute() error {
@@ -27,34 +23,11 @@ func Execute() error {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	addProfileFormatGuard(root)
 	root.AddCommand(cmdRelay(), cmdStart(), cmdEnsure(), cmdStop(), cmdStatus(), cmdDoctor(), cmdGrant(), cmdInbound(), cmdRevoke(), cmdReset(), cmdPeer(), cmdExec(), cmdApprove(), cmdTUI(), cmdMCP(), cmdVersion(), cmdRuntime(), cmdIPCBridge(), cmdHandoff(), cmdAccount())
 	root.AddCommand(cmdDevice())
+	root.AddCommand(cmdConfig())
 	return root.Execute()
-}
-
-func cmdRelay() *cobra.Command {
-	var listen, data string
-	var quota bool
-	c := &cobra.Command{
-		Use:   "relay",
-		Short: "运行中转",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if data == "" {
-				dir, err := appdata.DataDir()
-				if err != nil {
-					return err
-				}
-				data = filepath.Join(dir, "relay")
-			}
-			log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-			return relay.Serve(listen, data, log, relay.Quota{Enabled: quota})
-		},
-	}
-	c.Flags().StringVar(&listen, "listen", ":8443", "监听地址")
-	c.PersistentFlags().StringVar(&data, "data", "", "数据目录")
-	c.AddCommand(cmdRelayPrincipal(&data))
-	c.Flags().BoolVar(&quota, "quota", false, "启用源 IP 限额")
-	return c
 }
 
 func cmdStart() *cobra.Command {
@@ -216,29 +189,6 @@ func cmdPeer() *cobra.Command {
 	return c
 }
 
-func cmdExec() *cobra.Command {
-	var device string
-	c := &cobra.Command{
-		Use:   "exec -- [command]",
-		Short: "在对方设备执行",
-		Args:  cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := ensureRuntime(); err != nil {
-				return err
-			}
-			command := args[0]
-			if len(args) > 1 {
-				for _, a := range args[1:] {
-					command += " " + a
-				}
-			}
-			return streamExec(device, command)
-		},
-	}
-	c.Flags().StringVar(&device, "device", "", "对方设备 ID（仅一台时可省）")
-	return c
-}
-
 func printBanner(st *identity.Store) {
 	id, _, grant, ws, relay, inbound, _ := st.Snapshot()
 	fmt.Printf("Relay:     %s\n", relay)
@@ -283,7 +233,7 @@ func rpc(method string, params map[string]any) (map[string]any, error) {
 		return nil, err
 	}
 	if fr.OK == nil || !*fr.OK {
-		return nil, fmt.Errorf("%s", ipc.Human(fr.Code))
+		return nil, fmt.Errorf("%s", ipc.FailureMessage(fr))
 	}
 	var out map[string]any
 	if len(fr.Result) > 0 {

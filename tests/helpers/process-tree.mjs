@@ -17,18 +17,21 @@ export async function verifyTree(root, targetID, mode) {
   const dir = path.join(root, "tree-" + mode);
   fs.mkdirSync(dir);
   const binary = path.join(root, process.platform === "win32" ? "tree.exe" : "tree");
-  const quote = text => process.platform === "win32" ? "'" + text.replaceAll("'", "''") + "'" : "'" + text.replaceAll("'", "'\\''") + "'";
-  const command = (process.platform === "win32" ? "& " : "") + quote(binary) + " parent " + quote(dir);
   process.env.XALLOR_REMOTE_DATA_DIR = path.join(root, "controller");
   const ipc = new RuntimeIpc(); await ipc.connect();
-  let id, pids, terminal;
+  let id, pids, terminal, settled;
+  let startupOutput="";
   try {
-    terminal = ipc.stream("exec", { device_id: targetID, command, ...(mode === "timeout" ? { timeout_ms: 10000 } : {}) }, f => { if (f.exec_id) id = f.exec_id; });
+    terminal = ipc.stream("exec", { device_id: targetID, program: { executable: binary, args: ["parent", dir] }, ...(mode === "timeout" ? { timeout_ms: 10000 } : {}) }, f => {
+      if (f.exec_id) id = f.exec_id;
+      if(f.data) startupOutput=(startupOutput+f.data).slice(-4096);
+    });
     // Attach rejection immediately; disconnect is intentionally expected later.
-    terminal = terminal.then(frame => ({ frame }), error => ({ error }));
+    terminal = terminal.then(frame => (settled={ frame }), error => (settled={ error }));
     const started = Date.now() + 15000;
     while (!fs.existsSync(path.join(dir, "pids.json")) || !fs.existsSync(path.join(dir, "heartbeat"))) {
-      assert(Date.now() < started, "process tree never became active"); await pause(30);
+      assert(!settled, "tree exited before becoming active: "+JSON.stringify(settled)+" output="+startupOutput);
+      assert(Date.now() < started, "process tree never became active; output="+startupOutput); await pause(30);
     }
     pids = JSON.parse(fs.readFileSync(path.join(dir, "pids.json"), "utf8"));
     assert(alive(pids.parent) && alive(pids.child), "fixture must prove both processes started");

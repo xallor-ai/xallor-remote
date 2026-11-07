@@ -6,6 +6,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { managedRuntime } from "./managed-runtime.js";
 import { dataDir, ipcPath } from "./ensure.js";
+import { packageBuild } from "./buildinfo.js";
 
 // Launch only verified installed bytes; fail before executing altered state.
 test("managed selection rejects corruption, traversal and pending activation", () => {
@@ -17,12 +18,16 @@ test("managed selection rejects corruption, traversal and pending activation", (
     const bin = path.join(dir, "runtime", "versions", sha256, filename);
     fs.mkdirSync(path.dirname(bin), { recursive: true });
     fs.writeFileSync(bin, bytes);
-    const current = { schema: 1, build: { os: process.platform.replace("win32", "windows"), arch: process.arch === "x64" ? "amd64" : process.arch },
+    const current = { schema: 1, build: { ...packageBuild(), os: process.platform.replace("win32", "windows"), arch: process.arch === "x64" ? "amd64" : process.arch },
       artifact: { filename, sha256, size: bytes.length } };
     const statePath = path.join(dir, "runtime", "state.json");
     const save = (state: object) => fs.writeFileSync(statePath, JSON.stringify(state));
     save({ current });
     assert.equal(managedRuntime(dir), bin);
+    for (const profile_format of [undefined, 0, current.build.profile_format + 1]) {
+      save({ current: { ...current, build: { ...current.build, profile_format } } });
+      assert.throws(() => managedRuntime(dir), /无效/);
+    }
     save({ current, pending: current });
     assert.throws(() => managedRuntime(dir), /rollback/);
     save({ current: { ...current, artifact: { ...current.artifact, filename: "../escape" } } });

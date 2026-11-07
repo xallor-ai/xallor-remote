@@ -22,7 +22,7 @@ func testRequest(workspace string) Request {
 
 // Same request returns the durable receipt; conflicting reuse is never another execution.
 func TestManager_should_deduplicate_and_rejectChangedRequest(t *testing.T) {
-	m := New(context.Background(), t.TempDir(), Hooks{})
+	m := newTestManager(context.Background(), t.TempDir())
 	defer m.Close()
 	r := testRequest(t.TempDir())
 	first, err := m.Submit(testScope, r, r.Workspace)
@@ -59,14 +59,14 @@ func TestManager_should_deduplicate_and_rejectChangedRequest(t *testing.T) {
 // Restart marks unfinished work unknown and never launches/replays it; capacity fails closed.
 func TestManager_should_recoverUnknown_and_preserveDedupeAtCapacity(t *testing.T) {
 	dir := t.TempDir()
-	m := New(context.Background(), dir, Hooks{})
+	m := newTestManager(context.Background(), dir)
 	r := testRequest(t.TempDir())
 	receipt := Receipt{ID: r.ID, Fingerprint: fingerprint(r), State: "running", Session: r.Session}
 	if err := m.persist(record{Scope: testScope, Receipt: receipt}); err != nil {
 		t.Fatal(err)
 	}
 	m.Close()
-	m = New(context.Background(), dir, Hooks{})
+	m = newTestManager(context.Background(), dir)
 	defer m.Close()
 	got, err := m.Get(testScope, r.ID)
 	if err != nil || got.State != "unknown" || got.Code != "runtime_restarted" || got.Updated == "" {
@@ -88,7 +88,7 @@ func TestManager_should_recoverUnknown_and_preserveDedupeAtCapacity(t *testing.T
 // Closing concurrently with first submission must wait for accepted work and reject later work.
 func TestManager_should_serializeCloseWithSubmit(t *testing.T) {
 	for i := 0; i < 20; i++ {
-		m := New(context.Background(), t.TempDir(), Hooks{})
+		m := newTestManager(context.Background(), t.TempDir())
 		r := testRequest(t.TempDir())
 		var workers sync.WaitGroup
 		workers.Add(2)
@@ -113,7 +113,7 @@ func TestManager_should_refuseCorruptStore(t *testing.T) {
 	receipts := filepath.Join(dir, "handoff", "requests")
 	_ = os.MkdirAll(receipts, 0700)
 	_ = os.WriteFile(filepath.Join(receipts, "broken.json"), []byte("broken"), 0600)
-	m := New(context.Background(), dir, Hooks{})
+	m := newTestManager(context.Background(), dir)
 	defer m.Close()
 	if _, err := m.Get(testScope, "broken"); err == nil {
 		t.Fatal("corruption hidden")

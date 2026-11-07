@@ -2,12 +2,185 @@ package noderun
 
 import (
 	"bytes"
-	"strings"
+	"os"
+	"path/filepath"
 	"testing"
 	"unicode/utf8"
 
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
+
+func TestReadWorkspaceWindow_should_boundSelectedWindows(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "large.txt")
+	if err := os.WriteFile(path, bytes.Repeat([]byte("line\n"), protocol.MaxReadBytes/5+100), 0600); err != nil {
+		t.Fatal(err)
+	}
+	info, _ := os.Stat(path)
+	size := info.Size()
+	got, _, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Head: 1, Path: "large.txt"}, size)
+	if err != nil || string(got) != "line\n" {
+		t.Fatalf("head window len=%d err=%v", len(got), err)
+	}
+	got, _, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1, Path: "large.txt"}, size)
+	if err != nil || string(got) != "line\n" {
+		t.Fatalf("tail window len=%d err=%v", len(got), err)
+	}
+	got, _, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Offset: protocol.MaxReadBytes + 1, Limit: 8, Path: "large.txt"}, size)
+	if err != nil || len(got) != 8 {
+		t.Fatalf("offset window len=%d err=%v", len(got), err)
+	}
+}
+
+func TestReadWorkspaceWindow_should_boundHugeTailLineAndMarkTruncated(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "one-line.txt")
+	if err := os.WriteFile(path, bytes.Repeat([]byte("中"), protocol.MaxReadBytes*3), 0600); err != nil {
+		t.Fatal(err)
+	}
+	info, _ := os.Stat(path)
+	got, truncated, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1, Path: "one-line.txt"}, info.Size())
+	got, sliceTruncated := sliceRead(got, protocol.ReadPayload{Tail: 1}, protocol.DefaultReadBytes)
+	if err != nil || !truncated || !sliceTruncated || !utf8.Valid(got) {
+		t.Fatalf("tail len=%d truncated=%v valid=%v err=%v", len(got), truncated, utf8.Valid(got), err)
+	}
+}
+
+func TestReadWorkspaceWindow_should_preserveUTF8OffsetAndLineSelection(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "utf.txt"), []byte("中x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Offset: 1, Limit: 4, Path: "utf.txt"}, 4)
+	if err != nil || string(got) != "中x" {
+		t.Fatalf("offset=%q err=%v", got, err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "lines.txt"), []byte("a\nb\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Head: 1, Path: "lines.txt"}, 64)
+	if err != nil || string(got) != "a\n" {
+		t.Fatalf("head window=%q err=%v", got, err)
+	}
+	_, trunc := sliceRead(got, protocol.ReadPayload{Head: 1}, 64)
+	if trunc {
+		t.Fatal("head should not truncate")
+	}
+	lineInfo, _ := os.Stat(filepath.Join(workspace, "lines.txt"))
+	got, _, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1, Limit: 2, Path: "lines.txt"}, lineInfo.Size())
+	if err != nil || string(got) != "b\n" {
+		t.Fatalf("tail selected window=%q err=%v", got, err)
+	}
+}
+
+func TestReadWorkspaceWindow_should_keepPrefixOfSelectedTailLines(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "large-lines.txt")
+	first := bytes.Repeat([]byte("A"), 600*1024)
+	second := bytes.Repeat([]byte("B"), 600*1024)
+	if err := os.WriteFile(path, append(append(first, '\n'), append(second, '\n')...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, truncated, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 2, Path: "large-lines.txt"}, int64(len(first)+len(second)+2))
+	got, sliceTruncated := sliceRead(got, protocol.ReadPayload{Tail: 2}, protocol.DefaultReadBytes)
+	if err != nil || !truncated || !sliceTruncated || len(got) != protocol.DefaultReadBytes || got[0] != 'A' {
+		t.Fatalf("tail len=%d truncated=%v first=%q err=%v", len(got), truncated, got[:minInt(len(got), 1)], err)
+	}
+}
+
+func TestReadWorkspaceWindow_should_keepFinalTailLineAfterFullPreviousLine(t *testing.T) {
+	for _, suffix := range []string{"B\n", "B"} {
+		workspace := t.TempDir()
+		path := filepath.Join(workspace, "tail-last.txt")
+		body := append(bytes.Repeat([]byte("A"), protocol.MaxReadBytes), append([]byte{'\n'}, []byte(suffix)...)...)
+		if err := os.WriteFile(path, body, 0600); err != nil {
+			t.Fatal(err)
+		}
+		got, _, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1, Limit: protocol.MaxReadBytes, Path: "tail-last.txt"}, int64(len(body)))
+		if err != nil || string(got) != suffix {
+			t.Fatalf("suffix=%q got=%q err=%v", suffix, got, err)
+		}
+	}
+}
+
+func TestReadWorkspaceWindow_should_not_loseLaterTailLinesAfterLargeEarlierLine(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "tail-window.txt")
+	body := append(bytes.Repeat([]byte("A"), protocol.MaxReadBytes), []byte("\nB\nC\n")...)
+	if err := os.WriteFile(path, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, truncated, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 2, Limit: protocol.MaxReadBytes, Path: "tail-window.txt"}, int64(len(body)))
+	if err != nil || string(got) != "B\nC\n" || truncated {
+		t.Fatalf("got=%q truncated=%v err=%v", got, truncated, err)
+	}
+}
+
+func TestReadWorkspaceWindow_should_clampOversizedLineLimitToMax(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "limit.txt")
+	body := bytes.Repeat([]byte("x"), 100*1024)
+	if err := os.WriteFile(path, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Head: 1, Limit: protocol.MaxReadBytes * 2, Path: "limit.txt"}, int64(len(body)))
+	if err != nil || len(got) != len(body) {
+		t.Fatalf("len=%d err=%v", len(got), err)
+	}
+}
+
+func TestReadWorkspaceWindow_should_notDivideBudgetForManyLinesInSmallFile(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "small-many.txt")
+	body := bytes.Repeat([]byte("x\n"), 1024)
+	if err := os.WriteFile(path, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, truncated, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1024, Path: "small-many.txt"}, int64(len(body)))
+	if err != nil || truncated || len(got) != len(body) {
+		t.Fatalf("len=%d truncated=%v err=%v", len(got), truncated, err)
+	}
+}
+
+func TestReadWorkspaceWindow_should_preserveSeparatorAfterClippedTailLine(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "clipped-tail.txt")
+	body := append(bytes.Repeat([]byte("A"), protocol.MaxReadBytes/2+100), []byte("\nB\n")...)
+	if err := os.WriteFile(path, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 2, Limit: protocol.MaxReadBytes, Path: "clipped-tail.txt"}, int64(len(body)))
+	if err != nil || !bytes.Contains(got, []byte("\nB\n")) {
+		t.Fatalf("separator missing len=%d err=%v", len(got), err)
+	}
+}
+
+func TestReadWorkspaceWindow_should_preserveSeparatorAfterClippedUTF8TailLines(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "clipped-utf-tail.txt")
+	body := append(bytes.Repeat([]byte("中"), 600*1024), []byte("\n")...)
+	body = append(body, append(bytes.Repeat([]byte("中"), 600*1024), []byte("\n")...)...)
+	if err := os.WriteFile(path, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, truncated, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 2, Limit: protocol.MaxReadBytes, Path: "clipped-utf-tail.txt"}, int64(len(body)))
+	got, sliceTruncated := sliceRead(got, protocol.ReadPayload{Tail: 2}, protocol.DefaultReadBytes)
+	if err != nil || !truncated || !sliceTruncated || !utf8.Valid(got) {
+		t.Fatalf("len=%d truncated=%v sliceTruncated=%v valid=%v err=%v", len(got), truncated, sliceTruncated, utf8.Valid(got), err)
+	}
+}
+
+func TestReadWorkspaceWindow_should_notMarkExactFitLineTruncated(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "exact.txt")
+	if err := os.WriteFile(path, []byte("a\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, truncated, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Head: 1, Limit: 2, Path: "exact.txt"}, 2)
+	if err != nil || truncated || string(got) != "a\n" {
+		t.Fatalf("got=%q truncated=%v err=%v", got, truncated, err)
+	}
+}
 
 func TestSliceRead_should_keep_last_line_when_file_ends_with_newline(t *testing.T) {
 	raw := []byte("a\nb\n")
@@ -144,15 +317,5 @@ func TestReadTooLarge_should_reject_before_read_when_default_whole_file(t *testi
 func TestPathDenied_should_match_os_root_escape(t *testing.T) {
 	if !pathDenied(errStr("openat junc\\secret.txt: path escapes from parent")) {
 		t.Fatal("os.Root escape must be policy_deny")
-	}
-}
-
-func TestWrapCommand_should_only_set_encoding(t *testing.T) {
-	got := wrapCommand("Write-Error \"x\"")
-	if strings.Contains(got, "LASTEXITCODE") {
-		t.Fatalf("wrapper must not promote LASTEXITCODE: %s", got)
-	}
-	if !strings.HasSuffix(got, "Write-Error \"x\"") {
-		t.Fatalf("command not preserved: %s", got)
 	}
 }
