@@ -11,6 +11,16 @@ import {
   type ToolCtx,
 } from "./exec-result.js";
 
+// Ownership retirement can arrive after output; it cannot promise a stopped process.
+test("uncertain route termination retains output without claiming confirmed stop", () => {
+  const result = execFrameText({ ok: false, code: "result_unknown", message: "执行结果未确认。" }, "already executed\n", "", "route-1");
+  assert.equal(result.isError, true);
+  assert.match(result.text, /already executed/);
+  assert.match(result.text, /执行结果未确认/);
+  assert.match(result.text, /exec_id=route-1/);
+  assert.doesNotMatch(result.text, /已停止|status=completed/);
+});
+
 function ctxWith(partial: NonNullable<ToolCtx["mcpReq"]>): ToolCtx {
   return { mcpReq: partial };
 }

@@ -42,7 +42,7 @@ type Daemon struct {
 	executionReplies  deviceReplies
 	settingsReplies   deviceReplies
 	settings          settingsGate
-	local             map[string]context.CancelFunc
+	local             map[string]context.CancelCauseFunc
 	localWG           sync.WaitGroup
 	remote            map[string]*remoteExec
 	approvals         *approvalHub
@@ -64,7 +64,7 @@ func New(store *identity.Store, log *slog.Logger) *Daemon {
 		log: log, store: store, ctx: ctx, cancel: cancel,
 		clients:   map[clientKey]*clientLink{},
 		ensuring:  map[clientKey]chan struct{}{},
-		local:     map[string]context.CancelFunc{},
+		local:     map[string]context.CancelCauseFunc{},
 		remote:    map[string]*remoteExec{},
 		approvals: newApprovalHub(),
 		activity:  activity.Open(store.Dir),
@@ -240,7 +240,7 @@ func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
 			cancel := d.local[msg.ExecID]
 			d.mu.Unlock()
 			if cancel != nil {
-				cancel()
+				cancel(nil)
 			}
 			return
 		}
@@ -291,6 +291,6 @@ func (d *Daemon) killAllLocal() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for _, c := range d.local {
-		c()
+		c(nil)
 	}
 }

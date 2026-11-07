@@ -84,7 +84,7 @@ func TestRouting_should_discardFormerOwnerEvents_whenOwnershipTransfers(t *testi
 	}
 	first := routeRequest(h, d, old, "same")
 	controlAccess(t, h, d, a.Token, access.Request{Action: "transfer", MembershipID: b.MembershipID})
-	if len(h.requests) != 0 || old.last().Code != protocol.Unauthorized || old.last().ExecID != "same" {
+	if len(h.requests) != 0 || old.last().Code != protocol.ResultUnknown || old.last().ExecID != "same" {
 		t.Fatal("old ownership retained correlation")
 	}
 	if code := h.RegisterClient("device", "", b.Token, newOwner); code != "" {
