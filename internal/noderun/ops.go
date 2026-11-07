@@ -253,14 +253,20 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 		truncated := false
 		total := 0
 		for {
+			var evicted []byte
+			if len(lines) >= p.Tail {
+				evicted = lines[0]
+				total -= len(evicted)
+				lines = lines[1:]
+			}
 			line, clipped, readErr := readLinePrefix(reader, lineBudget, protocol.MaxReadBytes-total)
 			truncated = truncated || clipped
 			if readErr == io.EOF && len(line) == 0 {
+				if evicted != nil {
+					lines = append([][]byte{evicted}, lines...)
+					total += len(evicted)
+				}
 				break
-			}
-			if len(lines) >= p.Tail {
-				total -= len(lines[0])
-				lines = lines[1:]
 			}
 			lines = append(lines, line)
 			total += len(line)

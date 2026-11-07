@@ -82,6 +82,21 @@ func TestReadWorkspaceWindow_should_keepPrefixOfSelectedTailLines(t *testing.T) 
 	}
 }
 
+func TestReadWorkspaceWindow_should_keepFinalTailLineAfterFullPreviousLine(t *testing.T) {
+	for _, suffix := range []string{"B\n", "B"} {
+		workspace := t.TempDir()
+		path := filepath.Join(workspace, "tail-last.txt")
+		body := append(bytes.Repeat([]byte("A"), protocol.MaxReadBytes), append([]byte{'\n'}, []byte(suffix)...)...)
+		if err := os.WriteFile(path, body, 0600); err != nil {
+			t.Fatal(err)
+		}
+		got, _, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1, Limit: protocol.MaxReadBytes, Path: "tail-last.txt"}, int64(len(body)))
+		if err != nil || string(got) != suffix {
+			t.Fatalf("suffix=%q got=%q err=%v", suffix, got, err)
+		}
+	}
+}
+
 func TestSliceRead_should_keep_last_line_when_file_ends_with_newline(t *testing.T) {
 	raw := []byte("a\nb\n")
 	got, trunc := sliceRead(raw, protocol.ReadPayload{Tail: 1}, 64*1024)
