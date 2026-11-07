@@ -17,7 +17,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "tsc && node --test dist/version.test.js dist/ensure.test.js dist/managed-runtime.test.js dist/exec-result.test.js dist/read-result.test.js",
+    "test": "tsc && node --test dist/version.test.js dist/ensure.test.js dist/managed-runtime.test.js dist/profile-format.test.js dist/exec-result.test.js dist/exec-input.test.js dist/read-result.test.js dist/ipc.test.js",
     "pack:release": "node ../../scripts/pack-mcp-with-runtime.mjs"
   },
   "dependencies": {

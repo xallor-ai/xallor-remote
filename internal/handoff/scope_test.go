@@ -20,14 +20,14 @@ func TestScope_should_isolateReceiptsAndSessions_whenCallersReuseRequestID(t *te
 	a.PrincipalID, a.TenantID = strings.Repeat("d", 32), strings.Repeat("e", 32)
 	b := a
 	b.PrincipalID = strings.Repeat("f", 32)
-	m := New(context.Background(), dir)
+	m := newTestManager(context.Background(), dir)
 	r := testRequest(t.TempDir())
 	saved := record{Scope: a, Receipt: Receipt{ID: r.ID, Fingerprint: fingerprint(r), Session: r.Session, State: "completed", Result: "alice-private"}}
 	if err := m.persist(saved); err != nil {
 		t.Fatal(err)
 	}
 	m.Close()
-	m = New(context.Background(), dir)
+	m = newTestManager(context.Background(), dir)
 	if _, err := m.Get(b, r.ID); err == nil {
 		t.Fatal("other caller read receipt")
 	}
@@ -42,7 +42,7 @@ func TestScope_should_isolateReceiptsAndSessions_whenCallersReuseRequestID(t *te
 		t.Fatal("independent ID rejected", err)
 	}
 	m.Close()
-	m = New(context.Background(), dir)
+	m = newTestManager(context.Background(), dir)
 	defer m.Close()
 	if got, err := m.Get(a, r.ID); err != nil || got.Result != "alice-private" {
 		t.Fatal(got, err)
@@ -61,7 +61,7 @@ func TestScope_should_rejectOtherNamespacesAndMissingIdentity(t *testing.T) {
 	s := testScope
 	s.PrincipalID, s.TenantID = strings.Repeat("a", 32), strings.Repeat("b", 32)
 	r := testRequest(t.TempDir())
-	m := New(context.Background(), t.TempDir())
+	m := newTestManager(context.Background(), t.TempDir())
 	defer m.Close()
 	m.items[requestKey(s, r.ID)] = record{Scope: s, Receipt: Receipt{ID: r.ID, Session: r.Session, State: "completed"}}
 	for _, change := range []func(*invocation.Scope){
@@ -96,7 +96,7 @@ func TestScope_should_preserveButNeverReadUnscopedFiles(t *testing.T) {
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	m := New(context.Background(), dir)
+	m := newTestManager(context.Background(), dir)
 	defer m.Close()
 	if m.err != nil {
 		t.Fatal(m.err)
@@ -112,7 +112,7 @@ func TestScope_should_preserveButNeverReadUnscopedFiles(t *testing.T) {
 // Simultaneous callers cannot both reserve one session, even if the first
 // preflight fails quickly. The accepted record retains the ownership decision.
 func TestScope_should_reserveSessionAtomically_whenSubjectsRace(t *testing.T) {
-	m := New(context.Background(), t.TempDir())
+	m := newTestManager(context.Background(), t.TempDir())
 	defer m.Close()
 	r := testRequest(t.TempDir())
 	b := testScope
@@ -140,7 +140,7 @@ func TestScope_should_reserveSessionAtomically_whenSubjectsRace(t *testing.T) {
 // another caller's receipt. Preserve evidence and fail the store closed.
 func TestScope_should_rejectTamperedRecordBinding_whenReopened(t *testing.T) {
 	dir := t.TempDir()
-	m := New(context.Background(), dir)
+	m := newTestManager(context.Background(), dir)
 	r := testRequest(t.TempDir())
 	saved := record{Scope: testScope, Receipt: Receipt{ID: r.ID, Session: r.Session, Fingerprint: fingerprint(r), State: "completed"}}
 	if err := m.persist(saved); err != nil {
@@ -153,7 +153,7 @@ func TestScope_should_rejectTamperedRecordBinding_whenReopened(t *testing.T) {
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	m = New(context.Background(), dir)
+	m = newTestManager(context.Background(), dir)
 	defer m.Close()
 	if m.err == nil {
 		t.Fatal("tampered binding accepted")

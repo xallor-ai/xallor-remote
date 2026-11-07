@@ -8,6 +8,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -17,7 +18,7 @@ func TestAccessWire_should_rejectOldBinding_whenCredentialReused(t *testing.T) {
 	for _, scenario := range []string{"rotate", "recreate"} {
 		t.Run(scenario, func(t *testing.T) {
 			s := openIdentityTestStore(t)
-			h := NewHub(s)
+			h := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 			srv := httptest.NewTLSServer(Handler(h, nil))
 			defer srv.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -52,7 +53,10 @@ func TestAccessWire_should_rejectOldBinding_whenCredentialReused(t *testing.T) {
 			hello := protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "123456789", Secret: "secret", Inbound: protocol.Bool(true)}
 			device := dial(hello)
 			rotate := func(code string) {
-				write(device, protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex(code)})
+				write(device, protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex(code)})
+				if ack := read(device); ack.Type != protocol.TypeDeviceSettingsResult || ack.Code != "" {
+					t.Fatalf("settings: %+v", ack)
+				}
 				waitCondition(t, func() bool {
 					h.mu.Lock()
 					defer h.mu.Unlock()

@@ -41,11 +41,13 @@ func TestProcess_should_boundInheritedProbePipe(t *testing.T) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	m := New(ctx, t.TempDir())
+	m := newTestManager(ctx, t.TempDir())
 	defer m.Close()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestProcess_should_boundInheritedProbePipe$")
 	cmd.Env = append(os.Environ(), "XR_HANDOFF_PIPE_HELPER=parent", "XR_HANDOFF_PIPE_PID="+pidFile)
-	_, err := m.output(ctx, cmd)
+	owner := m.probeOwner(t)
+	defer owner.Finish()
+	_, err := m.output(ctx, cmd, owner)
 	if err != nil {
 		t.Fatalf("supervised probe did not finish: %v", err)
 	}
