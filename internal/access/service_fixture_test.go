@@ -45,11 +45,11 @@ func (m *accessMemory) WriteAccess(ctx context.Context, fn func(Transaction) err
 	m.data = copy
 	return m.commitErr
 }
-func (d *accessData) Principal(_ context.Context, id string, now int64) (principal.Identity, error) {
-	if id != d.actor.CredentialID || d.actor.ExpiresAt <= now {
-		return principal.Identity{}, principal.ErrUnauthorized
+func (d *accessData) CredentialByID(_ context.Context, id string) (principal.Credential, error) {
+	if id != d.actor.CredentialID {
+		return principal.Credential{}, principal.ErrUnauthorized
 	}
-	return d.actor, nil
+	return principal.Credential{Identity: d.actor, MembershipActive: true}, nil
 }
 func (d *accessData) DeviceByID(context.Context, string) (Device, error) { return d.device, nil }
 func (d *accessData) DeviceByUID(_ context.Context, uid string) (Device, error) {

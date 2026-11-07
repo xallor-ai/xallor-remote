@@ -8,6 +8,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -41,10 +42,10 @@ func TestIdentityWire_should_rejectHello_whenPersistenceFails(t *testing.T) {
 			if fault == "insert" {
 				statement = `CREATE TRIGGER reject_insert BEFORE INSERT ON devices BEGIN SELECT RAISE(ABORT, 'fixture insert failure'); END;`
 			}
-			if _, err := s.db.Exec(statement); err != nil {
+			if _, err := s.faults.Exec(statement); err != nil {
 				t.Fatal(err)
 			}
-			hub := NewHub(s, nil, nil)
+			hub := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 			ctx, c, reply := identityWire(t, hub, protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "device", Secret: "fixture-secret"})
 			if reply.Type != protocol.TypeError || reply.Code != protocol.RelayError {
 				t.Fatalf("hello: %+v", reply)
@@ -63,12 +64,12 @@ func TestIdentityWire_should_rejectHello_whenPersistenceFails(t *testing.T) {
 // A failed control write must report a connection error over WSS and preserve persisted access state.
 func TestIdentityWire_should_closeDevice_whenAuthorizationCannotPersist(t *testing.T) {
 	s := openIdentityTestStore(t)
-	hub := NewHub(s, nil, nil)
+	hub := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	ctx, c, reply := identityWire(t, hub, protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "device", Secret: "fixture-secret", Inbound: protocol.Bool(true)})
 	if reply.Type != protocol.TypeHelloOK {
 		t.Fatalf("hello: %+v", reply)
 	}
-	if _, err := s.db.Exec(`CREATE TRIGGER reject_update BEFORE UPDATE ON devices BEGIN SELECT RAISE(ABORT, 'fixture update failure'); END;`); err != nil {
+	if _, err := s.faults.Exec(`CREATE TRIGGER reject_update BEFORE UPDATE ON devices BEGIN SELECT RAISE(ABORT, 'fixture update failure'); END;`); err != nil {
 		t.Fatal(err)
 	}
 	if err := wsjson.Write(ctx, c, protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("new")}); err != nil {

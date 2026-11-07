@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -22,7 +23,7 @@ func (c *observedContext) Err() error {
 
 // Cancellation after the entry check but before routing admission must not start a queued invoke.
 func TestIdentity_should_recheckConnection_whenInvokeWaitsForRoutingLock(t *testing.T) {
-	h := NewHub(nil, nil, nil)
+	h := NewHub(nil, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device := &recSender{}
 	client := &contextSender{ctx: context.Background()}
 	if code := h.RegisterDevice("dev_a", "secret", true, device); code != "" {
@@ -45,5 +46,8 @@ func TestIdentity_should_recheckConnection_whenInvokeWaitsForRoutingLock(t *test
 	waitSignal(t, finished)
 	if len(h.requests) != 0 || len(h.inflight) != 0 {
 		t.Fatal("disconnected client started an execution")
+	}
+	if h.admission.Active(h.devices["dev_a"].record.UID) != 0 {
+		t.Fatal("cancelled admission leaked transport capacity")
 	}
 }

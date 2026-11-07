@@ -88,12 +88,18 @@ func (h *Hub) handleAccess(from Sender, msg protocol.Message) {
 		device.record = mutation.Device
 		h.access[id] = mutation.Device.Binding()
 	}
+	// Publish the authoritative context in FIFO order before another invoke can
+	// enter this device's outbox. A lost confirmation is reconciled at reconnect.
+	payload, _ := json.Marshal(mutation.State)
+	if err := from.Enqueue(protocol.Message{Type: protocol.TypeAccessResult, RequestID: requestID, Payload: payload, DeviceContext: h.deviceContext(mutation.Device)}); err != nil {
+		h.stopDeviceRoutingLocked(from)
+		from.Close()
+	}
 	h.mu.Unlock()
-	reply("", mutation.State)
 }
 
-// Foreground invocations lose their channel on ownership change. Cancel is a
-// best-effort stop request; this does not claim background handoff workers ended.
+// Foreground invocations lose their channel on ownership change. The device
+// context also cancels old handoff workers; neither signal proves cleanup.
 func (h *Hub) invalidateOwnershipLocked(id string) {
 	device := h.devices[id]
 	for execID, task := range h.inflight {
@@ -103,7 +109,7 @@ func (h *Hub) invalidateOwnershipLocked(id string) {
 		if device != nil && device.conn != nil {
 			_ = device.conn.Enqueue(protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpCancel, ExecID: execID})
 		}
-		_ = task.client.Enqueue(protocol.Err(task.requestID, protocol.Unauthorized))
+		_ = task.client.Enqueue(protocol.Err(task.requestID, protocol.ResultUnknown))
 		h.finishInvocationLocked(execID)
 	}
 	for connection, client := range h.clients {
@@ -116,13 +122,13 @@ func (h *Hub) invalidateOwnershipLocked(id string) {
 
 func accessErrorCode(err error) string {
 	switch {
-	case errors.Is(err, access.ErrDenied), errors.Is(err, principal.ErrUnauthorized), errors.Is(err, ErrDeviceIdentity):
+	case errors.Is(err, access.ErrDenied), errors.Is(err, principal.ErrUnauthorized), errors.Is(err, access.ErrDeviceIdentity):
 		return protocol.Unauthorized
 	case errors.Is(err, access.ErrInvalid):
 		return protocol.AgentError
 	case errors.Is(err, access.ErrLimit):
 		return protocol.QuotaExceeded
-	case errors.Is(err, ErrDeviceNotFound):
+	case errors.Is(err, access.ErrDeviceNotFound):
 		return protocol.UnknownDevice
 	default:
 		return protocol.RelayError

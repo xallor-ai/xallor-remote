@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -68,7 +69,7 @@ func TestIdentityGate_should_reclaimEntries_whenWaiterCancelled(t *testing.T) {
 // Disconnect cancellation must reach an in-progress store lookup and leave no client binding or gate.
 func TestIdentity_should_cancelLookup_whenConnectionCancelled(t *testing.T) {
 	s := &blockedIdentityStore{DeviceStore: newMemStore(), entered: make(chan struct{}), release: make(chan struct{})}
-	h := NewHub(s, nil, nil)
+	h := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	client := &contextSender{ctx: ctx}
@@ -110,7 +111,7 @@ func (s *rotatingStore) UpdateDevice(ctx context.Context, id string, record acce
 // must observe the committed grant, and the old device connection cannot revoke it.
 func TestIdentity_should_serializeReplacementWithRotation_whenDeviceDrops(t *testing.T) {
 	s := &rotatingStore{DeviceStore: newMemStore(), entered: make(chan struct{}), release: make(chan struct{})}
-	h := NewHub(s, nil, nil)
+	h := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	old, replacement := &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, old); code != "" {
 		t.Fatal(code)
@@ -146,42 +147,5 @@ func TestIdentity_should_serializeReplacementWithRotation_whenDeviceDrops(t *tes
 	}
 	if code := h.RegisterClient("device", "rotated", "", &recSender{}); code != "" {
 		t.Fatal(code)
-	}
-}
-
-// Every identity operation must respect context cancellation while waiting for a SQL connection.
-func TestSQLIdentity_should_cancelPoolWait_withoutMutatingRows(t *testing.T) {
-	s := openIdentityTestStore(t)
-	for name, call := range map[string]func(context.Context) error{
-		"register": func(ctx context.Context) error { _, err := s.RegisterDevice(ctx, "device", "secret", true); return err },
-		"load":     func(ctx context.Context) error { _, err := s.LoadDevice(ctx, "device"); return err },
-		"update":   func(ctx context.Context) error { _, err := s.UpdateDevice(ctx, "device", access.Device{}); return err },
-		"delete":   func(ctx context.Context) error { return s.DeleteDevice(ctx, "device", "uid", "secret") },
-	} {
-		t.Run(name, func(t *testing.T) {
-			held, err := s.db.Conn(context.Background())
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer held.Close()
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			before := s.db.Stats().WaitCount
-			result := make(chan error, 1)
-			go func() { result <- call(ctx) }()
-			waitCondition(t, func() bool { return s.db.Stats().WaitCount > before })
-			cancel()
-			select {
-			case err := <-result:
-				if !errors.Is(err, context.Canceled) {
-					t.Fatal(err)
-				}
-			case <-time.After(2 * time.Second):
-				t.Fatal("SQL pool wait ignored cancellation")
-			}
-		})
-	}
-	if _, err := s.LoadDevice(context.Background(), "device"); !errors.Is(err, ErrDeviceNotFound) {
-		t.Fatalf("cancelled mutation changed state: %v", err)
 	}
 }

@@ -10,11 +10,6 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 )
 
-type accountCredential struct {
-	Relay string `json:"relay"`
-	Token string `json:"token"`
-}
-
 func (s *Store) loadAccount() error {
 	raw, err := os.ReadFile(filepath.Join(s.Dir, "account.json"))
 	if errors.Is(err, os.ErrNotExist) {
@@ -23,12 +18,14 @@ func (s *Store) loadAccount() error {
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(raw, &s.account); err != nil {
-		return errors.New("身份凭据文件无法读取，请重新导入")
+	account, err := decodeAccountCredential(raw)
+	if err != nil {
+		return err
 	}
-	if s.account.Token != "" && (!principal.ValidToken(s.account.Token) || s.account.Relay == "") {
+	if (account.Token == "") != (account.Relay == "") || (account.Token != "" && !principal.ValidToken(account.Token)) {
 		return errors.New("身份凭据无效，请重新导入")
 	}
+	s.account = account
 	return nil
 }
 
