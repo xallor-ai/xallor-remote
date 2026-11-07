@@ -25,7 +25,7 @@ try:
     target = cluster.add("target")
     cluster.add("controller")
     cluster.cli("target", "inbound", "on")
-    grant = (cluster.root/"target/grant").read_text(encoding="utf-8")
+    grant = cluster.grant("target")
     cluster.cli("controller", "peer", "add", "--id", target, "--grant", grant)
     subprocess.run([args.go, "test", "./internal/tui", "-run", "TestStreamExecE2E", "-count=1", "-timeout=60s"], cwd=root,
                    env=dict(cluster.env("controller"), XR_TUI_RESULT_E2E="1"), check=True, timeout=180)

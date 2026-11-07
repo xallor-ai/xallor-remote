@@ -13,10 +13,10 @@ export function execToolText(
   stdout: string,
   stderr: string,
 ): { text: string; isError: boolean } {
-  const knownStatus = status === "completed" || status === "cancelled" || status === "timeout";
+  const knownStatus = status === "completed" || status === "cancelled" || status === "timeout" || status === "authorization_lost";
   const knownExit = typeof exitCode === "number" && Number.isSafeInteger(exitCode);
   const confirmed = knownStatus && (status !== "completed" || knownExit);
-  const summary = !confirmed ? "执行结果未确认。" : status === "cancelled" ? "任务已取消。" : status === "timeout" ? "执行超时。" : "";
+  const summary = !confirmed ? "执行结果未确认。" : status === "cancelled" ? "任务已取消。" : status === "timeout" ? "执行超时。" : status === "authorization_lost" ? "授权已失效，任务已停止。" : "";
   const bits = [
     stdout,
     stderr ? `stderr:\n${stderr}` : "",

@@ -37,7 +37,7 @@ func TestAccount_should_discardPendingConnection_whenIdentitySwitches(t *testing
 		case <-ctx.Done():
 			return
 		}
-		if wsjson.Write(ctx, c, protocol.Message{Type: protocol.TypeHelloOK, Role: protocol.RoleClient}) != nil {
+		if wsjson.Write(ctx, c, protocol.Message{Type: protocol.TypeHelloOK, Role: protocol.RoleClient, ClientAuth: &protocol.ClientAuthentication{Mode: protocol.ClientAuthAccount}}) != nil {
 			return
 		}
 		var m protocol.Message

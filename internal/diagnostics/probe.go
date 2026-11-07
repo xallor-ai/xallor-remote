@@ -40,8 +40,8 @@ func Probe(ctx context.Context, relay, device, grant, accountToken string, r *Re
 		setFailure(r, msg.Code)
 		return
 	}
-	if msg.Role != protocol.RoleClient {
-		r.Set("authorization", "unknown", "invalid_response", "中转返回异常，请检查版本。")
+	if !msg.ConfirmsClientAuth(accountToken != "") {
+		r.Set("authorization", "unknown", "invalid_response", "中转未确认连接认证，请检查版本。")
 		return
 	}
 	r.Set("authorization", "ok", "", "")

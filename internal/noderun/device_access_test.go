@@ -73,7 +73,7 @@ func TestDeviceAccess_should_releaseCapacity_whenWaiterRemoved(t *testing.T) {
 // A management deadline must cancel a wait for the writer, without needing the
 // unrelated write to finish or touching a websocket that was never acquired.
 func TestWSConn_should_cancelWriteAdmission_whenWriterBusy(t *testing.T) {
-	w := &wsConn{}
+	w := &wsConn{ctx: context.Background()}
 	w.gateOnce.Do(func() { w.writeGate = make(chan struct{}, 1) })
 	w.writeGate <- struct{}{}
 	ctx, cancel := context.WithCancel(context.Background())

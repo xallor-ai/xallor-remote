@@ -35,8 +35,11 @@ func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
 			return true
 		}
 		defer release()
+		if err := d.store.ClearGrant(); err != nil {
+			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "无法清除本机授权码。"))
+			return true
+		}
 		d.pushRevoke(ctx)
-		_ = d.store.ClearGrant()
 		_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
 	case "reset":
 		ctx, cancel := context.WithTimeout(d.ctx, protocol.RelayIdentityTimeout)
@@ -56,7 +59,11 @@ func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
 			return true
 		}
 		d.pushRevoke(ctx)
-		_ = d.store.Wipe()
+		if err := d.store.Wipe(); err != nil {
+			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "本机重置未完成，请检查数据目录后重启服务。"))
+			d.Stop()
+			return true
+		}
 		_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
 		d.Stop()
 	case "stop":
@@ -108,6 +115,7 @@ func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
 			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "配置格式无效。"))
 			return true
 		}
+		oldConfig := d.store.ConfigSnapshot()
 		if err := d.store.SetConfig(p.RelayURL, p.Workspace, p.Shell); err != nil {
 			code := protocol.AgentError
 			if errors.Is(err, shell.ErrUnsupported) {
@@ -116,11 +124,24 @@ func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
 			_ = c.WriteFrame(ipc.Fail(req.ID, code, ipc.Human(code)))
 			return true
 		}
-		d.mu.Lock()
-		link := d.device
-		d.mu.Unlock()
-		if link != nil && link.relay != d.store.ConfigSnapshot().RelayURL {
-			_ = link.conn.CloseNow()
+		newConfig := d.store.ConfigSnapshot()
+		if oldConfig.RelayURL != newConfig.RelayURL {
+			d.mu.Lock()
+			device := d.device
+			clients := make([]*clientLink, 0, len(d.clients))
+			for key, client := range d.clients {
+				delete(d.clients, key)
+				clients = append(clients, client)
+			}
+			d.mu.Unlock()
+			if device != nil {
+				_ = device.conn.CloseNow()
+			}
+			for _, client := range clients {
+				d.cancelRemotesForLink(client.ws)
+				client.failWaiters()
+				client.closeConn()
+			}
 		}
 		_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
 	default:

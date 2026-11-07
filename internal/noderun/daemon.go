@@ -39,9 +39,10 @@ type Daemon struct {
 	ensuring          map[clientKey]chan struct{}
 	accountGeneration uint64
 	accessRequests    deviceReplies
+	executionReplies  deviceReplies
 	settingsReplies   deviceReplies
 	settings          settingsGate
-	local             map[string]context.CancelFunc
+	local             map[string]context.CancelCauseFunc
 	localWG           sync.WaitGroup
 	remote            map[string]*remoteExec
 	approvals         *approvalHub
@@ -63,13 +64,13 @@ func New(store *identity.Store, log *slog.Logger) *Daemon {
 		log: log, store: store, ctx: ctx, cancel: cancel,
 		clients:   map[clientKey]*clientLink{},
 		ensuring:  map[clientKey]chan struct{}{},
-		local:     map[string]context.CancelFunc{},
+		local:     map[string]context.CancelCauseFunc{},
 		remote:    map[string]*remoteExec{},
 		approvals: newApprovalHub(),
 		activity:  activity.Open(store.Dir),
 		jobs:      job.New(store.Dir),
 	}
-	d.handoffs = handoff.New(ctx, store.Dir, d.jobs)
+	d.handoffs = handoff.New(ctx, store.Dir, d.jobs, d.renewExecution)
 	return d
 }
 
@@ -87,7 +88,7 @@ func (d *Daemon) Run() error {
 	defer ln.Close()
 	go func() { <-d.ctx.Done(); _ = ln.Close() }()
 	go d.keepDevice()
-	d.log.Info("runtime ipc up", "device", d.store.DeviceID)
+	d.log.Info("runtime ipc up", "device", d.store.ID())
 	for {
 		c, err := ln.Accept()
 		if err != nil {
@@ -127,6 +128,9 @@ func (d *Daemon) connectDevice() error {
 			release()
 		}
 	}()
+	if err := d.store.RefreshDevice(); err != nil {
+		return err
+	}
 	id, secret, grant, ws, relay, inbound, _ := d.store.Snapshot()
 	ctx, cancel := context.WithCancel(d.ctx)
 	defer cancel()
@@ -166,6 +170,9 @@ func (d *Daemon) connectDevice() error {
 	}
 	if ack.Type != protocol.TypeDeviceSettingsResult || ack.RequestID != settings.RequestID || ack.Code != "" {
 		return errStr("device settings unconfirmed")
+	}
+	if err := d.syncDeviceContext(ack); err != nil {
+		return err
 	}
 	d.mu.Lock()
 	d.device = link
@@ -212,7 +219,15 @@ type errStr string
 func (e errStr) Error() string { return string(e) }
 
 func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
+	if (msg.Type == protocol.TypeDeviceSettingsResult || msg.Type == protocol.TypeAccessResult) && msg.Code == "" {
+		if err := d.syncDeviceContext(msg); err != nil {
+			_ = link.conn.CloseNow()
+			return
+		}
+	}
 	switch msg.Type {
+	case protocol.TypeExecutionLease:
+		d.executionReplies.deliver(link, msg)
 	case protocol.TypeDeviceSettingsResult:
 		d.settingsReplies.deliver(link, msg)
 	case protocol.TypeAccessResult:
@@ -225,11 +240,11 @@ func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
 			cancel := d.local[msg.ExecID]
 			d.mu.Unlock()
 			if cancel != nil {
-				cancel()
+				cancel(nil)
 			}
 			return
 		}
-		d.recordActivity(activity.Entry{ExecID: msg.ExecID, Direction: "inbound", DeviceID: d.store.DeviceID, Op: msg.Op, Stage: "requested"})
+		d.recordActivity(activity.Entry{ExecID: msg.ExecID, Direction: "inbound", DeviceID: d.store.ID(), Op: msg.Op, Stage: "requested"})
 		if d.handleHandoffInvoke(link, msg) {
 			return
 		}
@@ -276,6 +291,6 @@ func (d *Daemon) killAllLocal() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for _, c := range d.local {
-		c()
+		c(nil)
 	}
 }
