@@ -34,3 +34,15 @@ func TestLoadFrom_should_failClosedOnCorruptPeers(t *testing.T) {
 		t.Fatalf("corrupt peers created identity: %v", err)
 	}
 }
+
+func TestLoadFrom_should_rejectNullConfigAndPeers(t *testing.T) {
+	for name := range map[string]struct{}{"config.json": {}, "peers.json": {}} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("null"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadFrom(dir); err == nil || !strings.Contains(err.Error(), "invalid "+name) {
+			t.Fatalf("%s accepted null: %v", name, err)
+		}
+	}
+}

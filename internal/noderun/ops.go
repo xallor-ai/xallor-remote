@@ -42,7 +42,7 @@ func (d *Daemon) runLocalRead(link *wsConn, msg protocol.Message) {
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.TooLarge))
 		return
 	}
-	raw, err := readWorkspaceWindow(workspace, p, st.Size())
+	raw, preTruncated, err := readWorkspaceWindow(workspace, p, st.Size())
 	if err != nil {
 		nackReadErr(link, msg.ExecID, err)
 		return
@@ -66,6 +66,7 @@ func (d *Daemon) runLocalRead(link *wsConn, msg protocol.Message) {
 		selector = protocol.ReadPayload{}
 	}
 	out, trunc := sliceRead(raw, selector, limit)
+	trunc = trunc || preTruncated
 	if err := sendStdoutFrames(link, msg.ExecID, out); err != nil {
 		if err == errMsgTooLarge {
 			_ = link.send(protocol.Nack(msg.ExecID, protocol.TooLarge))
@@ -183,19 +184,19 @@ func readTooLarge(size int64, p protocol.ReadPayload) bool {
 // readWorkspaceWindow never materializes the whole target for a selected
 // window. Offset reads seek directly; head/tail keep only the requested byte
 // budget. The old readWorkspaceFile path remains for internal non-remote uses.
-func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) ([]byte, error) {
+func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) ([]byte, bool, error) {
 	rel, err := workspaceRel(workspace, p.Path)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	root, err := openWorkspace(workspace)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer root.Close()
 	f, err := root.Open(rel)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer f.Close()
 	limit := p.Limit
@@ -204,54 +205,105 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 	}
 	if p.Offset != 0 || p.Limit != 0 {
 		if _, err := f.Seek(int64(p.Offset), io.SeekStart); err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		return io.ReadAll(io.LimitReader(f, int64(limit)+1))
+		data, err := io.ReadAll(io.LimitReader(f, int64(limit)+1))
+		return data, len(data) > limit, err
 	}
 	if p.Head > 0 {
 		reader := bufio.NewReader(io.LimitReader(f, int64(protocol.MaxReadBytes)))
 		var out []byte
+		truncated := false
 		for i := 0; i < p.Head; i++ {
 			line, readErr := reader.ReadBytes('\n')
 			out = append(out, line...)
 			if len(out) >= protocol.MaxReadBytes || readErr == io.EOF {
+				truncated = readErr != io.EOF || len(out) >= protocol.MaxReadBytes
 				break
 			}
 		}
-		return out, nil
+		return out, truncated, nil
 	}
 	if p.Tail > 0 {
 		reader := bufio.NewReader(io.LimitReader(f, int64(size)))
-		lines := make([][]byte, 0, p.Tail)
+		lines := make([][]byte, 0, minInt(p.Tail, 64))
+		total := 0
+		truncated := false
 		for {
-			line, readErr := reader.ReadBytes('\n')
+			var line []byte
+			var readErr error
+			for {
+				var chunk []byte
+				chunk, readErr = reader.ReadSlice('\n')
+				line = append(line, chunk...)
+				if len(line) > protocol.MaxReadBytes+4 {
+					line = line[len(line)-(protocol.MaxReadBytes+4):]
+					truncated = true
+				}
+				if readErr != bufio.ErrBufferFull {
+					if readErr == io.EOF && len(line) == 0 {
+						return joinTail(lines, protocol.MaxReadBytes), truncated, nil
+					}
+					break
+				}
+			}
 			if readErr == io.EOF && len(line) == 0 {
 				break
 			}
 			if len(line) > protocol.MaxReadBytes {
 				line = line[len(line)-protocol.MaxReadBytes:]
+				truncated = true
 			}
 			lines = append(lines, line)
+			total += len(line)
 			if len(lines) > p.Tail {
+				total -= len(lines[0])
 				lines = lines[1:]
+			}
+			for total > protocol.MaxReadBytes && len(lines) > 0 {
+				cut := total - protocol.MaxReadBytes
+				if cut >= len(lines[0]) {
+					total -= len(lines[0])
+					lines = lines[1:]
+					truncated = true
+					continue
+				}
+				lines[0] = lines[0][cut:]
+				total -= cut
+				truncated = true
 			}
 			if readErr == io.EOF {
 				break
 			}
 		}
-		var out []byte
-		for _, line := range lines {
-			if len(out)+len(line) > protocol.MaxReadBytes {
-				line = line[len(line)-(protocol.MaxReadBytes-len(out)):]
-			}
-			out = append(out, line...)
-		}
-		return out, nil
+		return joinTail(lines, protocol.MaxReadBytes), truncated, nil
 	}
 	if size > int64(protocol.MaxReadBytes) {
-		return nil, os.ErrInvalid
+		return nil, false, os.ErrInvalid
 	}
-	return io.ReadAll(io.LimitReader(f, int64(protocol.MaxReadBytes)+1))
+	data, err := io.ReadAll(io.LimitReader(f, int64(protocol.MaxReadBytes)+1))
+	return data, len(data) > protocol.MaxReadBytes, err
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func joinTail(lines [][]byte, max int) []byte {
+	var out []byte
+	for _, line := range lines {
+		out = append(out, line...)
+		if len(out) > max {
+			out = out[len(out)-max:]
+		}
+	}
+	for len(out) > 0 && !utf8.RuneStart(out[0]) {
+		out = out[1:]
+	}
+	return out
 }
 
 func pathDenied(err error) bool {

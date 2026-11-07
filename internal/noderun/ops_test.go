@@ -16,17 +16,29 @@ func TestReadWorkspaceWindow_should_boundSelectedWindows(t *testing.T) {
 	if err := os.WriteFile(path, bytes.Repeat([]byte("line\n"), protocol.MaxReadBytes/5+100), 0600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Head: 1, Path: "large.txt"}, int64(protocol.MaxReadBytes*2))
+	got, _, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Head: 1, Path: "large.txt"}, int64(protocol.MaxReadBytes*2))
 	if err != nil || string(got) != "line\n" {
 		t.Fatalf("head window len=%d err=%v", len(got), err)
 	}
-	got, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1, Path: "large.txt"}, int64(protocol.MaxReadBytes*2))
+	got, _, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1, Path: "large.txt"}, int64(protocol.MaxReadBytes*2))
 	if err != nil || string(got) != "line\n" {
 		t.Fatalf("tail window len=%d err=%v", len(got), err)
 	}
-	got, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Offset: protocol.MaxReadBytes + 1, Limit: 8, Path: "large.txt"}, int64(protocol.MaxReadBytes*2))
+	got, _, err = readWorkspaceWindow(workspace, protocol.ReadPayload{Offset: protocol.MaxReadBytes + 1, Limit: 8, Path: "large.txt"}, int64(protocol.MaxReadBytes*2))
 	if err != nil || len(got) != 9 {
 		t.Fatalf("offset window len=%d err=%v", len(got), err)
+	}
+}
+
+func TestReadWorkspaceWindow_should_boundHugeTailLineAndMarkTruncated(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "one-line.txt")
+	if err := os.WriteFile(path, bytes.Repeat([]byte("中"), protocol.MaxReadBytes*3), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, truncated, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1, Path: "one-line.txt"}, int64(protocol.MaxReadBytes*3))
+	if err != nil || !truncated || len(got) > protocol.MaxReadBytes+4 || !utf8.Valid(got) {
+		t.Fatalf("tail len=%d truncated=%v valid=%v err=%v", len(got), truncated, utf8.Valid(got), err)
 	}
 }
 

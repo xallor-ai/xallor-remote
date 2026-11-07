@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -58,6 +59,9 @@ func LoadFrom(dir string) (*Store, error) {
 		}
 		if readErr != nil {
 			return nil, readErr
+		}
+		if bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+			return nil, fmt.Errorf("invalid %s: null is not valid state", name)
 		}
 		if err := json.Unmarshal(b, target); err != nil {
 			return nil, fmt.Errorf("invalid %s: %w", name, err)
