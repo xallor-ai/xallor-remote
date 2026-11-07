@@ -229,15 +229,12 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 		if lineBudget <= 0 || lineBudget > protocol.MaxReadBytes {
 			lineBudget = protocol.DefaultReadBytes
 		}
-		reader := bufio.NewReader(io.LimitReader(f, int64(p.Head)*(int64(lineBudget)+1)))
+		reader := bufio.NewReader(f)
 		var out []byte
 		truncated := false
 		for i := 0; i < p.Head; i++ {
-			line, readErr := reader.ReadBytes('\n')
-			if len(line) > lineBudget {
-				line = line[:lineBudget]
-				truncated = true
-			}
+			line, clipped, readErr := readLinePrefix(reader, lineBudget, protocol.MaxReadBytes-len(out))
+			truncated = truncated || clipped
 			out = append(out, line...)
 			if len(out) >= protocol.MaxReadBytes || readErr == io.EOF {
 				truncated = truncated || readErr != io.EOF || len(out) >= protocol.MaxReadBytes
@@ -254,35 +251,19 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 			lineBudget = protocol.DefaultReadBytes
 		}
 		truncated := false
+		total := 0
 		for {
-			var line []byte
-			var readErr error
-			for {
-				var chunk []byte
-				chunk, readErr = reader.ReadSlice('\n')
-				line = append(line, chunk...)
-				if len(line) > lineBudget {
-					line = line[:lineBudget]
-					truncated = true
-				}
-				if readErr != bufio.ErrBufferFull {
-					if readErr == io.EOF && len(line) == 0 {
-						return joinTail(lines, protocol.MaxReadBytes), truncated, nil
-					}
-					break
-				}
-			}
+			line, clipped, readErr := readLinePrefix(reader, lineBudget, protocol.MaxReadBytes-total)
+			truncated = truncated || clipped
 			if readErr == io.EOF && len(line) == 0 {
 				break
 			}
-			if len(line) > lineBudget {
-				line = line[:lineBudget]
-				truncated = true
-			}
-			lines = append(lines, line)
-			if len(lines) > p.Tail {
+			if len(lines) >= p.Tail {
+				total -= len(lines[0])
 				lines = lines[1:]
 			}
+			lines = append(lines, line)
+			total += len(line)
 			if readErr == io.EOF {
 				break
 			}
@@ -294,6 +275,42 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 	}
 	data, err := io.ReadAll(io.LimitReader(f, int64(protocol.MaxReadBytes)+1))
 	return data, len(data) > protocol.MaxReadBytes, err
+}
+
+// readLinePrefix consumes a complete line in fixed-size chunks while retaining
+// only the requested prefix and reporting whether bytes were discarded.
+func readLinePrefix(reader *bufio.Reader, lineBudget, aggregateBudget int) ([]byte, bool, error) {
+	keep := lineBudget
+	if aggregateBudget < keep {
+		keep = aggregateBudget
+	}
+	line := make([]byte, 0, minInt(keep, 4096))
+	clipped := false
+	for {
+		chunk, err := reader.ReadSlice('\n')
+		if len(line) < keep {
+			n := keep - len(line)
+			if n > len(chunk) {
+				n = len(chunk)
+			}
+			line = append(line, chunk[:n]...)
+		}
+		if len(line) >= keep && len(chunk) > keep-len(line) {
+			clipped = true
+		}
+		if err != bufio.ErrBufferFull {
+			if err == io.EOF && len(chunk) == 0 && len(line) == 0 {
+				return nil, clipped, io.EOF
+			}
+			if len(chunk) > len(line) && keep <= len(line) {
+				clipped = true
+			}
+			return line, clipped, err
+		}
+		if len(line) >= keep {
+			clipped = true
+		}
+	}
 }
 
 func minInt(a, b int) int {
