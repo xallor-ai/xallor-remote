@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xallor-ai/xallor-remote/internal/delegation"
 	"github.com/xallor-ai/xallor-remote/internal/execution"
 	"github.com/xallor-ai/xallor-remote/internal/job"
 	"github.com/xallor-ai/xallor-remote/internal/process"
@@ -71,12 +72,19 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.Unauthorized))
 		return
 	}
+	guard, stop, err := delegation.Maintain(ctx, msg.ExecID, d.renewForeground)
+	if err != nil {
+		_ = link.send(protocol.Nack(msg.ExecID, executionLeaseStartCode(ctx, err)))
+		return
+	}
+	defer stop()
+	ctx = guard
 	cmd, err := execution.Build(p, cfg.Shell, cwd)
 	if err != nil {
 		_ = link.send(protocol.Nack(msg.ExecID, executionErrorCode(err)))
 		return
 	}
-	owner, err := d.jobs.Reserve(*msg.Scope, "exec", msg.ExecID)
+	owner, err := d.jobs.ReserveExec(*msg.Scope, msg.ExecID)
 	if err != nil {
 		code := protocol.AgentError
 		if errors.Is(err, job.ErrCapacity) {
@@ -106,7 +114,7 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 	_ = stdoutWrite.Close()
 	_ = stderrWrite.Close()
 	if err != nil {
-		_ = link.send(protocol.Nack(msg.ExecID, startFailureCode(ctx)))
+		_ = link.send(failedStartMessage(ctx, msg.ExecID, cmd.Process != nil, err, owner.Finish()))
 		return
 	}
 	var wg sync.WaitGroup
@@ -167,7 +175,9 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		}
 	}
 	status := protocol.ExitCompleted
-	if ctx.Err() == context.Canceled {
+	if errors.Is(context.Cause(ctx), delegation.ErrDenied) || errors.Is(context.Cause(ctx), delegation.ErrExpired) {
+		status = protocol.ExitAuthorizationLost
+	} else if ctx.Err() == context.Canceled {
 		status = protocol.ExitCancelled
 	} else if ctx.Err() == context.DeadlineExceeded {
 		status = protocol.ExitTimeout
@@ -177,6 +187,15 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		Type: protocol.TypeExit, ExecID: msg.ExecID, ExitCode: &code,
 		DurationMS: &dur, Truncated: protocol.Bool(trunc), Status: status,
 	})
+}
+
+// A failed start may already have created a process. Cancellation must not
+// downgrade that uncertainty (or a failed durable release) to a pre-start nack.
+func failedStartMessage(ctx context.Context, id string, started bool, startErr, releaseErr error) protocol.Message {
+	if started || releaseErr != nil || errors.Is(startErr, process.ErrCleanup) {
+		return protocol.Err(id, protocol.AgentError)
+	}
+	return protocol.Nack(id, startFailureCode(ctx))
 }
 
 func executionErrorCode(err error) string {
@@ -200,6 +219,9 @@ func executionErrorCode(err error) string {
 
 // Cancellation can win between the pre-start check and os/exec.Start.
 func startFailureCode(ctx context.Context) string {
+	if errors.Is(context.Cause(ctx), delegation.ErrDenied) || errors.Is(context.Cause(ctx), delegation.ErrExpired) {
+		return protocol.Unauthorized
+	}
 	if ctx.Err() == context.Canceled {
 		return protocol.Cancelled
 	}

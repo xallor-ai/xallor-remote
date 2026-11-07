@@ -16,7 +16,7 @@ import (
 func TestLedger_should_releaseUnstartedReservations_whenReopened(t *testing.T) {
 	dir := t.TempDir()
 	l := New(dir)
-	if _, err := l.Reserve(testScope, "exec", "never-started"); err != nil {
+	if _, err := l.ReserveExec(testScope, "never-started"); err != nil {
 		t.Fatal(err)
 	}
 	l.Close()
@@ -58,7 +58,7 @@ func TestOwner_should_persistLaunchBeforeChild_and_retainUnfinishedOccupancy(t *
 	dir := t.TempDir()
 	l := New(dir)
 	defer l.Close()
-	o, err := l.Reserve(testScope, "exec", "actual-child")
+	o, err := l.ReserveExec(testScope, "actual-child")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestOwner_should_notStartChild_whenLaunchPersistenceFails(t *testing.T) {
 			dir := t.TempDir()
 			l := New(dir)
 			defer l.Close()
-			o, err := l.Reserve(testScope, "exec", "blocked-child")
+			o, err := l.ReserveExec(testScope, "blocked-child")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -130,7 +130,7 @@ func TestLedger_should_recoverOnlyReservations_whenStatesAreMixed(t *testing.T) 
 	l := New(dir)
 	defer l.Close()
 	for _, state := range []string{"reserved", "occupied", "uncertain"} {
-		o, err := l.Reserve(testScope, "exec", state)
+		o, err := l.ReserveExec(testScope, state)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -157,7 +157,7 @@ func TestLedger_should_recoverOnlyReservations_whenStatesAreMixed(t *testing.T) 
 		if r.Key == "reserved" || r.State != "uncertain" {
 			t.Fatal(r)
 		}
-		if _, err := reopened.Reserve(testScope, "exec", r.Key); !errors.Is(err, ErrUncertain) {
+		if _, err := reopened.ReserveExec(testScope, r.Key); !errors.Is(err, ErrUncertain) {
 			t.Fatal("unconfirmed operation reused", err)
 		}
 	}
@@ -170,7 +170,7 @@ func TestLedger_should_refuseAdmission_whenRecoveryWriteFails(t *testing.T) {
 		t.Run(strconv.FormatBool(committed), func(t *testing.T) {
 			dir := t.TempDir()
 			l := New(dir)
-			if _, err := l.Reserve(testScope, "exec", "reservation"); err != nil {
+			if _, err := l.ReserveExec(testScope, "reservation"); err != nil {
 				t.Fatal(err)
 			}
 			l.Close()
@@ -189,7 +189,7 @@ func TestLedger_should_refuseAdmission_whenRecoveryWriteFails(t *testing.T) {
 				t.Fatal("unconfirmed recovery published", err)
 			}
 			reopened.write = write
-			if _, err := reopened.Reserve(testScope, "exec", "next"); !errors.Is(err, ErrUnavailable) {
+			if _, err := reopened.ReserveExec(testScope, "next"); !errors.Is(err, ErrUnavailable) {
 				t.Fatal("failed recovery admitted work", err)
 			}
 			reopened.Close()

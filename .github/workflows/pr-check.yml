@@ -37,7 +37,7 @@ jobs:
 
       - name: Race detection
         if: runner.os == 'Linux'
-        run: go test -race ./internal/relay ./internal/noderun ./internal/release ./internal/handoff ./internal/process ./internal/job ./internal/execution
+        run: go test -race ./internal/principal ./internal/access ./internal/delegation ./internal/admission ./internal/storage ./internal/relay ./internal/noderun ./internal/release ./internal/handoff ./internal/process ./internal/job ./internal/execution ./internal/identity
 
       - name: Build
         shell: bash
@@ -188,7 +188,7 @@ jobs:
           cache: true
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: packages/mcp/package-lock.json
       - run: npm ci
@@ -198,12 +198,20 @@ jobs:
       - run: python scripts/build-release.py --platform ${{ matrix.platform }}
       - run: python tests/cross_layer_e2e.py
       - run: python tests/principal_e2e.py
+      - run: python -m unittest discover -s tests -p test_ready_url.py
+      - run: python tests/client_auth_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
+      - run: python tests/ipc_bounds_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
       - run: python tests/ownership_e2e.py
+      - run: python tests/foreground_authorization_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
       - run: python tests/process_lifetime_e2e.py
       - run: python tests/job_lifecycle_e2e.py
       - run: python tests/shell_adapter_e2e.py
       - run: python tests/execution_input_e2e.py
       - run: python tests/execution_results_e2e.py
+      - run: python tests/exec_jsonl_e2e.py
+      - run: python tests/resource_boundaries_e2e.py
+      - run: python tests/device_settings_e2e.py
+      - run: python tests/identity_transactions_e2e.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -211,12 +219,18 @@ jobs:
           path: |
             dist/verification/cross-layer.json
             dist/verification/principal.json
+              dist/verification/client-auth.json
             dist/verification/ownership.json
+            dist/verification/foreground-authorization.json
             dist/verification/process-lifetime.json
             dist/verification/job-lifecycle.json
             dist/verification/shell-adapter.json
             dist/verification/execution-input.json
             dist/verification/execution-results.json
+            dist/verification/exec-jsonl.json
+            dist/verification/resource-boundaries.json
+            dist/verification/device-settings.json
+            dist/verification/identity-transactions.json
             dist/release/**/manifest.json
 
   # Single required status for branch protection.
@@ -235,13 +249,19 @@ jobs:
           go-version-file: go.mod
       - run: go build -o dist/handoff-runtime.exe ./cmd/xallor-remote
       - run: python -m unittest discover -s tests -p test_cursor_session.py
+      - run: python -m unittest discover -s tests -p test_file_stamp.py
       - run: python tests/handoff_e2e.py --binary dist/handoff-runtime.exe
       - run: python tests/handoff_scope_e2e.py --binary dist/handoff-runtime.exe
+      - run: python tests/handoff_revocation_e2e.py --binary dist/handoff-runtime.exe
+      - run: python tests/handoff_authorization_e2e.py --binary dist/handoff-runtime.exe
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: handoff-scope-${{ matrix.os }}
-          path: dist/verification/handoff-scope.json
+          path: |
+            dist/verification/handoff-scope.json
+            dist/verification/handoff-revocation.json
+            dist/verification/handoff-authorization.json
 
   pr-check:
     name: pr-check

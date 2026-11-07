@@ -33,7 +33,7 @@ func TestProbe_should_rejectMisleadingResponses(t *testing.T) {
 				if scenario == "wrong_role" {
 					role = protocol.RoleDevice
 				}
-				_ = wsjson.Write(ctx, c, protocol.Message{Type: protocol.TypeHelloOK, Role: role})
+				_ = wsjson.Write(ctx, c, protocol.Message{Type: protocol.TypeHelloOK, Role: role, ClientAuth: &protocol.ClientAuthentication{Mode: protocol.ClientAuthShared}})
 				if wsjson.Read(ctx, c, &msg) != nil {
 					return
 				}

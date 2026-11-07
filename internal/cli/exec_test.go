@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/xallor-ai/xallor-remote/internal/execution"
 )
 
@@ -14,7 +15,7 @@ import (
 func TestExec_should_preserveProgramArgs_and_rejectAmbiguousScript(t *testing.T) {
 	args := []string{"", "a b", `quote"`, "$HOME", "中文", "--name=value"}
 	called := false
-	c := executionCommand(func(device string, r execution.Request) error {
+	c := executionCommand(func(_ *cobra.Command, device string, r execution.Request) error {
 		called = true
 		if device != "123456789" || r.Program.Executable != "fixture" || !reflect.DeepEqual(r.Program.Args, args) {
 			t.Fatal(device, r)
@@ -26,7 +27,7 @@ func TestExec_should_preserveProgramArgs_and_rejectAmbiguousScript(t *testing.T)
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{{"--", "echo", "a b"}, {"--program", "git", "--shell", "sh"}, {"--script-file", "x", "--program", "git"}, {"--timeout-ms", "-1", "--", "x"}} {
-		c := executionCommand(func(string, execution.Request) error { t.Fatal("invalid input dispatched"); return nil })
+		c := executionCommand(func(*cobra.Command, string, execution.Request) error { t.Fatal("invalid input dispatched"); return nil })
 		c.SetOut(io.Discard)
 		c.SetErr(io.Discard)
 		c.SetArgs(args)
@@ -47,7 +48,7 @@ func TestExec_should_readUTF8Script_and_structuredRequest(t *testing.T) {
 		{"--request-file", `{"program":{"executable":"git","args":["","a b"]},"cwd":"/target"}`, false},
 	} {
 		called := false
-		c := executionCommand(func(_ string, r execution.Request) error {
+		c := executionCommand(func(_ *cobra.Command, _ string, r execution.Request) error {
 			called = true
 			if tc.script && (r.Script == nil || r.Script.Text != strings.TrimPrefix(tc.input, "\ufeff")) {
 				t.Fatal(r)
@@ -63,7 +64,10 @@ func TestExec_should_readUTF8Script_and_structuredRequest(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	c := executionCommand(func(string, execution.Request) error { t.Fatal("obsolete request dispatched"); return nil })
+	c := executionCommand(func(*cobra.Command, string, execution.Request) error {
+		t.Fatal("obsolete request dispatched")
+		return nil
+	})
 	c.SetOut(io.Discard)
 	c.SetErr(io.Discard)
 	c.SetIn(strings.NewReader(`{"command":"no"}`))

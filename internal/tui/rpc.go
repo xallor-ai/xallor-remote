@@ -24,7 +24,7 @@ func rpc(method string, params map[string]any) (map[string]any, error) {
 		return nil, err
 	}
 	if fr.OK == nil || !*fr.OK {
-		return nil, fmt.Errorf("%s", ipc.Human(fr.Code))
+		return nil, fmt.Errorf("%s", ipc.FailureMessage(fr))
 	}
 	var out map[string]any
 	if len(fr.Result) > 0 {

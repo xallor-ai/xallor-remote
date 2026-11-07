@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { packageBuild } from "./buildinfo.js";
 
 // The Go installer owns this file. The launcher only verifies and selects an artifact.
 export function managedRuntime(dir: string): string | undefined {
@@ -12,6 +13,7 @@ export function managedRuntime(dir: string): string | undefined {
   const m = state.current;
   const name = process.platform === "win32" ? "xallor-remote.exe" : "xallor-remote";
   if (m.schema !== 1 || m.build?.os !== process.platform.replace("win32", "windows") ||
+      m.build?.profile_format !== packageBuild().profile_format || m.build?.protocol !== packageBuild().protocol ||
       m.build?.arch !== ({ x64: "amd64", arm64: "arm64" } as Record<string, string>)[process.arch] ||
       m.artifact?.filename !== name || !/^[a-f0-9]{64}$/.test(m.artifact?.sha256 ?? "")) {
     throw new Error("安装记录无效，请修复安装。");
