@@ -57,7 +57,7 @@ Agent 能调 API，不能安全地用用户自己的电脑。SSH MCP 要端口�
 
 ### v1
 
-- hosted 账号、名下设备、云侧吊销、订阅骨架；mcp.json 仍允许纯 grant
+- hosted 登录入口、名下设备、云侧管理与订阅；未认领设备的 mcp.json 仍可使用共享码
 
 ### 不做（v0–v1 默认）
 
@@ -73,7 +73,7 @@ Agent 能调 API，不能安全地用用户自己的电脑。SSH MCP 要端口�
 
 **Transport：** 断网 `device_offline`、恢复 online；Relay 重启后设备重连；官方 URL 与自托管 URL 都能跑通。
 
-**Authorization：** `grant issue` 后对端仅凭 ID+码可 exec；错误 grant → `unauthorized`；入站关 → `inbound_disabled`；**对端 MCP 不能 rotate/revoke**；本机 rotate 后旧码立刻失效；反向第二份 grant 独立。
+**Authorization：** 未认领设备共享模式下，`grant issue` 后对端凭 ID+码可 exec；错误 grant → `unauthorized`；入站关 → `inbound_disabled`；**对端 MCP 不能 rotate/revoke**；本机 rotate 后旧码立刻失效；反向第二份 grant 独立。已认领设备采用账号与设备访问授权，边界见 [platform.md](platform.md)。
 
 **Execution：** stdout/stderr 流式（结束前至少两帧可见）；非零只走 `exit`；timeout / cancel（只能 cancel 自己的 exec，终态 `exit.status`）；workspace 外 write `policy_deny`；超大 write `too_large`；高危 denylist `policy_deny`；无头机审批类直接 deny；断线杀无主进程；`yes` 类洪水 `truncated=true` 仍有 `exit`；Relay 重启 inflight → `relay_error`。
 
@@ -105,7 +105,7 @@ Relay：**有鉴权的实时消息路由器**——device 连接、grant 校验�
 | v0 | 执行闭环 + CLI + 官方 Relay 默认 + 自托管 |
 | v0.1 | TUI / Tauri GUI / macOS |
 | 受限试点 | [Cursor CLI 指定会话交接](handoff.md)：显式模式、持久回执、未知结果不重放；不等于通用 A2A |
-| v1 | 账号与设备清单 |
+| v1 | 托管登录入口与设备清单 |
 | v1.x | 计量与套餐 |
 | v2 | 组织、fleet、P2P 旁路 |
 | 以后 | Desktop capability、A2A |

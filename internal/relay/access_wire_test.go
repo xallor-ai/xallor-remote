@@ -3,22 +3,24 @@ package relay
 import (
 	"context"
 	"encoding/json"
+	"github.com/xallor-ai/xallor-remote/internal/access"
 	"testing"
 
 	"github.com/coder/websocket/wsjson"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 // Real TLS sockets must observe fail-closed routing before the uncertain result,
 // then recover through persisted ownership rather than the former bearer cache.
 func TestAccessWire_should_reloadCommittedOwnership_whenCommitResultLost(t *testing.T) {
-	s := &uncertainAccessStore{SQLStore: openIdentityTestStore(t)}
-	a := enrollment(t, s.SQLStore, "alice", "")
+	s := &uncertainAccessStore{relaySQLFixture: openIdentityTestStore(t)}
+	a := enrollment(t, s.relaySQLFixture, "alice", "")
 	if _, err := s.RegisterDevice(context.Background(), "device", protocol.SHA256Hex("secret"), true); err != nil {
 		t.Fatal(err)
 	}
 	setTestAccess(t, s, "device", protocol.SHA256Hex("bearer"), true)
-	h := NewHub(s)
+	h := NewHub(s, s, access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	dctx, device, hello := identityWire(t, h, protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "device", Secret: "secret"})
 	if hello.Type != protocol.TypeHelloOK {
 		t.Fatal(hello.Code)
@@ -50,6 +52,7 @@ func TestAccessWire_should_reloadCommittedOwnership_whenCommitResultLost(t *test
 	if hello.Type != protocol.TypeHelloOK {
 		t.Fatal(hello.Code)
 	}
+	confirmWireSettings(t, fctx, fresh, "bearer", true)
 	if err := wsjson.Write(cctx, old, protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "stale"}); err != nil {
 		t.Fatal(err)
 	}
@@ -63,10 +66,10 @@ func TestAccessWire_should_reloadCommittedOwnership_whenCommitResultLost(t *test
 	if err := wsjson.Write(octx, owner, protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "owner"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := wsjson.Read(fctx, fresh, &reply); err != nil || reply.ExecID != "owner" || reply.AccountToken != "" {
+	if err := wsjson.Read(fctx, fresh, &reply); err != nil || reply.Type != protocol.TypeInvoke || reply.Op != protocol.OpInfo || reply.AccountToken != "" {
 		t.Fatal("owner dispatch", err)
 	}
-	if err := wsjson.Write(fctx, fresh, protocol.Message{Type: protocol.TypeExit, ExecID: "owner", ExitCode: protocol.Int(0), Status: protocol.ExitCompleted}); err != nil {
+	if err := wsjson.Write(fctx, fresh, protocol.Message{Type: protocol.TypeExit, ExecID: reply.ExecID, ExitCode: protocol.Int(0), Status: protocol.ExitCompleted}); err != nil {
 		t.Fatal(err)
 	}
 	if err := wsjson.Read(octx, owner, &reply); err != nil || reply.Type != protocol.TypeExit {

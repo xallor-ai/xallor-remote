@@ -24,7 +24,7 @@ def main():
         target = cluster.add("target")
         cluster.add("controller")
         cluster.cli("target", "inbound", "on")
-        grant = (cluster.root / "target/grant").read_text(encoding="utf-8")
+        grant = cluster.grant("target")
         cluster.cli("controller", "peer", "add", "--id", target, "--grant", grant)
         admin = ["relay", "--data", str(cluster.root / "relay"), "principal"]
         alice = json.loads(cluster.cli("target", *admin, "create", "--name", "alice").stdout)

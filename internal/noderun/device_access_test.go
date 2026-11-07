@@ -12,7 +12,7 @@ import (
 // Responses are bound to the exact live device link, and cleaned-up requests
 // cannot be completed by a late or duplicate response from another connection.
 func TestDeviceAccess_should_ignoreWrongLinkAndLateResponse(t *testing.T) {
-	var requests accessRequests
+	var requests deviceReplies
 	link := &wsConn{}
 	id, result, remove, err := requests.register(link)
 	if err != nil {
@@ -44,7 +44,7 @@ func TestDeviceAccess_should_ignoreWrongLinkAndLateResponse(t *testing.T) {
 // Pending management requests have a hard admission cap; cancellation releases
 // one slot without permitting duplicate responses to retain the old waiter.
 func TestDeviceAccess_should_releaseCapacity_whenWaiterRemoved(t *testing.T) {
-	var requests accessRequests
+	var requests deviceReplies
 	var cleanup []func()
 	for range 16 {
 		_, _, remove, err := requests.register(&wsConn{})
@@ -73,7 +73,7 @@ func TestDeviceAccess_should_releaseCapacity_whenWaiterRemoved(t *testing.T) {
 // A management deadline must cancel a wait for the writer, without needing the
 // unrelated write to finish or touching a websocket that was never acquired.
 func TestWSConn_should_cancelWriteAdmission_whenWriterBusy(t *testing.T) {
-	w := &wsConn{}
+	w := &wsConn{ctx: context.Background()}
 	w.gateOnce.Do(func() { w.writeGate = make(chan struct{}, 1) })
 	w.writeGate <- struct{}{}
 	ctx, cancel := context.WithCancel(context.Background())
