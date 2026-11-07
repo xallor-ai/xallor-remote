@@ -21,6 +21,7 @@ func TestReadExec_should_emitOneTerminal_and_preserveCertainty(t *testing.T) {
 		{"failure", ipc.OK("e1", map[string]any{"status": "completed", "exit_code": 7}), "exit", "", false},
 		{"cancelled", ipc.OK("e1", map[string]any{"status": "cancelled", "exit_code": 1}), "exit", "", false},
 		{"timeout", ipc.OK("e1", map[string]any{"status": "timeout", "exit_code": 1}), "exit", "", false},
+		{"authorization lost", ipc.OK("e1", map[string]any{"status": "authorization_lost", "exit_code": 1}), "exit", "", false},
 		{"null", ipc.OK("e1", map[string]any{"status": "completed", "exit_code": nil}), "error", "result_unknown", false},
 		{"other job", ipc.OK("e1", map[string]any{"status": "completed", "exit_code": 0, "exec_id": "other"}), "error", "result_unknown", false},
 		{"negative duration", ipc.OK("e1", map[string]any{"status": "completed", "exit_code": 0, "duration_ms": -1}), "error", "result_unknown", false},

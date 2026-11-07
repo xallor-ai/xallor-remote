@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/xallor-ai/xallor-remote/internal/delegation"
 	"github.com/xallor-ai/xallor-remote/internal/job"
 	"github.com/xallor-ai/xallor-remote/internal/process"
 )
@@ -17,9 +18,23 @@ type outcome struct {
 	truncated                  bool
 }
 
-func (m *Manager) run(key string, r Request, root string, owner *job.Owner) outcome {
-	ctx, cancel := context.WithTimeout(m.ctx, time.Duration(r.TimeoutSeconds)*time.Second)
+func (m *Manager) run(parent context.Context, key string, r Request, root string, owner *job.Owner, proof string) (result outcome) {
+	ctx, cancel := context.WithTimeout(parent, time.Duration(r.TimeoutSeconds)*time.Second)
 	defer cancel()
+	guard, stop, err := delegation.Maintain(ctx, proof, m.renew)
+	if err != nil {
+		return outcome{state: "unknown", code: "execution_authorization_unconfirmed"}
+	}
+	defer stop()
+	ctx = guard
+	defer func() {
+		if errors.Is(context.Cause(ctx), errDeviceContextChanged) && result.code != "process_cleanup_unconfirmed" {
+			result.state, result.code = "unknown", "device_authorization_changed"
+		}
+		if (errors.Is(context.Cause(ctx), delegation.ErrDenied) || errors.Is(context.Cause(ctx), delegation.ErrExpired)) && result.code != "process_cleanup_unconfirmed" {
+			result.state, result.code = "unknown", "execution_authorization_lost"
+		}
+	}()
 	cfg, version, workspace, err := m.preflight(ctx, r, root, owner)
 	if err != nil {
 		state, code := "failed", err.Error()
@@ -65,7 +80,7 @@ func (m *Manager) run(key string, r Request, root string, owner *job.Owner) outc
 		case <-readDone:
 		}
 	}()
-	result, parseErr := readCursor(stdout, r.Session, workspace, func() error { return m.update(key, "running", "", version, "", false) })
+	outputResult, parseErr := readCursor(stdout, r.Session, workspace, func() error { return m.update(key, "running", "", version, "", false) })
 	close(readDone)
 	if parseErr != nil {
 		_ = child.Stop()
@@ -78,10 +93,10 @@ func (m *Manager) run(key string, r Request, root string, owner *job.Owner) outc
 		state, code = "unknown", "interrupted"
 	} else if parseErr != nil {
 		state, code = "unknown", parseErr.Error()
-	} else if result.isError {
+	} else if outputResult.isError {
 		state, code = "failed", "cli_result_error"
 	} else if waitErr != nil {
 		state, code = "unknown", "cli_exit_nonzero"
 	}
-	return outcome{state: state, code: code, version: version, text: result.text, truncated: result.truncated}
+	return outcome{state: state, code: code, version: version, text: outputResult.text, truncated: outputResult.truncated}
 }

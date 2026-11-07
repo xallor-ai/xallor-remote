@@ -72,11 +72,15 @@ func (h *Hub) handleAuth(from Sender, msg protocol.Message) {
 		delete(h.access, id)
 		return
 	}
+	wasInbound := d.record.Inbound
 	d.record = record
 	h.access[id] = record.Binding()
+	if wasInbound && !record.Inbound {
+		h.revokeForegroundRoutesLocked(id)
+	}
 	// Queue the confirmation before publishing readiness, so initial invokes
 	// cannot precede the settings response on the shared device connection.
-	if err := from.Enqueue(protocol.Message{Type: protocol.TypeDeviceSettingsResult, RequestID: msg.RequestID}); err != nil {
+	if err := from.Enqueue(protocol.Message{Type: protocol.TypeDeviceSettingsResult, RequestID: msg.RequestID, DeviceContext: h.deviceContext(record)}); err != nil {
 		h.stopDeviceRoutingLocked(from)
 		from.Close()
 		return
@@ -90,6 +94,16 @@ func (h *Hub) rejectIdentity(from Sender, code string) {
 	h.stopDeviceRoutingLocked(from)
 	_ = from.Enqueue(protocol.Message{Type: protocol.TypeError, Code: code})
 	from.Close()
+}
+
+// Existing foreground execs keep their route until a real terminal, but cannot
+// be renewed after inbound is revoked—even if inbound is later re-enabled.
+func (h *Hub) revokeForegroundRoutesLocked(id string) {
+	for _, task := range h.inflight {
+		if task.deviceID == id && task.operation == protocol.OpExec {
+			task.cancelled = true
+		}
+	}
 }
 
 func (h *Hub) stopDeviceRoutingLocked(from Sender) {

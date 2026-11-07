@@ -20,8 +20,9 @@ type wsConn struct {
 
 func (w *wsConn) send(m protocol.Message) error { return w.sendContext(w.ctx, m) }
 
-// Waiting for the single writer is cancellable, including management requests
-// queued behind an unrelated blocked frame. Regular output retains link context.
+// Request cancellation stops admission or waiting, never an admitted socket
+// write: coder/websocket closes the connection when a write context expires.
+// One bounded, connection-owned writer retains the gate until its frame ends.
 func (w *wsConn) sendContext(ctx context.Context, m protocol.Message) error {
 	raw, err := json.Marshal(m)
 	if err != nil {
@@ -35,15 +36,35 @@ func (w *wsConn) sendContext(ctx context.Context, m protocol.Message) error {
 	case w.writeGate <- struct{}{}:
 	case <-ctx.Done():
 		return ctx.Err()
+	case <-w.ctx.Done():
+		return w.ctx.Err()
 	}
-	defer func() { <-w.writeGate }()
-	if ctx.Err() != nil {
+	if err := ctx.Err(); err != nil {
+		<-w.writeGate
+		return err
+	}
+	if err := w.ctx.Err(); err != nil {
+		<-w.writeGate
+		return err
+	}
+	writeCtx, stop := context.WithTimeout(w.ctx, protocol.RelayWriteTimeout)
+	done := make(chan error, 1)
+	go func() {
+		defer stop()
+		defer func() { <-w.writeGate }()
+		if w.observe != nil {
+			w.observe(m)
+		}
+		done <- w.conn.Write(writeCtx, websocket.MessageText, raw)
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
 		return ctx.Err()
+	case <-w.ctx.Done():
+		return w.ctx.Err()
 	}
-	if w.observe != nil {
-		w.observe(m)
-	}
-	return w.conn.Write(ctx, websocket.MessageText, raw)
 }
 
 var errMsgTooLarge = errStr(protocol.TooLarge)

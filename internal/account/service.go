@@ -10,21 +10,17 @@ import (
 	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/principal"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 var ErrInvalidRequest = errors.New("invalid account request")
 
-type Store interface {
-	EnrollPrincipal(context.Context, string, string, string, time.Duration) (principal.Enrollment, error)
-	RevokeCredential(context.Context, string) error
-	CreateOrganization(context.Context, string) (string, error)
-	IssueCredential(context.Context, string, time.Duration) (principal.Enrollment, error)
-	SetMembershipActive(context.Context, string, bool) error
+type Service struct {
+	store Store
+	now   func() time.Time
 }
 
-type Service struct{ store Store }
-
-func New(store Store) *Service { return &Service{store: store} }
+func New(store Store) *Service { return &Service{store: store, now: time.Now} }
 
 type CreatePrincipalRequest struct {
 	Name, Kind, TenantID string
@@ -35,7 +31,38 @@ func (s *Service) CreatePrincipal(ctx context.Context, req CreatePrincipalReques
 	if err := validatePrincipalRequest(req); err != nil {
 		return principal.Enrollment{}, err
 	}
-	return s.store.EnrollPrincipal(ctx, strings.TrimSpace(req.Name), req.Kind, req.TenantID, req.TTL)
+	var result principal.Enrollment
+	err := s.store.TransactAccount(ctx, func(tx Transaction) error {
+		var ids [3]string
+		for i := range ids {
+			id, err := protocol.RandomHex(16)
+			if err != nil {
+				return err
+			}
+			ids[i] = id
+		}
+		name := strings.TrimSpace(req.Name)
+		member := Membership{ID: ids[2], PrincipalID: ids[0], TenantID: req.TenantID, Role: "member", Active: true, Version: 1}
+		if member.TenantID == "" {
+			member.TenantID, member.Role = ids[1], "owner"
+			if err := tx.InsertTenant(ctx, Tenant{ID: member.TenantID, Name: name, Kind: "personal"}); err != nil {
+				return err
+			}
+		}
+		if err := tx.InsertPrincipal(ctx, Principal{ID: member.PrincipalID, Name: name, Kind: req.Kind}); err != nil {
+			return err
+		}
+		if err := tx.InsertMembership(ctx, member); err != nil {
+			return err
+		}
+		var err error
+		result, err = s.issue(ctx, tx, member, req.TTL)
+		return err
+	})
+	if err != nil {
+		return principal.Enrollment{}, err
+	}
+	return result, nil
 }
 
 type IssueCredentialRequest struct {
@@ -47,7 +74,42 @@ func (s *Service) IssueCredential(ctx context.Context, req IssueCredentialReques
 	if !validID(req.MembershipID) || req.TTL < time.Minute || req.TTL > 90*24*time.Hour {
 		return principal.Enrollment{}, ErrInvalidRequest
 	}
-	return s.store.IssueCredential(ctx, req.MembershipID, req.TTL)
+	var result principal.Enrollment
+	err := s.store.TransactAccount(ctx, func(tx Transaction) error {
+		member, err := tx.LoadMembership(ctx, req.MembershipID)
+		if err != nil {
+			return err
+		}
+		result, err = s.issue(ctx, tx, member, req.TTL)
+		return err
+	})
+	if err != nil {
+		return principal.Enrollment{}, err
+	}
+	return result, nil
+}
+
+func (s *Service) issue(ctx context.Context, tx Transaction, member Membership, ttl time.Duration) (principal.Enrollment, error) {
+	if !member.Active {
+		return principal.Enrollment{}, principal.ErrUnauthorized
+	}
+	id, err := protocol.RandomHex(16)
+	if err != nil {
+		return principal.Enrollment{}, err
+	}
+	token, err := principal.NewToken()
+	if err != nil {
+		return principal.Enrollment{}, err
+	}
+	expires := s.now().Add(ttl).Unix()
+	if err := tx.InsertCredential(ctx, Credential{ID: id, MembershipID: member.ID, TokenHash: protocol.SHA256Hex(token), ExpiresAt: expires}); err != nil {
+		return principal.Enrollment{}, err
+	}
+	return principal.Enrollment{Token: token, Identity: principal.Identity{
+		Authority: s.store.Authority(), PrincipalID: member.PrincipalID,
+		TenantID: member.TenantID, MembershipID: member.ID, MembershipVersion: member.Version,
+		CredentialID: id, ExpiresAt: expires,
+	}}, nil
 }
 
 func (s *Service) CreateOrganization(ctx context.Context, name string) (string, error) {
@@ -55,21 +117,31 @@ func (s *Service) CreateOrganization(ctx context.Context, name string) (string, 
 	if name == "" || len(name) > 200 {
 		return "", ErrInvalidRequest
 	}
-	return s.store.CreateOrganization(ctx, name)
+	id, err := protocol.RandomHex(16)
+	if err != nil {
+		return "", err
+	}
+	err = s.store.TransactAccount(ctx, func(tx Transaction) error {
+		return tx.InsertTenant(ctx, Tenant{ID: id, Name: name, Kind: "organization"})
+	})
+	if err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 func (s *Service) RevokeCredential(ctx context.Context, id string) error {
 	if !validID(id) {
 		return ErrInvalidRequest
 	}
-	return s.store.RevokeCredential(ctx, id)
+	return s.store.TransactAccount(ctx, func(tx Transaction) error { return tx.RevokeCredential(ctx, id) })
 }
 
 func (s *Service) SetMembershipActive(ctx context.Context, id string, active bool) error {
 	if !validID(id) {
 		return ErrInvalidRequest
 	}
-	return s.store.SetMembershipActive(ctx, id, active)
+	return s.store.TransactAccount(ctx, func(tx Transaction) error { return tx.SetMembershipActive(ctx, id, active) })
 }
 
 func validatePrincipalRequest(req CreatePrincipalRequest) error {

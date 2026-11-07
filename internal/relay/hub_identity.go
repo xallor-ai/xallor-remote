@@ -72,15 +72,16 @@ func (h *Hub) RegisterClient(targetID, grant, accountToken string, conn Sender) 
 	}
 	defer release()
 	var identity principal.Identity
+	authentication := protocol.ClientAuthentication{Mode: protocol.ClientAuthShared}
 	if accountToken != "" {
-		auth, ok := h.store.(principal.Authenticator)
-		if !ok {
+		if h.accounts == nil {
 			return protocol.Unauthorized
 		}
-		identity, err = auth.Authenticate(ctx, accountToken)
+		identity, err = h.accounts.Authenticate(ctx, accountToken)
 		if err != nil {
 			return principalErrorCode(err)
 		}
+		authentication.Mode = protocol.ClientAuthAccount
 	}
 	want := protocol.SHA256Hex(grant)
 	var record access.Device
@@ -91,11 +92,10 @@ func (h *Hub) RegisterClient(targetID, grant, accountToken string, conn Sender) 
 			return identityErrorCode(err)
 		}
 		if record.OwnershipID != "" {
-			store, ok := h.store.(access.Store)
-			if !ok {
+			if h.accessService == nil {
 				return protocol.Unauthorized
 			}
-			decision, err = store.ResolveAccess(ctx, record, identity)
+			decision, err = h.accessService.Resolve(ctx, record, identity)
 			if err != nil {
 				return accessErrorCode(err)
 			}
@@ -118,7 +118,7 @@ func (h *Hub) RegisterClient(targetID, grant, accountToken string, conn Sender) 
 		}
 		decision = access.Authorization{Binding: record.Binding(), Permissions: access.AllPermissions()}
 	}
-	if err := conn.Enqueue(protocol.Message{Type: protocol.TypeHelloOK, Role: protocol.RoleClient}); err != nil {
+	if err := conn.Enqueue(protocol.Message{Type: protocol.TypeHelloOK, Role: protocol.RoleClient, ClientAuth: &authentication}); err != nil {
 		return protocol.RelayError
 	}
 	h.access[targetID] = record.Binding()
@@ -128,9 +128,9 @@ func (h *Hub) RegisterClient(targetID, grant, accountToken string, conn Sender) 
 
 func identityErrorCode(err error) string {
 	switch {
-	case errors.Is(err, ErrDeviceNotFound):
+	case errors.Is(err, access.ErrDeviceNotFound):
 		return protocol.UnknownDevice
-	case errors.Is(err, ErrDeviceIdentity):
+	case errors.Is(err, access.ErrDeviceIdentity):
 		return protocol.Unauthorized
 	default:
 		return protocol.RelayError

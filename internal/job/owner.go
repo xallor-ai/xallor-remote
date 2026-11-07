@@ -48,9 +48,11 @@ func (o *Owner) Start(ctx context.Context, cmd *exec.Cmd) (*process.Child, error
 			return nil, ErrActive
 		}
 	}
-	if err := o.ledger.prepareStart(o.id); err != nil {
+	endStart, err := o.ledger.beginStart(o.id)
+	if err != nil {
 		return nil, err
 	}
+	defer endStart()
 	child, err := process.Start(ctx, cmd)
 	if err != nil {
 		if cmd.Process != nil || errors.Is(err, process.ErrCleanup) {
