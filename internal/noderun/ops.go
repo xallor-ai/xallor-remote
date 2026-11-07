@@ -58,7 +58,14 @@ func (d *Daemon) runLocalRead(link *wsConn, msg protocol.Message) {
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.PolicyDeny))
 		return
 	}
-	out, trunc := sliceRead(raw, p, limit)
+	// readWorkspaceWindow already applied the selector while streaming. Apply
+	// only the final byte/rune budget here; applying offset a second time would
+	// treat the selected window as the original file and lose truncation state.
+	selector := p
+	if p.Head != 0 || p.Tail != 0 || p.Offset != 0 || p.Limit != 0 {
+		selector = protocol.ReadPayload{}
+	}
+	out, trunc := sliceRead(raw, selector, limit)
 	if err := sendStdoutFrames(link, msg.ExecID, out); err != nil {
 		if err == errMsgTooLarge {
 			_ = link.send(protocol.Nack(msg.ExecID, protocol.TooLarge))
