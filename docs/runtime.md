@@ -108,12 +108,12 @@ on disconnect: 退避重连；不恢复旧子进程
 
 v0 **不**解析「这是 `npm install` 还是 `rm`」来当沙箱。命令分类器一定会被绕过。
 
-**grant 持有者 ≈ 这台机器上的当前用户，作用域缩在 workspace + denylist。** Policy 是减伤，不是隔离。
+**获准 exec 的控制者 ≈ 这台机器上的当前用户。文件 API 受 workspace 与 denylist 约束；exec 不是 OS 沙箱。** Policy 是减伤，不是隔离。
 
 判定顺序（任一拒绝即停）：
 
 ```text
-1. Relay 已校验 grant / inbound（本步不再验码）
+1. Relay 已校验身份、设备访问权与 inbound（目标不重复校验原始凭据）
 2. 该 op 的 capability 已打开；未知 capability → deny
 3. 文件类：规范化后的路径必须在 workspace 内
 4. 命中 [os.md](os.md) denylist → policy_deny
@@ -121,7 +121,7 @@ v0 **不**解析「这是 `npm install` 还是 `rm`」来当沙箱。命令分�
      有 TTY 或本机 UI → 等待；超时 → approval_timeout
      无 TTY 且无 UI（典型无头 Linux）→ **直接 policy_deny**
      不要挂死等一个不存在的人
-6. 否则 allow
+6. 通过上述检查后执行；exec 另须在启动前及运行中确认授权，见 dataplane.md
 ```
 
 v0 capability：
