@@ -22,7 +22,7 @@ try:
     cluster.start()
     controller, target = cluster.add("controller"), cluster.add("target")
     cluster.cli("target", "grant", "issue")
-    grant = (cluster.root / "target" / "grant").read_text(encoding="utf-8").strip()
+    grant = cluster.grant("target")
     cluster.cli("controller", "peer", "add", "--id", target, "--grant", grant)
     workspace = cluster.root / "workspaces" / "target"
     def git(*values):
@@ -110,10 +110,16 @@ try:
     assert submit(dict(base, request_id="no-mode", mode=""), check=False).returncode != 0
     print("PASS explicit mode forwarding; no implicit agent mode")
 
-    submit(dict(base, request_id="timeout", prompt="TEST_WAIT", timeout_seconds=10))
+    # The request budget includes five native preflight launches. Leave enough
+    # time to observe the running child on loaded Windows hosts, then still
+    # require its actual deadline (well before the fixture's 60-second sleep).
+    timeout_seconds = 30
+    timeout_started = time.monotonic()
+    submit(dict(base, request_id="timeout", prompt="TEST_WAIT", timeout_seconds=timeout_seconds))
     assert wait("timeout", {"running"})["state"] == "running"
     timed_pid = int((cluster.root / "target" / "fixture-agent-pid").read_text())
     assert wait("timeout", {"unknown", "completed", "failed"})["code"] == "interrupted"
+    assert time.monotonic() - timeout_started < timeout_seconds + 10, "deadline did not bound the real CLI"
     assert not process_alive(timed_pid), "owned CLI survived timeout"
     print("PASS deadline returns unknown and reclaims owned CLI")
 

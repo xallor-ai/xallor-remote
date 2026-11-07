@@ -16,10 +16,11 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/atomicfile"
 	"github.com/xallor-ai/xallor-remote/internal/filelock"
 	"github.com/xallor-ai/xallor-remote/internal/invocation"
-	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
-const Capacity = protocol.MaxConcurrentExec
+// Capacity bounds durable local jobs, including occupied and uncertain entries.
+// Transport requests and service entitlements do not change this safety limit.
+const Capacity = 4
 const HandoffCapacity = 2
 const maxLedgerBytes = 16 * 1024
 
@@ -41,6 +42,7 @@ type diskState struct {
 }
 
 type Ledger struct {
+	launch sync.RWMutex // Close must not hand off the file lock during OS startup.
 	mu     sync.Mutex
 	dir    string
 	jobs   map[string]Record
@@ -112,11 +114,16 @@ func (l *Ledger) initializeLocked() error {
 			l.err = ErrUnavailable
 			return l.err
 		}
+		// Start must persist occupied before it can launch any child. A reserved
+		// record therefore proves that this lost owner never started a process.
+		if r.State == "reserved" {
+			continue
+		}
 		// Prior process disappearance is not evidence that its descendants died.
 		r.State = "uncertain"
 		l.jobs[id] = r
 	}
-	if len(l.jobs) > 0 {
+	if len(disk.Jobs) > 0 {
 		return l.saveLocked(l.jobs)
 	}
 	return nil
@@ -125,8 +132,8 @@ func (l *Ledger) initializeLocked() error {
 func validRecord(id string, r Record) bool {
 	b, err := hex.DecodeString(id)
 	return err == nil && len(b) == 16 && hex.EncodeToString(b) == id && id == r.ID && r.Scope.Valid() &&
-		(r.Kind == "exec" || r.Kind == "handoff") && len(r.Key) > 0 && len(r.Key) <= 128 &&
-		(r.State == "occupied" || r.State == "uncertain")
+		Kind(r.Kind).valid() && len(r.Key) > 0 && len(r.Key) <= 128 &&
+		(r.State == "reserved" || r.State == "occupied" || r.State == "uncertain")
 }
 
 func (l *Ledger) saveLocked(jobs map[string]Record) error {
@@ -150,16 +157,22 @@ func (l *Ledger) copyLocked() map[string]Record {
 	return jobs
 }
 
-func (l *Ledger) mayStart(id string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return !l.closed && l.err == nil && l.jobs[id].State == "occupied"
+// ReserveExec persists occupancy for a foreground or remote exec before any
+// target child can start. Active and uncertain records both consume capacity.
+func (l *Ledger) ReserveExec(scope invocation.Scope, execID string) (*Owner, error) {
+	return l.reserve(scope, KindExec, execID)
 }
 
-// Reserve persists occupancy before any child can start. Active and uncertain
-// records both consume capacity; neither expiry nor a lost response frees it.
-func (l *Ledger) Reserve(scope invocation.Scope, kind, key string) (*Owner, error) {
-	if !scope.Valid() || (kind != "exec" && kind != "handoff") || len(key) == 0 || len(key) > 128 {
+// ReserveHandoff persists occupancy for a durable Agent session. Its smaller
+// process-management ceiling is enforced independently of exec capacity.
+func (l *Ledger) ReserveHandoff(scope invocation.Scope, sessionID string) (*Owner, error) {
+	return l.reserve(scope, KindHandoff, sessionID)
+}
+
+// reserve is the one implementation for the two explicit lifecycle entries.
+// It is unexported so callers cannot invent a third resource category.
+func (l *Ledger) reserve(scope invocation.Scope, kind Kind, key string) (*Owner, error) {
+	if !scope.Valid() || !kind.valid() || len(key) == 0 || len(key) > 128 {
 		return nil, fmt.Errorf("invalid job identity")
 	}
 	l.mu.Lock()
@@ -169,10 +182,10 @@ func (l *Ledger) Reserve(scope invocation.Scope, kind, key string) (*Owner, erro
 	}
 	count := 0
 	for _, r := range l.jobs {
-		if r.Scope == scope && r.Kind == kind && r.Key == key {
+		if r.Scope == scope && Kind(r.Kind) == kind && r.Key == key {
 			return nil, ErrUncertain
 		}
-		if r.Kind == "handoff" {
+		if Kind(r.Kind) == KindHandoff {
 			count++
 		}
 	}
@@ -188,7 +201,7 @@ func (l *Ledger) Reserve(scope invocation.Scope, kind, key string) (*Owner, erro
 		return nil, ErrUnavailable
 	}
 	jobs := l.copyLocked()
-	jobs[id] = Record{ID: id, Scope: scope, Kind: kind, Key: key, State: "occupied"}
+	jobs[id] = Record{ID: id, Scope: scope, Kind: string(kind), Key: key, State: "reserved"}
 	if err := l.saveLocked(jobs); err != nil {
 		return nil, err
 	}
@@ -236,9 +249,12 @@ func (l *Ledger) Snapshot() ([]Record, error) {
 	return rows, nil
 }
 
-// Close stops admission and releases the file lock, never occupied resources.
-// The Runtime waits for all Owners before closing its shared Ledger.
+// Close waits for in-progress OS startup before handing off the file lock. It
+// invalidates further launches but never proves active processes have stopped.
+// The Runtime still waits for all Owners before closing its shared Ledger.
 func (l *Ledger) Close() {
+	l.launch.Lock()
+	defer l.launch.Unlock()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.closed {

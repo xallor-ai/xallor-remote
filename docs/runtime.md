@@ -19,11 +19,13 @@ SSOT：本机执行、策略、workspace、本地数据。CLI 见 [clients.md](c
 
 ### 本机作业占用
 
-`internal/job` 管理前台 exec、后台 handoff（包括预检）的共享容量。启动进程前，在 profile 的 `jobs.json` 原子持久化占用，OS 文件锁 `jobs.lock` 保证同一 profile 只有一个账本写入者；写入失败不授予启动能力。所有进程统一通过该作业的 Owner 启动，真实监督回收完成并持久更新后才释放。容量和大小见 [protocol.md](protocol.md)。
+同一作业 Owner 同时只能拥有一个未完成监督回收的进程边界。handoff 的预检和主进程可以依次启动；前一个进程仍在运行时，下一次 Start 立即拒绝，不排队。前一次回收未确认则禁止后续启动并在 Finish 保留 uncertain 占用。非零退出但监督回收确认的进程不阻止下一次启动。作业在两次启动之间继续占用容量，只有 Finish 确认后才释放。
 
-账本只含随机内部作业 ID、Relay 推导的稳定 scope、作业种类、内部关联键和 occupied/uncertain；不保存命令、提示、路径、凭据或输出。前台内部关联键为本次路由 ID，handoff 为会话 UUID。交接回执继续负责结果和请求去重，不能拿它的 completed/failed/unknown 推断资源占用。非零退出但回收确认可以释放；回收或释放持久化未确认时，前台返回错误，handoff 为 unknown/job_release_unconfirmed。
+`internal/job` 通过明确的 `ReserveExec` / `ReserveHandoff` 管理前台 exec、后台 handoff（包括预检）的共享容量。启动进程前，在 profile 的 `jobs.json` 原子持久化占用，OS 文件锁 `jobs.lock` 保证同一 profile 只有一个账本写入者；写入失败不授予启动能力。所有进程统一通过该作业的 Owner 启动，真实监督回收完成并持久更新后才释放。容量和大小见 [protocol.md](protocol.md)。
 
-Runtime 重启把遗留占用标为 uncertain，保留额度，不重放任务；不会因为原父进程不在或回执已标 unknown 就清除占用。同一受信作用域的未确认交接会话不能换 request_id 再次启动。当前没有自动核实/解除不确定占用的恢复入口，不能手工删除 jobs.json 来宣称已确认清理；后续需真实 OS 作业恢复与授权恢复操作。正常停止会等待前台与交接收尾，再释放账本文件锁。
+账本只含随机内部作业 ID、Relay 推导的稳定 scope、作业种类、内部关联键和 reserved/occupied/uncertain；不保存命令、提示、路径、凭据或输出。预留为 reserved，也计入容量；Owner 首次启动任意进程（包括预检）之前必须成功持久写为 occupied，写入失败或结果不明则不启动。后续同作业进程继续占用，直到 Finish 确认回收并持久释放。前台内部关联键为本次路由 ID，handoff 为会话 UUID。交接回执继续负责结果和请求去重，不能拿它的 completed/failed/unknown 推断资源占用。非零退出但回收确认可以释放；回收或释放持久化未确认时，前台返回错误，handoff 为 unknown/job_release_unconfirmed。
+
+Runtime 重启取得独占文件锁后，仅回收仍为 reserved 的记录：该状态证明原 Owner 尚未跨过任何进程的启动边界。其余遗留占用标为 uncertain，保留额度，不重放任务；不会因为原父进程不在或回执已标 unknown 就清除占用。恢复结果必须成功持久化后才允许新准入；失败保持账本不可用。已经跨过启动边界的同一受信作用域未确认交接会话不能换 request_id 再次启动。当前没有自动核实/解除 uncertain 占用的恢复入口，不能手工删除 jobs.json 来宣称已确认清理；后续需真实 OS 作业恢复与授权恢复操作。正常停止会等待前台与交接收尾，再释放账本文件锁。
 
 这是本机执行容量，不是会员权益、租户全局配额或 Relay 租约；此阶段尚无费用归属或计量。升级前需停止旧 Runtime 并确认其任务已结束，不能从旧回执猜测补造占用。OS 监督边界见 [os.md](os.md)。
 
@@ -42,12 +44,12 @@ IPC 报文见 [ipc.md](ipc.md)。头关系见 [heads.md](heads.md)。
 
 | 文件 | 内容 |
 | --- | --- |
-| `identity.json` | device_id |
-| `device_secret` | 仅当前用户可读 |
-| `grant` | 仅 issue 之后；明文只为再显示 |
+| `identity.db` | 设备 ID、设备密钥、授权码、入站状态及本机版本；仅当前用户可读，授权码明文用于本机再显示 |
 | `peers.json` | 对方 id + grant（**密钥库**） |
 | `config.json` | relay、workspace、shell |
 | `policy.json` | capability 开关、approval 列表（可选） |
+
+核心设备状态在同一个 SQLite 事务中保存，提交成功后才发布到 Runtime 内存。更新校验身份和版本，过期写入失败；重连读取持久状态，同一 Runtime 不接管重置后产生的新身份。已有 `identity.json`、`device_secret`、`grant` 仅在首次存储迁移时读取：完整提交后清理旧文件，清理中断可续做，此后不回读或双写。格式损坏、记录缺失或来源不完整时返回错误，不静默创建替代身份。显式 reset 写入清空身份的标记，下一次启动先完成配置、配对与账户文件的清理，再生成新身份；这些文件的清理不属于核心设备事务，清理失败保留标记并阻止新身份启动。这里保证本机状态的一致性，中转确认另按 [dataplane.md](dataplane.md) 执行。
 
 ---
 
@@ -71,6 +73,10 @@ on disconnect: 退避重连；不恢复旧子进程
 ---
 
 ## 5. exec
+
+`internal/execution` 统一校验 script/program 输入并构造尚未启动的命令，`internal/job` 是启动与资源所有权入口。CLI / GUI / TUI / MCP 只映射输入，不选择远端 OS、不拼接原生参数；Relay 仍只鉴权和路由。输入合同见 [protocol.md](protocol.md)。
+
+现有文本策略对脚本检查原文，对程序检查程序 basename 与参数的可读预览；预览只供保守匹配和本机提示，绝不作为执行文本。它可能误判，也无法拦截所有等效调用，不提供沙箱保证。
 
 禁止 `run()` 完再整包发送。必须 Popen，按行/块推 `stdout`/`stderr`，最后一条 `exit`。管道要持续读。帧大小、截断、cancel、断线杀进程见 [dataplane.md](dataplane.md)。
 
@@ -102,12 +108,12 @@ on disconnect: 退避重连；不恢复旧子进程
 
 v0 **不**解析「这是 `npm install` 还是 `rm`」来当沙箱。命令分类器一定会被绕过。
 
-**grant 持有者 ≈ 这台机器上的当前用户，作用域缩在 workspace + denylist。** Policy 是减伤，不是隔离。
+**获准 exec 的控制者 ≈ 这台机器上的当前用户。文件 API 受 workspace 与 denylist 约束；exec 不是 OS 沙箱。** Policy 是减伤，不是隔离。
 
 判定顺序（任一拒绝即停）：
 
 ```text
-1. Relay 已校验 grant / inbound（本步不再验码）
+1. Relay 已校验身份、设备访问权与 inbound（目标不重复校验原始凭据）
 2. 该 op 的 capability 已打开；未知 capability → deny
 3. 文件类：规范化后的路径必须在 workspace 内
 4. 命中 [os.md](os.md) denylist → policy_deny
@@ -115,7 +121,7 @@ v0 **不**解析「这是 `npm install` 还是 `rm`」来当沙箱。命令分�
      有 TTY 或本机 UI → 等待；超时 → approval_timeout
      无 TTY 且无 UI（典型无头 Linux）→ **直接 policy_deny**
      不要挂死等一个不存在的人
-6. 否则 allow
+6. 通过上述检查后执行；exec 另须在启动前及运行中确认授权，见 dataplane.md
 ```
 
 v0 capability：
@@ -137,3 +143,9 @@ Relay 已鉴权不能替代本步。
 ## 8. 卸载
 
 断开；本机 `revoke` 通知 Relay；删数据目录。只删二进制会留下 identity，重装抢同一 ID。
+
+### 本机数据格式与回滚
+
+构建记录的 `profile_format` 来自 `internal/buildinfo/profile_format.txt`，表示 Runtime 本机持久化格式，独立于网络协议和 Relay 数据库迁移版本。修改到旧二进制无法安全读取的格式时必须递增。托管安装、回滚与自动启动只接受相同格式，缺失标识也会在停止服务前拒绝；MCP 与 GUI 启动时传入内部格式断言，旧程序会在打开数据前拒绝未知参数。
+
+同格式回滚仅切换二进制，不恢复数据。跨格式切换必须先停服务，备份完整数据目录与对应二进制，再按配套备份整体恢复；不能把旧二进制直接指向升级后的目录。没有配套备份时不要降级。此限制避免旧版本忽略 identity.db 并生成新设备身份。
