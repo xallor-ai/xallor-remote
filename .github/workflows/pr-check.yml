@@ -198,6 +198,7 @@ jobs:
       - run: python scripts/build-release.py --platform ${{ matrix.platform }}
       - run: python tests/cross_layer_e2e.py
       - run: python tests/principal_e2e.py
+      - run: python -m unittest discover -s tests -p test_ready_url.py
       - run: python tests/client_auth_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
       - run: python tests/ownership_e2e.py
       - run: python tests/foreground_authorization_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
