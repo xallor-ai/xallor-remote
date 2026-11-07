@@ -40,7 +40,7 @@ func TestProbe_should_classify_and_never_executeCommands(t *testing.T) {
 					_ = wsjson.Write(ctx, c, protocol.Message{Type: protocol.TypeError, Code: tc.code})
 					return
 				}
-				_ = wsjson.Write(ctx, c, protocol.Message{Type: protocol.TypeHelloOK, Role: protocol.RoleClient})
+				_ = wsjson.Write(ctx, c, protocol.Message{Type: protocol.TypeHelloOK, Role: protocol.RoleClient, ClientAuth: &protocol.ClientAuthentication{Mode: protocol.ClientAuthShared}})
 				if wsjson.Read(ctx, c, &m) != nil {
 					return
 				}

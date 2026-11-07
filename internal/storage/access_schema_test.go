@@ -26,7 +26,7 @@ func TestAccessSchema_should_preserveIdentityAndCascade_whenUpgraded(t *testing.
 		s.Close()
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`DROP TABLE device_shares; DROP TABLE device_ownership; PRAGMA user_version=4; CREATE VIEW device_shares AS SELECT 'conflict';`); err != nil {
+	if _, err := s.db.Exec(`DROP TABLE execution_signing_key; DROP TABLE device_shares; DROP TABLE device_ownership; PRAGMA user_version=4; CREATE VIEW device_shares AS SELECT 'conflict';`); err != nil {
 		s.Close()
 		t.Fatal(err)
 	}

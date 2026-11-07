@@ -20,7 +20,7 @@ func TestAccessWire_should_reloadCommittedOwnership_whenCommitResultLost(t *test
 		t.Fatal(err)
 	}
 	setTestAccess(t, s, "device", protocol.SHA256Hex("bearer"), true)
-	h := NewHub(s, s, access.NewService(s), admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(s, s, access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	dctx, device, hello := identityWire(t, h, protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "device", Secret: "secret"})
 	if hello.Type != protocol.TypeHelloOK {
 		t.Fatal(hello.Code)

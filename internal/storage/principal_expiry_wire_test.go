@@ -35,7 +35,7 @@ func TestPrincipalWire_should_denyExpiredCaller_whenDatabaseWaitCrossesDeadline(
 			if _, err := s.db.ExecContext(ctx, `UPDATE principal_credentials SET expires_at=? WHERE id=?`, a.ExpiresAt, a.CredentialID); err != nil {
 				t.Fatal(err)
 			}
-			h := relay.NewHub(s, principal.NewService(s), access.NewService(s), admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+			h := relay.NewHub(s, principal.NewService(s), access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 			srv := httptest.NewTLSServer(relay.Handler(h, nil))
 			defer srv.Close()
 			dial := func() *websocket.Conn {

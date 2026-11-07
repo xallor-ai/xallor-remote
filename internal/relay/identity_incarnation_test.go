@@ -12,7 +12,7 @@ import (
 // when storage contains a different device with the same display number.
 func TestAccess_should_requireMatchingDeviceUID_whenRoutingSnapshotIsOld(t *testing.T) {
 	s := openIdentityTestStore(t)
-	h := NewHub(s, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device := &recSender{}
 	if code := h.RegisterDevice("number", "secret", true, device); code != "" {
 		t.Fatal(code)

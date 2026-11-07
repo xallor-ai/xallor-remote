@@ -13,6 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/xallor-ai/xallor-remote/internal/handoff"
 	"github.com/xallor-ai/xallor-remote/internal/identity"
 	"github.com/xallor-ai/xallor-remote/internal/invocation"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
@@ -57,7 +58,7 @@ func TestHandoff_should_rejectMissingOrInvalidScope_beforeManagerAccess(t *testi
 	link := &wsConn{ctx: ctx, conn: c}
 	for _, scope := range []*invocation.Scope{nil, {Authority: strings.Repeat("a", 32)}} {
 		for _, op := range []string{protocol.OpHandoffGet, protocol.OpHandoffSubmit} {
-			d.runHandoff(link, protocol.Message{Type: protocol.TypeInvoke, ExecID: "denied", Op: op, Payload: json.RawMessage(`{}`), Scope: scope})
+			d.runHandoff(link, protocol.Message{Type: protocol.TypeInvoke, ExecID: "denied", Op: op, Payload: json.RawMessage(`{}`), Scope: scope}, handoff.Ticket{})
 			select {
 			case got := <-results:
 				if got.Type != protocol.TypeInvokeNack || got.Code != protocol.Unauthorized {

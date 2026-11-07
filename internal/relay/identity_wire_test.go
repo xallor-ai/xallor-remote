@@ -45,7 +45,7 @@ func TestIdentityWire_should_rejectHello_whenPersistenceFails(t *testing.T) {
 			if _, err := s.faults.Exec(statement); err != nil {
 				t.Fatal(err)
 			}
-			hub := NewHub(s, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+			hub := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 			ctx, c, reply := identityWire(t, hub, protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "device", Secret: "fixture-secret"})
 			if reply.Type != protocol.TypeError || reply.Code != protocol.RelayError {
 				t.Fatalf("hello: %+v", reply)
@@ -64,7 +64,7 @@ func TestIdentityWire_should_rejectHello_whenPersistenceFails(t *testing.T) {
 // A failed control write must report a connection error over WSS and preserve persisted access state.
 func TestIdentityWire_should_closeDevice_whenAuthorizationCannotPersist(t *testing.T) {
 	s := openIdentityTestStore(t)
-	hub := NewHub(s, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	hub := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	ctx, c, reply := identityWire(t, hub, protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "device", Secret: "fixture-secret", Inbound: protocol.Bool(true)})
 	if reply.Type != protocol.TypeHelloOK {
 		t.Fatalf("hello: %+v", reply)
