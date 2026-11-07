@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -71,17 +70,6 @@ func (c runtimeControl) Stop() error {
 		time.Sleep(50 * time.Millisecond)
 	}
 	return fmt.Errorf("停止超时。")
-}
-func (runtimeControl) Check(path string) (buildinfo.Executable, error) {
-	var info buildinfo.Executable
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	b, err := exec.CommandContext(ctx, path, "version", "--json").Output()
-	if err != nil {
-		return info, err
-	}
-	err = json.Unmarshal(b, &info)
-	return info, err
 }
 func (c runtimeControl) Start(path, sha string) error {
 	s, err := runtimeStore()
