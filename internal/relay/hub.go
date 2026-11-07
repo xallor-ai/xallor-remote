@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -37,29 +38,45 @@ type inflight struct {
 	client    Sender
 	outBytes  int
 	trunc     bool
-	identity  principal.Identity
+	binding   clientSlot
+	operation string
+	cancelled bool
+	lease     *admission.Lease
 }
 
 // Hub is the in-memory router. Identity persistence is owned by DeviceStore.
 type Hub struct {
-	mu         sync.Mutex
-	devices    map[string]*deviceSlot
-	access     map[string]access.Binding
-	clients    map[Sender]clientSlot
-	inflight   map[string]*inflight
-	requests   map[requestKey]string
-	store      DeviceStore
-	identities identityGates
+	mu                 sync.Mutex
+	devices            map[string]*deviceSlot
+	access             map[string]access.Binding
+	clients            map[Sender]clientSlot
+	inflight           map[string]*inflight
+	requests           map[requestKey]string
+	store              DeviceStore
+	accounts           principal.Authenticator
+	accessService      DeviceAccess
+	executionAuthority ExecutionAuthority
+	admission          *admission.Service
+	identities         identityGates
 }
 
-func NewHub(store DeviceStore) *Hub {
+// NewHub receives independently composed services. Nil account/access services
+// disable their operations; a store's incidental methods never enable them.
+func NewHub(store DeviceStore, accounts principal.Authenticator, accessService DeviceAccess, executionAuthority ExecutionAuthority, transport *admission.Service) *Hub {
+	if transport == nil {
+		panic("relay: transport admission is required")
+	}
 	return &Hub{
-		devices:  map[string]*deviceSlot{},
-		access:   map[string]access.Binding{},
-		clients:  map[Sender]clientSlot{},
-		inflight: map[string]*inflight{},
-		requests: map[requestKey]string{},
-		store:    store,
+		devices:            map[string]*deviceSlot{},
+		access:             map[string]access.Binding{},
+		clients:            map[Sender]clientSlot{},
+		inflight:           map[string]*inflight{},
+		requests:           map[requestKey]string{},
+		store:              store,
+		accounts:           accounts,
+		accessService:      accessService,
+		executionAuthority: executionAuthority,
+		admission:          transport,
 	}
 }
 
@@ -68,6 +85,10 @@ func (h *Hub) Handle(from Sender, role string, targetID string, msg protocol.Mes
 		return
 	}
 	switch msg.Type {
+	case protocol.TypeExecutionRenewRoute:
+		h.renewExecutionRoute(from, role, msg)
+	case protocol.TypeExecutionRenew:
+		h.renewExecution(from, role, msg)
 	case protocol.TypeAccessRequest:
 		if role != protocol.RoleDevice {
 			if len(msg.RequestID) > 128 {

@@ -17,6 +17,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "close" {
+		verifyClose(os.Args[2])
+		return
+	}
 	if len(os.Args) == 3 && os.Args[1] == "sequence" {
 		verifySequence(os.Args[2])
 		return

@@ -21,10 +21,14 @@ func (d *Daemon) handleHandoffInvoke(link *wsConn, msg protocol.Message) bool {
 	if msg.Op != protocol.OpHandoffSubmit && msg.Op != protocol.OpHandoffGet {
 		return false
 	}
-	go d.runHandoff(link, msg)
+	var ticket handoff.Ticket
+	if msg.Op == protocol.OpHandoffSubmit && msg.Scope != nil && d.handoffs != nil {
+		ticket = d.handoffs.Capture(*msg.Scope, msg.Delegation)
+	}
+	go d.runHandoff(link, msg, ticket)
 	return true
 }
-func (d *Daemon) runHandoff(link *wsConn, msg protocol.Message) {
+func (d *Daemon) runHandoff(link *wsConn, msg protocol.Message, ticket handoff.Ticket) {
 	start := time.Now()
 	_, _, _, workspace, _, inbound, _ := d.store.Snapshot()
 	if !inbound {
@@ -50,7 +54,7 @@ func (d *Daemon) runHandoff(link *wsConn, msg protocol.Message) {
 	if d.handoffs == nil {
 		err = fmt.Errorf("交接服务不可用。")
 	} else if msg.Op == protocol.OpHandoffSubmit {
-		receipt, err = d.handoffs.Submit(*msg.Scope, payload.Request, workspace)
+		receipt, err = d.handoffs.Submit(ticket, payload.Request, workspace)
 	} else {
 		receipt, err = d.handoffs.Get(*msg.Scope, payload.ID)
 	}

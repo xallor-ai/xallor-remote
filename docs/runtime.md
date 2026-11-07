@@ -108,12 +108,12 @@ on disconnect: 退避重连；不恢复旧子进程
 
 v0 **不**解析「这是 `npm install` 还是 `rm`」来当沙箱。命令分类器一定会被绕过。
 
-**grant 持有者 ≈ 这台机器上的当前用户，作用域缩在 workspace + denylist。** Policy 是减伤，不是隔离。
+**获准 exec 的控制者 ≈ 这台机器上的当前用户。文件 API 受 workspace 与 denylist 约束；exec 不是 OS 沙箱。** Policy 是减伤，不是隔离。
 
 判定顺序（任一拒绝即停）：
 
 ```text
-1. Relay 已校验 grant / inbound（本步不再验码）
+1. Relay 已校验身份、设备访问权与 inbound（目标不重复校验原始凭据）
 2. 该 op 的 capability 已打开；未知 capability → deny
 3. 文件类：规范化后的路径必须在 workspace 内
 4. 命中 [os.md](os.md) denylist → policy_deny
@@ -121,7 +121,7 @@ v0 **不**解析「这是 `npm install` 还是 `rm`」来当沙箱。命令分�
      有 TTY 或本机 UI → 等待；超时 → approval_timeout
      无 TTY 且无 UI（典型无头 Linux）→ **直接 policy_deny**
      不要挂死等一个不存在的人
-6. 否则 allow
+6. 通过上述检查后执行；exec 另须在启动前及运行中确认授权，见 dataplane.md
 ```
 
 v0 capability：
@@ -143,3 +143,9 @@ Relay 已鉴权不能替代本步。
 ## 8. 卸载
 
 断开；本机 `revoke` 通知 Relay；删数据目录。只删二进制会留下 identity，重装抢同一 ID。
+
+### 本机数据格式与回滚
+
+构建记录的 `profile_format` 来自 `internal/buildinfo/profile_format.txt`，表示 Runtime 本机持久化格式，独立于网络协议和 Relay 数据库迁移版本。修改到旧二进制无法安全读取的格式时必须递增。托管安装、回滚与自动启动只接受相同格式，缺失标识也会在停止服务前拒绝；MCP 与 GUI 启动时传入内部格式断言，旧程序会在打开数据前拒绝未知参数。
+
+同格式回滚仅切换二进制，不恢复数据。跨格式切换必须先停服务，备份完整数据目录与对应二进制，再按配套备份整体恢复；不能把旧二进制直接指向升级后的目录。没有配套备份时不要降级。此限制避免旧版本忽略 identity.db 并生成新设备身份。
