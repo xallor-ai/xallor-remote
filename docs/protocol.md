@@ -25,7 +25,7 @@ JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本
 | --- | --- | --- | --- |
 | `hello_device` | device | device_id, secret, os, arch, agent_version, workspace | 证明设备身份；新设备默认关闭入站 |
 | `hello_client` | client | target_device_id, grant?, account_token? | 未认领设备验证共享码，已认领设备验证账号访问权 |
-| `hello_ok` | Relay | role | hello 成功，此后可 heartbeat / invoke |
+| `hello_ok` | Relay | role；client 另必带 client_auth | hello 成功，client 验证认证确认后可 heartbeat / invoke |
 | `heartbeat` | 双向 | — | 保活 |
 | `invoke` | client | exec_id, op, payload | op 见下；目标取自该 client 连接的 hello |
 | `invoke_nack` | Relay 或目标 | exec_id, code | 未开跑 |
@@ -34,14 +34,25 @@ JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本
 | `revoke` | **仅 device** | device_id | 注销本机身份；踢线 |
 | `access.request` | **仅 device** | request_id, account_token, payload | 管理本连接证明的设备归属与分享 |
 | `access.result` | Relay → device | request_id, code? / payload? | 管理结果；成功为归属快照，失败为错误码 |
+| `execution.renew` | **仅 device** | request_id, delegation | 复验本设备收到的后台执行委托 |
+| `execution.route.renew` | **仅 device** | request_id, exec_id | 复验本设备仍存活的前台 exec 路由 |
+| `execution.lease` | Relay → device | request_id, code? / lease_ms? | 短期执行许可；不确认任务结束或释放额度 |
 
 client 连接上出现 `revoke` / `device.settings` → 忽略或 nack `unauthorized`，**不得执行**。
+
+每条 client 连接的 `hello_ok` 必须携带 `client_auth:{mode:"shared"|"account"}`，由 Relay 在对应认证成功后生成。请求中提供 `account_token` 时必须确认 `account`，未提供时必须确认 `shared`；有效共享码不能替代失败的账号认证。Runtime 和诊断探针必须检查 type、client role、无错误 code 及匹配的 mode，缺失、未知或不匹配的确认一律拒绝，不缓存连接、不发后续 invoke，也不报告授权正常。所有 client 使用这一个明确合同，不接受只有 role 的普通成功回执。确认不携带原始凭据，不替代后续每次调用的身份及访问权限复验。
 
 `device.settings` 的 `request_id` 非空且最多 128 字节；`inbound` 必须明确提供。`grant_hash` 为 64 位小写十六进制 SHA-256；省略或空字符串表示没有授权码，仅允许入站关闭，也会清除现有共享码。整个快照在一个存储事务中替换，不能分别应用开关与授权码；设备身份由实际连接推导。非法快照返回 `device.settings.result` + `agent_error`，不改变状态；存储结果不确定时停止旧路由并关闭连接，不发送成功确认。确认绑定请求 ID 和连接实例，不是可跨连接重放的操作凭据。
 
 每条 device 连接在 `hello_ok` 后必须先提交完整设置；Relay 排入成功确认后才允许新调用路由到该连接，不能依赖上次连接的入站值提前执行。Runtime 在初始确认后才报告本机连接在线。重新连接同步本机保存的期望快照，不重新签发授权码。`revoke` 的注销语义独立于设置确认。
 
-成功的 `device.settings.result` 和 `device.access.result` 必须携带 `device_context:{authority,device_uid,ownership_id?,grant_id?,inbound}`，由 Relay 的已提交设备状态生成，仅返回 device 连接。authority/device_uid 为 32 位小写十六进制；ownership_id/grant_id 非空时格式相同且互斥，未签发共享授权的设备允许两者均空。Runtime 在初始快照有效前不上线，后续先应用快照再交付管理回执或处理后续 invoke。handoff 的 scope 须匹配其 authority、设备实例和归属/共享授权实例，且 inbound 为 true。快照不是主体权限凭据，不替代每次调用的账号与操作授权。
+成功的 `device.settings.result` 和 `access.result` 必须携带 `device_context:{authority,device_uid,ownership_id?,grant_id?,inbound}`，由 Relay 的已提交设备状态生成，仅返回 device 连接。authority/device_uid 为 32 位小写十六进制；ownership_id/grant_id 非空时格式相同且互斥，未签发共享授权的设备允许两者均空。Runtime 在初始快照有效前不上线，后续先应用快照再交付管理回执或处理后续 invoke。handoff 的 scope 须匹配其 authority、设备实例和归属/共享授权实例，且 inbound 为 true。快照不是主体权限凭据，不替代每次调用的账号与操作授权。
+
+Relay 下发 `handoff.submit` 时附带 `delegation`，客户端自报值被丢弃。它是固定用于后台交接复验的 HMAC-SHA256 委托，绑定签发方、设备显示号码/内部实例、原始共享/归属实例、账号凭据与成员版本及分享快照，不包含明文凭据、命令或 prompt。目标不得仅凭委托启动：须通过当前已认证 device 连接完成首次 `execution.renew`。委托至多 4096 字节，有效期 11 分钟且不续发，原始凭据或分享先到期时仍提前失效。续期请求 ID 非空且至多 128 字节，回复匹配请求与连接实例，其他设备和 client 角色不能使用它。
+
+前台 `exec` 在启动进程前通过 `execution.route.renew` 获取同样的短期许可。`exec_id` 是 Relay 生成的路由 ID，非空且至多 128 字节；`request_id` 使用同一限制，不能携带 `delegation`。只允许当前目标 device 连接为尚未取消/结束的 exec 路由续期。原始调用绑定保留在 Relay 内存中，续期不能自报或替换账号、分享及操作；存储复验后再次检查相同路由和双方连接。前台不受后台委托的年龄上限限制，`timeout_ms=0` 继续表示不设执行期限；连接断开仍取消、不恢复或重放旧命令。首次拒绝返回 `invoke_nack/unauthorized`，首次交换故障或过晚返回 `invoke_nack/relay_error`，原调用取消/超时分别保留 `cancelled`/`exec_timeout`。运行中授权丢失在进程清理和占用释放确认后返回 `exit.status=authorization_lost`，保留实际退出码、耗时、截断标记和已输出内容；清理失败仍使用原错误，不伪造成功退出。
+
+`execution.lease` 成功含正数 `lease_ms`，至多 20000 毫秒，且不超过委托、原始凭据或分享的剩余有效期；拒绝返回 `unauthorized`，存储/链路故障为 `relay_error` 或没有回复。Runtime 在发出请求前记下单调时间，从该时点计算到期，网络耗时不得加到许可期限上；正常每 5 秒复验，单次最多 5 秒且不能越过现有许可到期。明确拒绝取消作业；故障不续期，到期取消，不能迟到恢复。凭据续签/重新分享不替换已运行任务绑定的原始委托。委托仅驻内存，不进入回执；无首次许可为 `unknown/execution_authorization_unconfirmed`，运行中丢失许可为 `unknown/execution_authorization_lost`，回收或落盘未确认仍优先使用原有诊断。这是执行授权期限，不是商业资源租约、计费回执或 OS 沙箱。
 
 `account_token` 用于 client hello 和 device 的授权管理请求，非空时必须通过签发方校验，失败返回 `unauthorized`，存储故障返回 `relay_error`，不能降级为无账号访问。未认领设备必须出示目标 grant；已认领设备忽略 grant，只允许所有者或明确获授权且有效的成员。主体、空间、成员版本和到期时间由 Relay 从凭据推导，不接受客户端自报身份。凭据不转发给其他设备，也不写入调用记录。账号凭据有效期由本机运维设置为 1 分钟至 90 天，默认 24 小时。
 
@@ -65,7 +76,7 @@ Relay 在通过准入后重新构造发往 device 的非 cancel `invoke`，保�
 
 scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据续签、成员代次或重新签发同主体分享不改变它；新的设备 UID、归属实例或未认领共享授权实例会改变它。每次新调用仍独立完成现有认证和操作授权。handoff 收到缺失或非法 scope 返回 `unauthorized`，不回退设备级查询。原连接的 cancel 仍按 inflight 归属路由，不需要客户端传 scope。
 
-`info` 的 JSON 结果包含 `build`：version、revision、built_at（可省略）、dirty、protocol（当前为 1）、os、arch；用于区分运行制品与代码版本。未知 revision 为 `unknown`，不猜测提交。Relay health 返回同形构建身份。
+`info` 的 JSON 结果包含 `build`：version、revision、built_at（可省略）、dirty、protocol（当前为 1）、profile_format（本机持久化格式）、os、arch；用于区分运行制品与代码版本。未知 revision 为 `unknown`，不猜测提交。Relay health 返回同形构建身份。
 
 `info.shell` 为 `{configured,selected?,available:[],code?}`：configured 为目标配置名或 auto，selected 是当前能找到的解释器名，available 是本系统受支持且可找到的名字；不能解析选择时返回 code，不伪造 selected。只探测可执行文件，不包含路径、版本或远程凭据。可选解释器及执行语义见 [os.md](os.md)。
 
@@ -96,7 +107,7 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 
 非零退出只走 `exit`（`status=completed`）。每个 `exec_id` 恰好一个终态：`invoke_nack` **或** `exit` **或** `error`，然后 Relay 删 inflight。见 [dataplane.md](dataplane.md)。
 
-`exit.status`：`completed` | `cancelled` | `timeout`。MCP/CLI 把后两者映射为 code `cancelled` / `exec_timeout`。
+`exit.status`：`completed` | `cancelled` | `timeout` | `authorization_lost`。后三者均为已启动且已停止的非成功结果，CLI 返回非零、JSONL 保留 `exit` 与原状态，MCP 返回 `isError=true` 并保留输出与终态信息。`authorization_lost` 区别于用户取消、执行超时和启动前拒绝，不代表尚未执行，也不允许自动重试。
 
 `exec_id`：每条连接上的请求关联值。控制侧 Runtime 为新操作生成随机 ID；Relay 为每次准入另生成独立的随机内部 ID，以该值下发 device，并在回事件时还原调用者原值。目标只回显它收到的 ID。不同 client 连接可以使用相同值；同一连接同时重复使用返回 `agent_error`，不替换原调用。cancel 按原 client 连接与其关联 ID 解析，内部 ID 不能作为控制侧取消凭据。
 
@@ -159,6 +170,7 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 | --- | --- |
 | WSS 单帧 `data` | 64 KiB（解码后）；超则丢该数据帧并标 truncated |
 | WSS 读上限 | `MaxWSMessageBytes` = 6 × (write 上限 + 路径上限) + 8 KiB 信封；覆盖 JSON `\u00XX` 最坏转义 |
+| Runtime IPC / MCP 单条 JSON | `MaxIPCMessageBytes` = 6 × (write 上限 + 路径上限) + 8 KiB 信封，不含末尾换行；请求/回复同限额，未收到换行也须在超限时关闭连接。输出仍逐块传输，不累计事件副本；GUI 桥另有更小的本机展示预算 |
 | 路径 | 最长 4096 字节；超则 `policy_deny` |
 | 单次 stdout+stderr | **4 MiB** 后丢后续输出，`exit.truncated=true` |
 | Relay 每 inflight 待发缓冲 | **1 MiB**；超则丢数据帧并 truncated，不堵整条 device 连接 |
@@ -169,6 +181,7 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 | Relay 控制字节预留 | 接收/待发队列各从输出可用预算中预留 **128 KiB**；控制消息本身仍服从队列总上限，超载仍会断开 |
 | read 默认 / 上限 | 64 KiB / 1 MiB；少给则 `exit.truncated=true`，按 rune 边界切 |
 | read `offset` | 字节起点，可大于 1 MiB；落在 rune 中间则回退到该 rune 起点 |
+| read `head` / `tail` | 最多 1024 行；每个选中行按窗口预算保留前缀，超出返回 `truncated=true` |
 | **write 上限** | **1 MiB**（解码后）；整包 marshal 超 WSS 读上限则 `too_large`，不落盘 |
 | Relay 每设备在途请求 | **16**，所有非 cancel 操作合计，跨 client 连接共享；cancel 不占新名额。此项是传输预算，不是会员或本机作业额度 |
 | Runtime 本机作业占用 | 前台 exec 与后台 handoff 合计 **4**；其中 handoff 最多 **2**，不确定占用也计入；独立于 Relay inflight |

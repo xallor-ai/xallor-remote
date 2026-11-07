@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/xallor-ai/xallor-remote/internal/delegation"
 	"github.com/xallor-ai/xallor-remote/internal/job"
 	"github.com/xallor-ai/xallor-remote/internal/process"
 )
@@ -17,12 +18,21 @@ type outcome struct {
 	truncated                  bool
 }
 
-func (m *Manager) run(parent context.Context, key string, r Request, root string, owner *job.Owner) (result outcome) {
+func (m *Manager) run(parent context.Context, key string, r Request, root string, owner *job.Owner, proof string) (result outcome) {
 	ctx, cancel := context.WithTimeout(parent, time.Duration(r.TimeoutSeconds)*time.Second)
 	defer cancel()
+	guard, stop, err := delegation.Maintain(ctx, proof, m.renew)
+	if err != nil {
+		return outcome{state: "unknown", code: "execution_authorization_unconfirmed"}
+	}
+	defer stop()
+	ctx = guard
 	defer func() {
 		if errors.Is(context.Cause(ctx), errDeviceContextChanged) && result.code != "process_cleanup_unconfirmed" {
 			result.state, result.code = "unknown", "device_authorization_changed"
+		}
+		if (errors.Is(context.Cause(ctx), delegation.ErrDenied) || errors.Is(context.Cause(ctx), delegation.ErrExpired)) && result.code != "process_cleanup_unconfirmed" {
+			result.state, result.code = "unknown", "execution_authorization_lost"
 		}
 	}()
 	cfg, version, workspace, err := m.preflight(ctx, r, root, owner)

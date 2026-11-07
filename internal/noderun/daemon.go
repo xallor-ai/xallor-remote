@@ -39,9 +39,10 @@ type Daemon struct {
 	ensuring          map[clientKey]chan struct{}
 	accountGeneration uint64
 	accessRequests    deviceReplies
+	executionReplies  deviceReplies
 	settingsReplies   deviceReplies
 	settings          settingsGate
-	local             map[string]context.CancelFunc
+	local             map[string]context.CancelCauseFunc
 	localWG           sync.WaitGroup
 	remote            map[string]*remoteExec
 	approvals         *approvalHub
@@ -63,13 +64,13 @@ func New(store *identity.Store, log *slog.Logger) *Daemon {
 		log: log, store: store, ctx: ctx, cancel: cancel,
 		clients:   map[clientKey]*clientLink{},
 		ensuring:  map[clientKey]chan struct{}{},
-		local:     map[string]context.CancelFunc{},
+		local:     map[string]context.CancelCauseFunc{},
 		remote:    map[string]*remoteExec{},
 		approvals: newApprovalHub(),
 		activity:  activity.Open(store.Dir),
 		jobs:      job.New(store.Dir),
 	}
-	d.handoffs = handoff.New(ctx, store.Dir, d.jobs)
+	d.handoffs = handoff.New(ctx, store.Dir, d.jobs, d.renewExecution)
 	return d
 }
 
@@ -225,6 +226,8 @@ func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
 		}
 	}
 	switch msg.Type {
+	case protocol.TypeExecutionLease:
+		d.executionReplies.deliver(link, msg)
 	case protocol.TypeDeviceSettingsResult:
 		d.settingsReplies.deliver(link, msg)
 	case protocol.TypeAccessResult:
@@ -237,7 +240,7 @@ func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
 			cancel := d.local[msg.ExecID]
 			d.mu.Unlock()
 			if cancel != nil {
-				cancel()
+				cancel(nil)
 			}
 			return
 		}
@@ -288,6 +291,6 @@ func (d *Daemon) killAllLocal() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for _, c := range d.local {
-		c()
+		c(nil)
 	}
 }

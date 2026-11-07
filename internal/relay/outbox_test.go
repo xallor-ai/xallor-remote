@@ -45,7 +45,7 @@ func waitSignal(t *testing.T, signal <-chan struct{}) {
 // A blocked real writer must neither block another device nor lose the flooded execution's terminal.
 func TestOutbox_should_isolateSlowConsumer_and_preserveTruncatedExit(t *testing.T) {
 	b, entered, release, written := blockedOutbox(t, protocol.TypeStdout)
-	h := NewHub(nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(nil, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	a, other := &recSender{}, &recSender{}
 	if h.RegisterDevice("a", "secret-a", true, a) != "" || h.RegisterDevice("b", "secret-b", true, other) != "" {
 		t.Fatal("register")
@@ -178,7 +178,7 @@ func TestOutbox_should_greetBeforeInvoke_whenDeviceBecomesRoutable(t *testing.T)
 	written := make(chan protocol.Message, 4)
 	b := newOutbox(context.Background(), func(_ context.Context, m protocol.Message) error { written <- m; return nil }, func() {})
 	t.Cleanup(b.shutdown)
-	h := NewHub(nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(nil, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	if h.RegisterDevice("device", "secret", true, b) != "" {
 		t.Fatal("register")
 	}

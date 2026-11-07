@@ -60,7 +60,7 @@ func newSettingsWire(t *testing.T) *settingsWire {
 	if err := st.SetConfig("ws"+srv.URL[4:], t.TempDir(), "auto"); err != nil {
 		t.Fatal(err)
 	}
-	f.d = &Daemon{ctx: ctx, cancel: cancel, store: st, local: map[string]context.CancelFunc{}}
+	f.d = &Daemon{ctx: ctx, cancel: cancel, store: st, local: map[string]context.CancelCauseFunc{}}
 	return f
 }
 

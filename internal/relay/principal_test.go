@@ -19,7 +19,7 @@ func TestPrincipal_should_rejectNewInvoke_whenCredentialRevoked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := NewHub(s, s, access.NewService(s), admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(s, s, access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	dev, client := &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, dev); code != "" {
 		t.Fatal(code)
@@ -29,7 +29,7 @@ func TestPrincipal_should_rejectNewInvoke_whenCredentialRevoked(t *testing.T) {
 		t.Fatal(code)
 	}
 	h.Handle(client, protocol.RoleClient, "device", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "before", AccountToken: "not-forwarded"})
-	if h.inflight[dev.last().ExecID].identity != a.Identity || dev.last().AccountToken != "" {
+	if h.inflight[dev.last().ExecID].binding.identity != a.Identity || dev.last().AccountToken != "" {
 		t.Fatal("trusted invocation context missing or token forwarded")
 	}
 	if err := account.New(s).RevokeCredential(context.Background(), a.CredentialID); err != nil {

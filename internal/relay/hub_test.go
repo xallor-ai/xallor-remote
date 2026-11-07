@@ -112,7 +112,7 @@ func (r *recSender) last() protocol.Message {
 }
 
 func TestInvokeRoutesAndExitDeletesInflight(t *testing.T) {
-	h := NewHub(newMemStore(), nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	dev, cli := &recSender{}, &recSender{}
 	if code := h.RegisterDevice("dev_a", "secret", true, dev); code != "" {
 		t.Fatal(code)
@@ -161,7 +161,7 @@ func TestInvokeRoutesAndExitDeletesInflight(t *testing.T) {
 }
 
 func TestOversizeStdoutMarksTruncatedOnExit(t *testing.T) {
-	h := NewHub(newMemStore(), nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	dev, cli := &recSender{}, &recSender{}
 	h.RegisterDevice("dev_a", "secret", true, dev)
 	authorizeTestClient(t, h, dev, cli)
@@ -187,7 +187,7 @@ func TestOversizeStdoutMarksTruncatedOnExit(t *testing.T) {
 }
 
 func TestClientCannotRevoke(t *testing.T) {
-	h := NewHub(newMemStore(), nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	cli := &recSender{}
 	h.Handle(cli, protocol.RoleClient, "dev_a", protocol.Message{Type: protocol.TypeRevoke, DeviceID: "dev_a"})
 	if cli.last().Code != protocol.Unauthorized {
@@ -196,7 +196,7 @@ func TestClientCannotRevoke(t *testing.T) {
 }
 
 func TestClientDropSendsCancelToDevice(t *testing.T) {
-	h := NewHub(newMemStore(), nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	dev, cli := &recSender{}, &recSender{}
 	h.RegisterDevice("dev_a", "secret", true, dev)
 	authorizeTestClient(t, h, dev, cli)
@@ -226,7 +226,7 @@ func TestClientDropSendsCancelToDevice(t *testing.T) {
 }
 
 func TestCancelUnknownExec(t *testing.T) {
-	h := NewHub(newMemStore(), nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	cli := &recSender{}
 	h.handleCancel(cli, "ex_missing")
 	if cli.last().Code != protocol.UnknownExec {
@@ -235,7 +235,7 @@ func TestCancelUnknownExec(t *testing.T) {
 }
 
 func TestInboundDisabled(t *testing.T) {
-	h := NewHub(newMemStore(), nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	dev, cli := &recSender{}, &recSender{}
 	h.RegisterDevice("dev_a", "secret", false, dev)
 	authorizeTestClient(t, h, dev, cli)

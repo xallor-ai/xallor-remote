@@ -52,16 +52,19 @@ func (b *outbox) Context() context.Context { return b.ctx }
 // retainedBytes includes all variable-size envelope fields, including fields that
 // are not meaningful for this message type but can still arrive from a peer.
 func retainedBytes(m protocol.Message) int {
-	scopeBytes := 0
+	nestedBytes := 0
 	if m.Scope != nil {
-		scopeBytes = m.Scope.RetainedBytes()
+		nestedBytes = m.Scope.RetainedBytes()
 	}
 	if m.DeviceContext != nil {
-		scopeBytes += m.DeviceContext.RetainedBytes()
+		nestedBytes += m.DeviceContext.RetainedBytes()
+	}
+	if m.ClientAuth != nil {
+		nestedBytes += len(m.ClientAuth.Mode)
 	}
 	return 512 + len(m.Type) + len(m.Role) + len(m.DeviceID) + len(m.TargetID) + len(m.Secret) + len(m.Grant) + len(m.AccountToken) + len(m.RequestID) +
 		len(m.GrantHash) + len(m.OS) + len(m.Arch) + len(m.AgentVersion) + len(m.Workspace) + len(m.ExecID) +
-		len(m.Op) + len(m.Payload) + len(m.Code) + len(m.Data) + len(m.Status) + scopeBytes
+		len(m.Op) + len(m.Payload) + len(m.Code) + len(m.Data) + len(m.Status) + len(m.Delegation) + nestedBytes
 }
 
 func (b *outbox) Enqueue(m protocol.Message) error {

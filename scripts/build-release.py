@@ -47,7 +47,7 @@ def build(output, platform, go, allow_dirty=False):
     manifest = {
         "schema": 1,
         "build": {"version": version, "revision": revision, "built_at": built_at,
-                  "dirty": dirty, "protocol": 1, "os": goos, "arch": arch},
+                  "dirty": dirty, "protocol": 1, "profile_format": int((ROOT / "internal/buildinfo/profile_format.txt").read_text().strip()), "os": goos, "arch": arch},
         "artifact": {"filename": name, "sha256": digest, "size": destination.stat().st_size},
     }
     (target / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

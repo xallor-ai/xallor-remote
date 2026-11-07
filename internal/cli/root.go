@@ -23,6 +23,7 @@ func Execute() error {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	addProfileFormatGuard(root)
 	root.AddCommand(cmdRelay(), cmdStart(), cmdEnsure(), cmdStop(), cmdStatus(), cmdDoctor(), cmdGrant(), cmdInbound(), cmdRevoke(), cmdReset(), cmdPeer(), cmdExec(), cmdApprove(), cmdTUI(), cmdMCP(), cmdVersion(), cmdRuntime(), cmdIPCBridge(), cmdHandoff(), cmdAccount())
 	root.AddCommand(cmdDevice())
 	root.AddCommand(cmdConfig())

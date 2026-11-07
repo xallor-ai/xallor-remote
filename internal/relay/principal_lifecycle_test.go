@@ -31,7 +31,7 @@ func TestPrincipal_should_keepRoutingAndCancelLookup_whenVerificationBlocks(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := NewHub(s, s, access.NewService(s), admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(s, s, access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device, anonymous := &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)

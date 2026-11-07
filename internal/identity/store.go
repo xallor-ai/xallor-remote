@@ -1,7 +1,9 @@
 package identity
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -47,16 +49,52 @@ func LoadFrom(dir string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{Dir: dir}
+	// Parse user-controlled state before creating an identity or workspace. A
+	// truncated/corrupt config must fail closed rather than silently selecting
+	// the hosted Relay and making a new local profile look valid.
+	for name, target := range map[string]any{"config.json": &s.Config, "peers.json": &s.Peers} {
+		b, readErr := os.ReadFile(filepath.Join(dir, name))
+		if os.IsNotExist(readErr) {
+			continue
+		}
+		if readErr != nil {
+			return nil, readErr
+		}
+		if bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+			return nil, fmt.Errorf("invalid %s: null is not valid state", name)
+		}
+		if name == "config.json" {
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(b, &fields); err != nil {
+				return nil, fmt.Errorf("invalid %s: %w", name, err)
+			}
+			for field, value := range fields {
+				if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+					return nil, fmt.Errorf("invalid %s: null field %s", name, field)
+				}
+			}
+		}
+		if name == "peers.json" {
+			var fields []map[string]json.RawMessage
+			if err := json.Unmarshal(b, &fields); err != nil {
+				return nil, fmt.Errorf("invalid %s: %w", name, err)
+			}
+			for _, peer := range fields {
+				for field, value := range peer {
+					if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+						return nil, fmt.Errorf("invalid %s: null field %s", name, field)
+					}
+				}
+			}
+		}
+		if err := json.Unmarshal(b, target); err != nil {
+			return nil, fmt.Errorf("invalid %s: %w", name, err)
+		}
+	}
 	var err error
 	s.device, err = loadDeviceRecord(dir, true)
 	if err != nil {
 		return nil, err
-	}
-	if b, err := os.ReadFile(filepath.Join(dir, "config.json")); err == nil {
-		_ = json.Unmarshal(b, &s.Config)
-	}
-	if b, err := os.ReadFile(filepath.Join(dir, "peers.json")); err == nil {
-		_ = json.Unmarshal(b, &s.Peers)
 	}
 	if u := os.Getenv("XALLOR_REMOTE_RELAY_URL"); u != "" {
 		s.Config.RelayURL = u

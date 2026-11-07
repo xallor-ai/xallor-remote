@@ -21,12 +21,13 @@ type Ticket struct {
 	manager    *Manager
 	scope      invocation.Scope
 	generation uint64
+	proof      string
 }
 
-func (m *Manager) Capture(scope invocation.Scope) Ticket {
+func (m *Manager) Capture(scope invocation.Scope, proof string) Ticket {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return Ticket{manager: m, scope: scope, generation: m.generation}
+	return Ticket{manager: m, scope: scope, generation: m.generation, proof: proof}
 }
 
 // SyncDevice serializes with Submit. Already received work loses its worker
