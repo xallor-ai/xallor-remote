@@ -18,6 +18,8 @@ var ErrCleanup = errors.New("process cleanup unconfirmed")
 const cleanupTimeout = 5 * time.Second
 
 type boundary interface {
+	start(*exec.Cmd) error
+	wait(*exec.Cmd) error
 	attach(*exec.Cmd) error
 	waitRoot() error
 	stop() error
@@ -34,7 +36,9 @@ type Child struct {
 	err     error
 }
 
-// Start takes sole ownership of an unstarted exec.Command. CommandContext is
+// Start takes sole ownership of an unstarted exec.Command. On Windows, commands
+// are created suspended with PROC_THREAD_ATTRIBUTE_JOB_LIST,
+// so the OS assigns the child before any user code runs. CommandContext is
 // rejected: cancellation must target the group, not race a second root killer.
 // Reaping starts immediately. Streaming readers must use their own os.Pipe
 // files, not Cmd.StdoutPipe/StderrPipe, which Cmd.Wait closes automatically.
@@ -58,7 +62,7 @@ func startPrepared(ctx context.Context, cmd *exec.Cmd, g boundary) (*Child, erro
 		return nil, err
 	}
 	cmd.WaitDelay = time.Second
-	if err := cmd.Start(); err != nil {
+	if err := g.start(cmd); err != nil {
 		_ = g.close()
 		return nil, err
 	}
@@ -67,7 +71,7 @@ func startPrepared(ctx context.Context, cmd *exec.Cmd, g boundary) (*Child, erro
 		// back to an unsupervised process when job assignment/resume fails.
 		_ = g.stop()
 		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		_ = g.wait(cmd)
 		_ = g.close()
 		return nil, fmt.Errorf("process supervision: %w", err)
 	}
@@ -88,7 +92,7 @@ func startPrepared(ctx context.Context, cmd *exec.Cmd, g boundary) (*Child, erro
 		closeErr := g.close()
 		c.closed = true
 		c.mu.Unlock()
-		waitErr := cmd.Wait()
+		waitErr := g.wait(cmd)
 		if cleanupErr = errors.Join(cleanupErr, closeErr); cleanupErr != nil {
 			cleanupErr = fmt.Errorf("%w: %v", ErrCleanup, cleanupErr)
 		}
@@ -112,3 +116,7 @@ func (c *Child) Stop() error {
 
 // Wait can be called repeatedly or concurrently. Success includes group cleanup.
 func (c *Child) Wait() error { <-c.done; return c.err }
+
+// Done closes after both the root result and supervised descendant cleanup are
+// known. A closed channel is not proof of successful cleanup; inspect Wait.
+func (c *Child) Done() <-chan struct{} { return c.done }

@@ -2,30 +2,44 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/xallor-ai/xallor-remote/internal/execution"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 func cmdExec() *cobra.Command {
-	return executionCommand(func(device string, request execution.Request) error {
+	return executionCommand(func(cmd *cobra.Command, device string, request execution.Request) error {
+		jsonl, _ := cmd.Flags().GetBool("jsonl")
 		if err := ensureRuntime(); err != nil {
-			return err
+			return localExecError(cmd.OutOrStdout(), jsonl, protocol.RuntimeUnavailable, err)
 		}
-		return streamExec(device, request)
+		return streamExec(device, request, jsonl, cmd.OutOrStdout(), cmd.ErrOrStderr())
 	})
 }
 
-func executionCommand(run func(string, execution.Request) error) *cobra.Command {
+func executionCommand(run func(*cobra.Command, string, execution.Request) error) *cobra.Command {
 	var device, shell, scriptFile, program, requestFile, cwd string
 	var timeout int
 	c := &cobra.Command{
 		Use:   "exec [--script-file FILE | --program PROGRAM | --request-file FILE] -- [script or arguments]",
 		Short: "在对方执行脚本或程序",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
+			dispatched := false
+			defer func() {
+				if runErr != nil && !dispatched {
+					jsonl, _ := cmd.Flags().GetBool("jsonl")
+					code := protocol.InvalidExecution
+					if errors.Is(runErr, execution.ErrTooLarge) {
+						code = protocol.TooLarge
+					}
+					runErr = localExecError(cmd.OutOrStdout(), jsonl, code, runErr)
+				}
+			}()
 			modes := 0
 			for _, name := range []string{"script-file", "program", "request-file"} {
 				if cmd.Flags().Changed(name) {
@@ -72,10 +86,12 @@ func executionCommand(run func(string, execution.Request) error) *cobra.Command 
 			if err := r.Validate(); err != nil {
 				return fmt.Errorf("执行参数无效：%w", err)
 			}
-			return run(device, r)
+			dispatched = true
+			return run(cmd, device, r)
 		},
 	}
 	c.Flags().StringVar(&device, "device", "", "对方设备 ID（仅一台时可省）")
+	c.Flags().Bool("jsonl", false, "逐行输出 JSON 事件，供 Agent 或程序读取")
 	c.Flags().StringVar(&shell, "shell", "", "对方解释器：auto/powershell/pwsh/bash/sh（省略时使用对方配置）")
 	c.Flags().StringVar(&scriptFile, "script-file", "", "读取本地 UTF-8 脚本；- 表示标准输入")
 	c.Flags().StringVar(&requestFile, "request-file", "", "读取本地执行请求 JSON；- 表示标准输入")

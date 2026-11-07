@@ -100,7 +100,10 @@ try {
   const interrupted = controller.stream("exec", { device_id: targetID, script: { text: "echo disconnect-ready; " + sleep } }, f => {
     if (f.data?.includes("disconnect-ready")) disconnectReady();
   });
-  await bounded(started);
+  await bounded(Promise.race([
+    started,
+    interrupted.then(frame => { throw Error("Relay-loss execution ended before start: " + JSON.stringify(frame)); }),
+  ]));
   // Only the fixture-owned Relay PID is provided by the parent test harness.
   const relayPID = Number(process.env.XALLOR_TEST_RELAY_PID);
   assert(Number.isSafeInteger(relayPID) && relayPID > 0);

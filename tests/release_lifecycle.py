@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+from fixtures.runtime_cluster import device_state
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,8 +55,12 @@ def main():
         return json.loads(cli(profile, "runtime", "status").stdout)
 
     def snapshot(profile):
-        return {name: hashlib.sha256((profile / name).read_bytes()).hexdigest()
-                for name in ("identity.json", "device_secret", "grant", "peers.json", "config.json")}
+        files = {name: hashlib.sha256((profile / name).read_bytes()).hexdigest()
+                 for name in ("peers.json", "config.json")}
+        core = device_state(profile)
+        core.pop("revision")  # Internal write generation can change while user settings remain identical.
+        files["identity"] = hashlib.sha256(json.dumps(core, sort_keys=True).encode()).hexdigest()
+        return files
 
     try:
         os.environ["SOURCE_DATE_EPOCH"] = "1793536800"
@@ -93,9 +98,9 @@ def main():
             }), encoding="utf-8")
             cli(profile, "runtime", "install", "--bundle", str(a))
         target, controller = profiles
-        identity = json.loads((target / "identity.json").read_text())
+        identity = device_state(target)
         cli(target, "grant", "issue")
-        grant = (target / "grant").read_text()
+        grant = device_state(target)["grant"]
         cli(target, "peer", "add", "--id", "901234569", "--grant", "xr_grant_test_only")
         cli(controller, "peer", "add", "--id", identity["device_id"], "--grant", grant)
         cli(target, "inbound", "off")
@@ -112,7 +117,12 @@ def main():
         assert snapshot(target) == before
         record("upgrade_preserves_identity_grant_peers_workspace_and_inbound")
 
-        time.sleep(.5)
+        # Installation confirms the local IPC process; wait for the read-only
+        # status to confirm its initial Relay settings before testing access.
+        deadline = time.monotonic() + 15
+        while not json.loads(cli(target, "status", "--json").stdout)["online"]:
+            assert time.monotonic() < deadline, "upgraded Runtime did not confirm Relay settings"
+            time.sleep(.05)
         denied = cli(controller, "exec", "--device", identity["device_id"], "--", "echo release-e2e", success=False)
         assert denied.returncode != 0 and "开放入站" in denied.stderr, denied.stderr
         record("upgrade_reconnect_keeps_inbound_disabled")
@@ -126,6 +136,40 @@ def main():
         assert state(target)["running"]["sha256"] == ma["artifact"]["sha256"]
         assert snapshot(target) == before
         record("rollback_restores_verified_artifact_and_preserves_state")
+
+        # Unknown historical metadata must be refused before stopping a live
+        # process or starting a selected binary against migrated profile data.
+        state_path = target / "runtime/state.json"
+        original_state = state_path.read_bytes()
+        pid = state(target)["running"]["pid"]
+        for operation, slot in ((["runtime", "rollback"], "previous"),
+                                (["runtime", "install", "--bundle", str(b)], "current")):
+            invalid = json.loads(original_state)
+            invalid[slot]["build"].pop("profile_format")
+            state_path.write_text(json.dumps(invalid), encoding="utf-8")
+            rejected = cli(target, *operation, success=False)
+            assert rejected.returncode != 0 and "profile format" in rejected.stderr
+            assert json.loads(cli(target, "status", "--json").stdout)["build"]["pid"] == pid
+            assert snapshot(target) == before
+            state_path.write_bytes(original_state)
+        cli(target, "stop")
+        deadline = time.monotonic() + 10
+        while state(target)["running"] is not None:
+            assert time.monotonic() < deadline
+            time.sleep(.05)
+        invalid = json.loads(original_state)
+        invalid["current"]["build"].pop("profile_format")
+        state_path.write_text(json.dumps(invalid), encoding="utf-8")
+        rejected = cli(target, "ensure", success=False)
+        assert rejected.returncode != 0 and "profile format" in rejected.stderr
+        assert snapshot(target) == before
+        state_path.write_bytes(original_state)
+        cli(target, "ensure")
+        untouched = root / "unsupported-format"
+        rejection = subprocess.run([str(binary), "--require-profile-format", "0", "start"],
+                                   env=env(untouched), capture_output=True, timeout=10)
+        assert rejection.returncode != 0 and not untouched.exists()
+        record("unknown_profile_format_refused_before_install_rollback_or_start")
 
         corrupt = root / "corrupt"
         shutil.copytree(b, corrupt)
