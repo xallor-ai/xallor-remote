@@ -14,8 +14,8 @@ func TestShould_useNumericDeviceID_whenNewStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !protocol.IsNumericDeviceID(st.DeviceID) {
-		t.Fatalf("device_id=%q", st.DeviceID)
+	if !protocol.IsNumericDeviceID(st.ID()) {
+		t.Fatalf("device_id=%q", st.ID())
 	}
 }
 
@@ -32,8 +32,8 @@ func TestShould_keepNumericDeviceID_whenReloaded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.DeviceID != "790442262" {
-		t.Fatalf("device_id=%q", st.DeviceID)
+	if st.ID() != "790442262" {
+		t.Fatalf("device_id=%q", st.ID())
 	}
 }
 
@@ -50,8 +50,8 @@ func TestShould_migrateNonNumericDeviceID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !protocol.IsNumericDeviceID(st.DeviceID) {
-		t.Fatalf("device_id=%q", st.DeviceID)
+	if !protocol.IsNumericDeviceID(st.ID()) {
+		t.Fatalf("device_id=%q", st.ID())
 	}
 }
 

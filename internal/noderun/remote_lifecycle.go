@@ -64,3 +64,17 @@ func (d *Daemon) cancelAllForConn(c *ipc.Conn) {
 		cancelRemote(r, id)
 	}
 }
+
+func (d *Daemon) cancelRemotesForLink(link *wsConn) {
+	d.mu.Lock()
+	pending := map[string]*remoteExec{}
+	for id, r := range d.remote {
+		if r.link == link {
+			pending[id] = r
+		}
+	}
+	d.mu.Unlock()
+	for id, r := range pending {
+		cancelRemote(r, id)
+	}
+}

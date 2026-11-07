@@ -39,7 +39,13 @@ xallor-remote revoke
 xallor-remote peer add --id … --grant …
 xallor-remote peer list
 xallor-remote peer rename --id … --name …
-xallor-remote exec --device … -- <command>
+xallor-remote exec --device … [--shell powershell] -- "完整脚本"
+xallor-remote exec --device … --script-file <本地UTF-8文件或-> [--shell powershell]
+xallor-remote exec --device … --program <对方程序> -- <arg1> <arg2>
+xallor-remote exec --device … --request-file <本地JSON文件或->
+xallor-remote exec --device … --jsonl --program git -- status --short
+xallor-remote config get
+xallor-remote config set --shell auto|powershell|pwsh|bash|sh
 xallor-remote approve
 xallor-remote mcp print-config
 xallor-remote mcp merge-config
@@ -48,6 +54,14 @@ xallor-remote reset --yes
 ```
 
 `inbound off` 保留身份；`revoke` 销毁登记。尚无授权码时 `inbound on` 等同 `grant issue`。`approve`：本机交互确认高危命令；无 TTY 时不要跑。
+
+`config` 修改当前本机 Runtime；要改变对方执行解释器，在对方设备执行。`get` 返回 JSON 配置，`set --shell` 持久保存并用于后续任务，不改变已运行任务。各系统支持项和自动选择规则见 [os.md](os.md)。`auto` 恢复自动选择，空参数不是清除操作。
+
+`exec` 文本入口只收一个完整脚本参数，不把多个片段自动拼接。单次 `--shell` 只选择本次任务的目标解释器，不修改配置。程序模式的 `--` 后逐项作为参数，空字符串和特殊字符仍须先正确通过本地 Shell；跨系统复杂输入优先使用 `--script-file` / `--request-file`，避免本地 Shell 提前展开。两种文件均在控制端读取，可带 UTF-8 BOM，`-` 从标准输入读取。JSON 形状及上限见 [protocol.md](protocol.md)，其中不含 device_id，由 `--device` 选择目标。
+
+`--cwd` 是对方 workspace 内的目录，`--timeout-ms` 设置本次执行期限。请求文件模式将这两项及 shell 写在 JSON 内，不再叠加同名 CLI 选项；程序模式不接受 `--shell`。脚本文件按内容发送，不会在目标落地，也不绕过目标命令行长度限制。CLI 文本输出和退出状态保持现有语义；此入口不是交互终端。
+
+Agent 或脚本调用时加 `--jsonl`，逐行读取 stdout 上的 JSON 事件，并检查最后的 exit/error；不要解析 stderr 人话或把命令输出中的 JSON 当回执。已知退出码、超时、截断和错误均有独立字段，格式见 [protocol.md](protocol.md)。人直接操作可继续使用默认文本展示，两种方式执行同一请求。
 
 ---
 

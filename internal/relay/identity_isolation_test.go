@@ -2,8 +2,12 @@ package relay
 
 import (
 	"context"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 	"testing"
 	"time"
+
+	"github.com/xallor-ai/xallor-remote/internal/access"
 )
 
 type blockedIdentityStore struct {
@@ -12,13 +16,13 @@ type blockedIdentityStore struct {
 	release chan struct{}
 }
 
-func (s *blockedIdentityStore) LoadDevice(ctx context.Context, id string) (DeviceRecord, error) {
+func (s *blockedIdentityStore) LoadDevice(ctx context.Context, id string) (access.Device, error) {
 	if id == "blocked" {
 		close(s.entered)
 		select {
 		case <-s.release:
 		case <-ctx.Done():
-			return DeviceRecord{}, ctx.Err()
+			return access.Device{}, ctx.Err()
 		}
 	}
 	return s.DeviceStore.LoadDevice(ctx, id)
@@ -27,12 +31,12 @@ func (s *blockedIdentityStore) LoadDevice(ctx context.Context, id string) (Devic
 // An unrelated routing lookup must complete while another identity lookup is blocked.
 func TestIdentity_should_isolateRouting_whenStoreLookupBlocks(t *testing.T) {
 	s := &blockedIdentityStore{DeviceStore: newMemStore(), entered: make(chan struct{}), release: make(chan struct{})}
-	h := NewHub(s)
+	h := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	if code := h.RegisterDevice("healthy", "secret", true, &recSender{}); code != "" {
 		t.Fatal(code)
 	}
 	finished := make(chan struct{})
-	go func() { h.RegisterClient("blocked", "grant", &recSender{}); close(finished) }()
+	go func() { h.RegisterClient("blocked", "grant", "", &recSender{}); close(finished) }()
 	waitSignal(t, s.entered)
 	queried := make(chan bool, 1)
 	go func() { queried <- h.DeviceOnline("healthy") }()

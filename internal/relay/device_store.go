@@ -2,27 +2,18 @@ package relay
 
 import (
 	"context"
-	"errors"
-)
 
-var (
-	ErrDeviceNotFound = errors.New("device not found")
-	ErrDeviceIdentity = errors.New("device identity does not match")
+	"github.com/xallor-ai/xallor-remote/internal/access"
 )
-
-// DeviceRecord is the authoritative persisted device identity and access state.
-type DeviceRecord struct {
-	SecretHash string
-	GrantHash  string
-	Inbound    bool
-}
 
 // DeviceStore must commit a mutation before returning success. Registration
 // atomically creates an absent identity or authenticates the existing one.
-// Operational errors must never be returned as ErrDeviceNotFound.
+// Operational errors must never be returned as access.ErrDeviceNotFound.
 type DeviceStore interface {
-	RegisterDevice(ctx context.Context, id, secretHash string, inbound bool) (DeviceRecord, error)
-	LoadDevice(ctx context.Context, id string) (DeviceRecord, error)
-	UpdateDevice(ctx context.Context, id string, record DeviceRecord) error
-	DeleteDevice(ctx context.Context, id, secretHash string) error
+	// Authority is immutable, loaded when the store opens; it must not perform I/O.
+	Authority() string
+	RegisterDevice(ctx context.Context, id, secretHash string, inbound bool) (access.Device, error)
+	LoadDevice(ctx context.Context, id string) (access.Device, error)
+	UpdateDevice(ctx context.Context, id string, record access.Device) (access.Device, error)
+	DeleteDevice(ctx context.Context, id, uid, secretHash string) error
 }

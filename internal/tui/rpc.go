@@ -3,9 +3,9 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"time"
 
+	"github.com/xallor-ai/xallor-remote/internal/execution"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 )
 
@@ -24,7 +24,7 @@ func rpc(method string, params map[string]any) (map[string]any, error) {
 		return nil, err
 	}
 	if fr.OK == nil || !*fr.OK {
-		return nil, fmt.Errorf("%s", ipc.Human(fr.Code))
+		return nil, fmt.Errorf("%s", ipc.FailureMessage(fr))
 	}
 	var out map[string]any
 	if len(fr.Result) > 0 {
@@ -43,30 +43,20 @@ func streamExec(command string, onOut func(string)) error {
 	}
 	defer raw.Close()
 	c := ipc.NewConn(raw)
-	if err := ipc.Call(c, "e1", "exec", map[string]any{"command": command}); err != nil {
+	if err := ipc.Call(c, "e1", "exec", execution.Request{Script: &execution.Script{Text: command}}); err != nil {
 		return err
 	}
-	for {
-		fr, err := c.ReadFrame()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if fr.Event == "stdout" || fr.Event == "stderr" {
-			if fr.Data != "" {
-				onOut(fr.Data)
-			}
-			continue
-		}
-		if fr.OK != nil && *fr.OK {
-			return nil
-		}
-		if fr.OK != nil && !*fr.OK {
-			return fmt.Errorf("%s", ipc.Human(fr.Code))
-		}
+	writer := outputWriter(onOut)
+	return ipc.ConsumeExec("e1", c.ReadFrame, writer, writer)
+}
+
+type outputWriter func(string)
+
+func (w outputWriter) Write(b []byte) (int, error) {
+	if len(b) > 0 {
+		w(string(b))
 	}
+	return len(b), nil
 }
 
 func peerIDs(res map[string]any) []string {
