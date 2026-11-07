@@ -115,6 +115,36 @@ test("connect, stream, cancel, approve and inspect actual history", async ({ pag
     await expect(page.locator(".peer-detail strong")).toHaveText(alias);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: path.join(process.env.XR_GUI_EVIDENCE!, "mobile.png"), fullPage: true });
+
+    // A real ownership transfer retires an already-running route. Keep the
+    // output and one uncertain terminal, without claiming pre-start rejection.
+    const owner = JSON.parse((await localCLI(...admin, "create", "--name", "gui-owner")).stdout);
+    const replacement = JSON.parse((await localCLI(...admin, "create", "--name", "gui-new-owner")).stdout);
+    const ownerFile = path.join(process.env.XR_GUI_ROOT!, "gui-owner.json");
+    await writeFile(ownerFile, JSON.stringify(owner), "utf8");
+    const targetCLI = async (...args: string[]) => promisify(execFile)(process.env.XR_GUI_CLI!, args, {
+      env: { ...process.env, XALLOR_REMOTE_DATA_DIR: path.join(process.env.XR_GUI_ROOT!, "target") }, windowsHide: true,
+    });
+    await targetCLI("account", "use", "--credential-file", ownerFile);
+    await localCLI("account", "use", "--credential-file", ownerFile);
+    try {
+      await targetCLI("device", "claim");
+      await page.setViewportSize({ width: 1100, height: 800 });
+      await page.getByRole("button", { name: "任务", exact: true }).click();
+      const terminalStart = terminals.length;
+      await page.getByLabel("命令", { exact: true }).fill(command);
+      await page.getByRole("button", { name: "执行", exact: true }).click();
+      await expect(page.locator("#tasks pre").first()).toContainText("gui-stream", { timeout: 20_000 });
+      await targetCLI("device", "transfer", "--member", replacement.membership_id);
+      await expect(page.locator(".task-state").first()).toHaveText("结果待确认", { timeout: 15_000 });
+      await expect(page.locator("#tasks pre").first()).toContainText("gui-stream");
+      await expect(page.getByRole("button", { name: "取消任务" }).first()).toBeDisabled();
+      await expect.poll(async () => JSON.parse(await readFile(path.join(process.env.XR_GUI_ROOT!, "target/jobs.json"), "utf8")).jobs,
+        { timeout: 25_000 }).toEqual({});
+      await expect.poll(() => terminals.length).toBe(terminalStart + 1);
+      expect(["result_unknown", "relay_error"]).toContain((terminals.at(-1) as { code?: string }).code);
+      await page.screenshot({ path: path.join(process.env.XR_GUI_EVIDENCE!, "ownership-interrupted.png"), fullPage: true });
+    } finally { await localCLI("account", "clear"); }
     expect(errors).toEqual([]);
   } catch (e) { console.log("Terminal evidence:", JSON.stringify(terminals)); throw e; }
   finally { incoming.close(); }

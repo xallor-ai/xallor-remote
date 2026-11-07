@@ -117,3 +117,27 @@ func TestExecutionLease_should_rejectLateSuccess_afterConcurrentRouteEnd(t *test
 		}
 	}
 }
+
+// Inbound off permanently invalidates the live foreground route. Re-enabling
+// inbound cannot restore renewal for the same exec.
+func TestExecutionLease_should_rejectRenewal_afterInboundDisabledEvenIfReenabled(t *testing.T) {
+	h, device, caller, id := executionRouteFixture(t)
+	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "off", Inbound: protocol.Bool(false), GrantHash: protocol.SHA256Hex("grant")})
+	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "on", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("grant")})
+	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeExecutionRenewRoute, RequestID: "renew", ExecID: id})
+	if reply := device.last(); reply.Type != protocol.TypeExecutionLease || reply.Code != protocol.Unauthorized || reply.LeaseMS != 0 {
+		t.Fatal(reply)
+	}
+	caller.mu.Lock()
+	pending := append([]protocol.Message(nil), caller.got...)
+	caller.mu.Unlock()
+	for _, msg := range pending {
+		if msg.Type == protocol.TypeError || msg.Type == protocol.TypeInvokeNack {
+			t.Fatal("inbound revocation emitted a client error before cleanup", msg)
+		}
+	}
+	h.Handle(device, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeExit, ExecID: id, Status: protocol.ExitAuthorizationLost, ExitCode: protocol.Int(1)})
+	if caller.last().Type != protocol.TypeExit || caller.last().Status != protocol.ExitAuthorizationLost {
+		t.Fatal(caller.last())
+	}
+}

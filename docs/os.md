@@ -25,7 +25,7 @@ SSOT：Windows / Linux / macOS 行为。协议与 tool 名字相同；差异只�
 
 各头按 [protocol.md](protocol.md) 传 script 或 program。目标 Runtime 的 `internal/execution` 校验并构造命令，脚本通过 `internal/shell` 选择解释器，`internal/job` 拥有启动与清理。Windows 支持 powershell/pwsh；Linux 支持 bash/sh/pwsh。`auto` 在 Windows 使用 powershell，在 Linux 优先 bash，只有找不到 bash 时才选 sh。显式选择不会回退，不接受任意可执行路径或带参数的 shell 字符串；不支持 cmd。已开始执行后无论解析失败、非零退出还是断线，都不会换壳重试。
 
-PowerShell 禁用 profile 和交互，脚本按 UTF-16LE/Base64 放入固定 ASCII 启动表达式后解码执行，避免原始脚本参与原生命令行转义；UTF-8 输出初始化位于外层启动表达式，保留用户块中 `using` / `param` 声明所需的首部位置。不用会使 Windows PowerShell stderr 变成 CLIXML 的 `-EncodedCommand`。保留显式 exit，最后语句失败返回 1，成功返回 0，不提升之前原生程序遗留的 LASTEXITCODE。bash 禁用 profile/rc 并用 `-c`，sh 用 `-c`。不翻译 bash↔PowerShell，cwd 相对 workspace。配置操作见 [clients.md](clients.md)，能力和错误字段见 [protocol.md](protocol.md)。
+PowerShell 禁用 profile 和交互，脚本按 UTF-16LE/Base64 放入固定 ASCII 启动表达式后解码执行，避免原始脚本参与原生命令行转义；UTF-8 输出初始化位于外层启动表达式，保留用户块中 `using` / `param` 声明所需的首部位置。不用会使 Windows PowerShell stderr 变成 CLIXML 的 `-EncodedCommand`。使用目标 PowerShell 的语法树把状态检查放到最后执行块内，支持命名的 begin/process/end，保留 dynamicparam 参数绑定和受支持版本的 clean 清理；不按正则猜测，也不把普通语句拼在命名块之后。保留显式 exit，最后执行块的最后语句失败返回 1，成功返回 0，不提升之前原生程序遗留的 LASTEXITCODE。bash 禁用 profile/rc 并用 `-c`，sh 用 `-c`。不翻译 bash↔PowerShell，cwd 相对 workspace。配置操作见 [clients.md](clients.md)，能力和错误字段见 [protocol.md](protocol.md)。
 
 能力探测仅查找目标可执行文件，不启动 profile 或版本探针；不承诺 shell 版本、插件、环境工具或后续命令一定可执行。PowerShell 相关行为依据 [官方 CLI 说明](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe?view=powershell-5.1)及[上游重定向 stderr 问题](https://github.com/PowerShell/PowerShell/issues/5912)，并以实际进程测试验证。
 

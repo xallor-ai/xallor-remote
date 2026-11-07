@@ -52,7 +52,24 @@ try {
         })));
         assert.equal(declared.exit_code,0); assert.equal(stdout.trim(),"declaration-ready 中文🌍"); assert.equal(stderr,"");
       }
+      let namedStdout="", namedStderr="";
+      const named=ok(await bounded(controller.stream("exec",{device_id:device,script:{text:"begin { Write-Output 'named-block-ready' } end { Write-Output 'named-block-done' }",shell:name}},f=>{
+        if (f.event==="stdout") namedStdout+=f.data||"";
+        if (f.event==="stderr") namedStderr+=f.data||"";
+      })));
+      assert.equal(named.exit_code,0);
+      assert.equal(namedStdout.replace(/\r\n/g,"\n").trim(),"named-block-ready\nnamed-block-done");
+      assert.equal(namedStderr,"");
+      let failureOut="", failureError="";
+      const failure=ok(await bounded(controller.stream("exec",{device_id:device,script:{
+        text:"begin { Write-Output 'before-error' } end { Write-Error 'named-block-failure' }",shell:name}},f=>{
+        if(f.event==="stdout") failureOut+=f.data||"";
+        if(f.event==="stderr") failureError+=f.data||"";
+      })));
+      assert.equal(failure.exit_code,1); assert.equal(failure.status,"completed");
+      assert.equal(failureOut.trim(),"before-error"); assert(failureError.includes("named-block-failure"));
       results.push({name:name+"_leading_declarations",status:"pass"});
+      results.push({name:name+"_named_blocks_and_failure_status",status:"pass"});
     }
     results.push({name,status:"pass"});
   }
@@ -65,7 +82,9 @@ try {
     const unavailable=await info();
     assert.equal(unavailable.shell.code,"shell_unavailable");
     assert.equal(unavailable.shell.selected,undefined);
-    const denied=await bounded(controller.stream("exec",{device_id:device,script:{text:"echo must-not-run"}},()=>{throw Error("missing shell produced output");}));
+    const denied=await bounded(controller.stream("exec",{device_id:device,script:{text:"echo must-not-run"}},f=>{
+      if ((f.event==="stdout"||f.event==="stderr") && (f.data||"")!=="") throw Error("missing shell produced output");
+    }));
     assert.equal(denied.code,"shell_unavailable");
     results.push({name:"explicit_missing_interpreter_does_not_fallback",status:"pass"});
   }
