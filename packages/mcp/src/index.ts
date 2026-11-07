@@ -7,7 +7,8 @@ import { findBinary, INSTALL_HINT } from "./ensure.js";
 import { bindHostCancel, execFrameText, newExecProgress, type ToolCtx } from "./exec-result.js";
 import { readToolText } from "./read-result.js";
 import { failText, RuntimeIpc, type Frame } from "./ipc.js";
-import { MCP_VERSION, versionsMatch } from "./version.js";
+import { MCP_VERSION } from "./version.js";
+import { guardedArgs, checkRuntimeBuild } from "./profile-format.js";
 import { packageBuild } from "./buildinfo.js";
 import { execInputSchema } from "./exec-input.js";
 
@@ -21,38 +22,40 @@ async function ensureRuntime(): Promise<RuntimeIpc> {
   session = undefined;
   const ipc = new RuntimeIpc();
   try {
-    await ipc.connect(400);
-  } catch {
-    const bin = findBinary();
-    if (!bin) {
-      throw new Error(INSTALL_HINT);
+    try {
+      await ipc.connect(400);
+    } catch {
+      const bin = findBinary();
+      if (!bin) {
+        throw new Error(INSTALL_HINT);
+      }
+      await runEnsure(bin);
+      await ipc.connect(8000);
     }
-    await runEnsure(bin);
-    await ipc.connect(8000);
-  }
-  const st = await ipc.call("status");
-  if (st.ok === false) {
-    throw new Error(failText(st));
-  }
-  const ver = String(st.result?.version ?? "");
-  if (ver && !versionsMatch(ver, MCP_VERSION)) {
-    throw new Error(`Runtime 版本 ${ver} 与 MCP ${MCP_VERSION} 主版本不一致。`);
-  }
-  const id = process.env.XALLOR_REMOTE_DEVICE_ID;
-  const grant = process.env.XALLOR_REMOTE_DEVICE_GRANT;
-  if (id && grant) {
-    const add = await ipc.call("peer.add", { device_id: id, grant });
-    if (add.ok === false) {
-      throw new Error(failText(add));
+    const st = await ipc.call("status");
+    if (st.ok === false) {
+      throw new Error(failText(st));
     }
+    checkRuntimeBuild(st.result);
+    const id = process.env.XALLOR_REMOTE_DEVICE_ID;
+    const grant = process.env.XALLOR_REMOTE_DEVICE_GRANT;
+    if (id && grant) {
+      const add = await ipc.call("peer.add", { device_id: id, grant });
+      if (add.ok === false) {
+        throw new Error(failText(add));
+      }
+    }
+    session = ipc;
+    return ipc;
+  } catch (error) {
+    ipc.close();
+    throw error;
   }
-  session = ipc;
-  return ipc;
 }
 
 function runEnsure(bin: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, ["ensure"], {
+    const child = spawn(bin, guardedArgs(["ensure"]), {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: process.env,

@@ -66,7 +66,7 @@ func main() {
 			_ = wsjson.Write(r.Context(), c, protocol.Message{Type: protocol.TypeExit, ExecID: message.ExecID, Status: protocol.ExitCompleted, ExitCode: protocol.Int(0), DurationMS: protocol.Int64(1), Truncated: protocol.Bool(false)})
 		}
 	})
-	if err := os.WriteFile(*ready, []byte("http://"+listener.Addr().String()), 0600); err != nil {
+	if err := os.WriteFile(*ready, []byte("http://"+listener.Addr().String()+"\n"), 0600); err != nil {
 		panic(err)
 	}
 	_ = http.Serve(listener, mux)

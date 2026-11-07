@@ -87,6 +87,11 @@ def main():
 
         alice = manage("create", "--name", "alice")
         use("controller", alice)
+        worker = start("inbound-off-on")
+        cluster.cli("target", "inbound", "off")
+        cluster.cli("target", "inbound", "on")
+        stopped(worker)
+        passed("inbound_off_on_cannot_revive_existing_foreground_authority")
         worker = start("credential")
         manage("revoke", "--credential", alice["credential_id"])
         stopped(worker)
@@ -145,9 +150,11 @@ def main():
             if process.poll() is None:
                 process.terminate()
                 process.communicate(timeout=10)
-        for reference in references:
-            reference.close()
-        cluster.close()
+        try:
+            for reference in references:
+                reference.close()
+        finally:
+            cluster.close()
         output = ROOT / "dist/verification/foreground-authorization.json"
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(results, indent=2), encoding="utf-8")
