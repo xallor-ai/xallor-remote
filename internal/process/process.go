@@ -116,3 +116,7 @@ func (c *Child) Stop() error {
 
 // Wait can be called repeatedly or concurrently. Success includes group cleanup.
 func (c *Child) Wait() error { <-c.done; return c.err }
+
+// Done closes after both the root result and supervised descendant cleanup are
+// known. A closed channel is not proof of successful cleanup; inspect Wait.
+func (c *Child) Done() <-chan struct{} { return c.done }

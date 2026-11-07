@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -32,7 +33,7 @@ func TestAccess_should_rejectControllerClaimAndInvalidateBearer_whenDeviceClaims
 	s := openIdentityTestStore(t)
 	a := enrollment(t, s, "alice", "")
 	b := enrollment(t, s, "bob", "")
-	h := NewHub(s)
+	h := NewHub(s, s, access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device, controller := &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)
@@ -102,7 +103,7 @@ func TestAccess_should_commitOneOwner_whenClaimsRace(t *testing.T) {
 	for _, actor := range []principal.Identity{a.Identity, b.Identity} {
 		go func() {
 			<-start
-			_, err := s.ManageAccess(ctx, "device", device, actor, access.Request{Action: "claim"})
+			_, err := access.NewService(s).Manage(ctx, "device", device, actor, access.Request{Action: "claim"})
 			results <- err
 		}()
 	}

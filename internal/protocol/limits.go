@@ -20,10 +20,12 @@ const (
 	MaxWriteBytes             = 1 * 1024 * 1024
 	MaxReadBytes              = 1 * 1024 * 1024
 	MaxReadOffsetBytes        = 1 * 1024 * 1024 * 1024
+	MaxReadLines              = 1024
 	DefaultReadBytes          = 64 * 1024
 	MaxPathBytes              = 4096
 	MaxEnvelopeBytes          = 8192
 	MaxWSMessageBytes         = 6*(MaxWriteBytes+MaxPathBytes) + MaxEnvelopeBytes
+	MaxIPCMessageBytes        = 6*(MaxWriteBytes+MaxPathBytes) + MaxEnvelopeBytes
 	MaxDeviceShares           = 128
 	HeartbeatEvery            = 30 * time.Second
 	ConnStaleAfter            = 60 * time.Second

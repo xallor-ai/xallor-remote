@@ -7,31 +7,31 @@ import (
 	"testing"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
-	"github.com/xallor-ai/xallor-remote/internal/principal"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 type accessCommitStore struct {
-	*SQLStore
+	*relaySQLFixture
 	afterCommit func()
 }
 
-type uncertainAccessStore struct{ *SQLStore }
+type uncertainAccessStore struct{ *relaySQLFixture }
 
-func (s *uncertainAccessStore) ManageAccess(ctx context.Context, id string, expected access.Device, actor principal.Identity, request access.Request) (access.Mutation, error) {
-	_, err := s.SQLStore.ManageAccess(ctx, id, expected, actor, request)
+func (s *uncertainAccessStore) WriteAccess(ctx context.Context, operation func(access.Transaction) error) error {
+	err := s.relaySQLFixture.WriteAccess(ctx, operation)
 	if err != nil {
-		return access.Mutation{}, err
+		return err
 	}
-	return access.Mutation{}, errors.New("fixture: committed transaction response lost")
+	return errors.New("fixture: committed transaction response lost")
 }
 
 // An operational failure can represent an uncertain committed claim. Existing
 // anonymous clients must not continue routing under the old cached ownership.
 func TestAccess_should_stopRouting_whenCommitOutcomeIsUncertain(t *testing.T) {
-	s := &uncertainAccessStore{SQLStore: openIdentityTestStore(t)}
-	a := enrollment(t, s.SQLStore, "alice", "")
-	h := NewHub(s)
+	s := &uncertainAccessStore{relaySQLFixture: openIdentityTestStore(t)}
+	a := enrollment(t, s.relaySQLFixture, "alice", "")
+	h := NewHub(s, s, access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device, client := &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)
@@ -56,20 +56,20 @@ func TestAccess_should_stopRouting_whenCommitOutcomeIsUncertain(t *testing.T) {
 	}
 }
 
-func (s *accessCommitStore) ManageAccess(ctx context.Context, id string, expected access.Device, actor principal.Identity, request access.Request) (access.Mutation, error) {
-	mutation, err := s.SQLStore.ManageAccess(ctx, id, expected, actor, request)
+func (s *accessCommitStore) WriteAccess(ctx context.Context, operation func(access.Transaction) error) error {
+	err := s.relaySQLFixture.WriteAccess(ctx, operation)
 	if err == nil && s.afterCommit != nil {
 		s.afterCommit()
 	}
-	return mutation, err
+	return err
 }
 
 // Losing the device channel after SQL commit cannot leave anonymous access in
 // the routing cache. Reconnection must retain the committed ownership identity.
 func TestAccess_should_publishCommittedOwner_whenDeviceDisconnectsBeforeReply(t *testing.T) {
-	s := &accessCommitStore{SQLStore: openIdentityTestStore(t)}
-	a := enrollment(t, s.SQLStore, "alice", "")
-	h := NewHub(s)
+	s := &accessCommitStore{relaySQLFixture: openIdentityTestStore(t)}
+	a := enrollment(t, s.relaySQLFixture, "alice", "")
+	h := NewHub(s, s, access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	device := &contextSender{ctx: ctx}

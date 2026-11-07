@@ -137,6 +137,40 @@ def main():
         assert snapshot(target) == before
         record("rollback_restores_verified_artifact_and_preserves_state")
 
+        # Unknown historical metadata must be refused before stopping a live
+        # process or starting a selected binary against migrated profile data.
+        state_path = target / "runtime/state.json"
+        original_state = state_path.read_bytes()
+        pid = state(target)["running"]["pid"]
+        for operation, slot in ((["runtime", "rollback"], "previous"),
+                                (["runtime", "install", "--bundle", str(b)], "current")):
+            invalid = json.loads(original_state)
+            invalid[slot]["build"].pop("profile_format")
+            state_path.write_text(json.dumps(invalid), encoding="utf-8")
+            rejected = cli(target, *operation, success=False)
+            assert rejected.returncode != 0 and "profile format" in rejected.stderr
+            assert json.loads(cli(target, "status", "--json").stdout)["build"]["pid"] == pid
+            assert snapshot(target) == before
+            state_path.write_bytes(original_state)
+        cli(target, "stop")
+        deadline = time.monotonic() + 10
+        while state(target)["running"] is not None:
+            assert time.monotonic() < deadline
+            time.sleep(.05)
+        invalid = json.loads(original_state)
+        invalid["current"]["build"].pop("profile_format")
+        state_path.write_text(json.dumps(invalid), encoding="utf-8")
+        rejected = cli(target, "ensure", success=False)
+        assert rejected.returncode != 0 and "profile format" in rejected.stderr
+        assert snapshot(target) == before
+        state_path.write_bytes(original_state)
+        cli(target, "ensure")
+        untouched = root / "unsupported-format"
+        rejection = subprocess.run([str(binary), "--require-profile-format", "0", "start"],
+                                   env=env(untouched), capture_output=True, timeout=10)
+        assert rejection.returncode != 0 and not untouched.exists()
+        record("unknown_profile_format_refused_before_install_rollback_or_start")
+
         corrupt = root / "corrupt"
         shutil.copytree(b, corrupt)
         with (corrupt / mb["artifact"]["filename"]).open("ab") as f:

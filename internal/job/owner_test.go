@@ -23,7 +23,7 @@ func TestOwnerProcessHelper(t *testing.T) {
 func TestOwner_should_releaseAfterConfirmedNonzeroExit(t *testing.T) {
 	l := New(t.TempDir())
 	defer l.Close()
-	o, err := l.Reserve(testScope, "exec", "one")
+	o, err := l.ReserveExec(testScope, "one")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,6 +43,15 @@ func TestOwner_should_releaseAfterConfirmedNonzeroExit(t *testing.T) {
 	if err != nil || len(rows) != 1 {
 		t.Fatal(rows, err)
 	}
+	// A failed business result is not failed supervision. The same job may run
+	// the next sequential step after confirmed cleanup of the nonzero process.
+	next, err := o.Start(ctx, exec.Command(os.Args[0], "-test.run=^TestOwnerProcessHelper$"))
+	if err != nil {
+		t.Fatal("nonzero exit blocked next step", err)
+	}
+	if err := next.Wait(); err != nil {
+		t.Fatal(err)
+	}
 	if o.Finish() != nil || o.Finish() != nil {
 		t.Fatal("release failed")
 	}
@@ -60,7 +69,7 @@ func TestOwner_should_releaseAfterConfirmedNonzeroExit(t *testing.T) {
 func TestOwner_should_releaseReservation_whenCancelledBeforeStart(t *testing.T) {
 	l := New(t.TempDir())
 	defer l.Close()
-	o, err := l.Reserve(testScope, "exec", "one")
+	o, err := l.ReserveExec(testScope, "one")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +96,7 @@ func TestOwner_should_failClosed_whenReleasePersistenceFails(t *testing.T) {
 			dir := t.TempDir()
 			l := New(dir)
 			defer l.Close()
-			o, err := l.Reserve(testScope, "exec", "one")
+			o, err := l.ReserveExec(testScope, "one")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -107,7 +116,7 @@ func TestOwner_should_failClosed_whenReleasePersistenceFails(t *testing.T) {
 				t.Fatal("unconfirmed release reported success")
 			}
 			l.write = write
-			if _, err := l.Reserve(testScope, "exec", "two"); !errors.Is(err, ErrUnavailable) {
+			if _, err := l.ReserveExec(testScope, "two"); !errors.Is(err, ErrUnavailable) {
 				t.Fatal("unconfirmed storage state admitted work", err)
 			}
 			l.Close()
@@ -133,7 +142,7 @@ func TestOwner_should_failClosed_whenReleasePersistenceFails(t *testing.T) {
 func TestOwner_should_refuseStart_whenLedgerClosed(t *testing.T) {
 	dir := t.TempDir()
 	l := New(dir)
-	o, err := l.Reserve(testScope, "exec", "one")
+	o, err := l.ReserveExec(testScope, "one")
 	if err != nil {
 		t.Fatal(err)
 	}
