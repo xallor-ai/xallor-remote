@@ -1,6 +1,10 @@
 package tui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"fmt"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 var execCh chan tea.Msg
 
@@ -19,11 +23,11 @@ func runExecCmd(command string) tea.Cmd {
 func waitExec() tea.Cmd {
 	return func() tea.Msg {
 		if execCh == nil {
-			return execDone{}
+			return execDone{err: fmt.Errorf("未收到任务终态，执行结果未确认。")}
 		}
 		msg, ok := <-execCh
 		if !ok {
-			return execDone{}
+			return execDone{err: fmt.Errorf("未收到任务终态，执行结果未确认。")}
 		}
 		return msg
 	}

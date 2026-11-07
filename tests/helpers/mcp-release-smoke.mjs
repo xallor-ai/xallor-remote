@@ -31,11 +31,16 @@ try {
   const status = JSON.parse(result.content[0].text);
   if (!/^[0-9]{9}$/.test(status.device_id) || status.version !== expectedVersion) throw Error("incorrect runtime identity");
   if (process.env.XALLOR_TEST_TARGET) {
-    const executed = await call("tools/call", { name: "remote.exec", arguments: { device_id: process.env.XALLOR_TEST_TARGET, command: "echo mcp-e2e" } });
+    const executed = await call("tools/call", { name: "remote.exec", arguments: { device_id: process.env.XALLOR_TEST_TARGET, script: { text: "echo mcp-e2e" } } });
     if (executed.isError || !executed.content.some(c => c.text?.includes("mcp-e2e") && c.text.includes("exit_code=0")))
       throw Error("MCP remote execution failed");
-    const failed = await call("tools/call", { name: "remote.exec", arguments: { device_id: process.env.XALLOR_TEST_TARGET, command: "exit 7" } });
+    const failed = await call("tools/call", { name: "remote.exec", arguments: { device_id: process.env.XALLOR_TEST_TARGET, script: { text: "exit 7" } } });
     if (!failed.isError) throw Error("MCP lost nonzero remote exit");
+    if (process.env.XALLOR_TEST_PROGRAM) {
+      const args = ["", "a b", "$HOME", "中文🌍"];
+      const native = await call("tools/call", { name: "remote.exec", arguments: { device_id: process.env.XALLOR_TEST_TARGET, program: { executable: process.env.XALLOR_TEST_PROGRAM, args } } });
+      if (native.isError || !native.content.some(c => c.text?.includes(JSON.stringify(args)))) throw Error("MCP native argv lost");
+    }
   }
   if (process.env.XALLOR_TEST_CLI) {
     const run = promisify(execFile);

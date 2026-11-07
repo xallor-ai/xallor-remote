@@ -34,7 +34,8 @@ pub async fn session_open(state: tauri::State<'_, Sessions>) -> Result<String, S
 
 fn launch() -> Result<Session, String> {
     let mut command = Command::new(crate::ensure::find_bin()?);
-    command.arg("ipc-bridge").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true);
+    command.args(["--require-profile-format", include_str!("../../../../internal/buildinfo/profile_format.txt").trim(), "ipc-bridge"])
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true);
     #[cfg(windows)]
     command.creation_flags(0x0800_0000);
     let mut child = command.spawn().map_err(|_| "无法启动本机连接，请检查 Runtime 安装。")?;

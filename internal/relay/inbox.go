@@ -53,10 +53,10 @@ func (i *inbox) offer(m protocol.Message, drop func(protocol.Message)) bool {
 	output := outputMessage(m)
 	limit := int64(protocol.MaxRelayInboxBytes)
 	if output {
-		limit -= protocol.MaxEnvelopeBytes * protocol.MaxConcurrentExec
+		limit -= protocol.RelayControlReserveBytes
 	}
 	if i.bytes.Load()+size > limit ||
-		(output && len(i.frames) >= protocol.MaxRelayInboxFrames-protocol.MaxConcurrentExec*2) {
+		(output && len(i.frames) >= protocol.MaxRelayInboxFrames-protocol.RelayControlReserveFrames) {
 		if output {
 			drop(m)
 			return true

@@ -1,8 +1,10 @@
 package noderun
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -40,7 +42,7 @@ func (d *Daemon) runLocalRead(link *wsConn, msg protocol.Message) {
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.TooLarge))
 		return
 	}
-	raw, err := readWorkspaceFile(workspace, p.Path)
+	raw, preTruncated, err := readWorkspaceWindow(workspace, p, st.Size())
 	if err != nil {
 		nackReadErr(link, msg.ExecID, err)
 		return
@@ -56,7 +58,12 @@ func (d *Daemon) runLocalRead(link *wsConn, msg protocol.Message) {
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.PolicyDeny))
 		return
 	}
-	out, trunc := sliceRead(raw, p, limit)
+	// readWorkspaceWindow already applied the selector while streaming. Apply
+	// only the final byte/rune budget here; applying offset a second time would
+	// treat the selected window as the original file and lose truncation state.
+	selector := protocol.ReadPayload{Head: p.Head, Tail: p.Tail}
+	out, trunc := sliceRead(raw, selector, limit)
+	trunc = trunc || preTruncated
 	if err := sendStdoutFrames(link, msg.ExecID, out); err != nil {
 		if err == errMsgTooLarge {
 			_ = link.send(protocol.Nack(msg.ExecID, protocol.TooLarge))
@@ -162,10 +169,196 @@ func (d *Daemon) runLocalWrite(link *wsConn, msg protocol.Message) {
 }
 
 func readTooLarge(size int64, p protocol.ReadPayload) bool {
+	if p.Offset < 0 || p.Limit < 0 || p.Head < 0 || p.Tail < 0 || p.Offset > protocol.MaxReadOffsetBytes {
+		return true
+	}
+	if p.Head > 0 || p.Tail > 0 {
+		count := p.Head
+		if count == 0 {
+			count = p.Tail
+		}
+		if count > protocol.MaxReadLines {
+			return true
+		}
+	}
 	if p.Head != 0 || p.Tail != 0 || p.Limit != 0 || p.Offset != 0 {
 		return false
 	}
 	return size > int64(protocol.MaxReadBytes)
+}
+
+// readWorkspaceWindow never materializes the whole target for a selected
+// window. Offset reads seek directly; head/tail keep only the requested byte
+// budget. The old readWorkspaceFile path remains for internal non-remote uses.
+func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) ([]byte, bool, error) {
+	rel, err := workspaceRel(workspace, p.Path)
+	if err != nil {
+		return nil, false, err
+	}
+	root, err := openWorkspace(workspace)
+	if err != nil {
+		return nil, false, err
+	}
+	defer root.Close()
+	f, err := root.Open(rel)
+	if err != nil {
+		return nil, false, err
+	}
+	defer f.Close()
+	limit := p.Limit
+	if limit <= 0 || limit > protocol.MaxReadBytes {
+		limit = protocol.MaxReadBytes
+	}
+	if p.Head == 0 && p.Tail == 0 && (p.Offset != 0 || p.Limit != 0) {
+		start := p.Offset - 4
+		if start < 0 {
+			start = 0
+		}
+		if _, err := f.Seek(int64(start), io.SeekStart); err != nil {
+			return nil, false, err
+		}
+		data, err := io.ReadAll(io.LimitReader(f, int64(limit+p.Offset-start+1)))
+		if err != nil {
+			return nil, false, err
+		}
+		out, truncated := sliceRead(data, protocol.ReadPayload{Offset: p.Offset - start, Limit: p.Limit}, limit)
+		return out, truncated, nil
+	}
+	if p.Head > 0 {
+		lineBudget := p.Limit
+		if lineBudget == 0 {
+			lineBudget = protocol.DefaultReadBytes
+		} else if lineBudget > protocol.MaxReadBytes {
+			lineBudget = protocol.MaxReadBytes
+		}
+		if size <= int64(protocol.MaxReadBytes) {
+			lineBudget = protocol.MaxReadBytes
+		}
+		reader := bufio.NewReader(f)
+		var out []byte
+		truncated := false
+		for i := 0; i < p.Head; i++ {
+			line, clipped, readErr := readLinePrefix(reader, lineBudget, protocol.MaxReadBytes-len(out))
+			if readErr != nil && readErr != io.EOF {
+				return nil, false, readErr
+			}
+			truncated = truncated || clipped
+			out = append(out, line...)
+			if len(out) >= protocol.MaxReadBytes || readErr == io.EOF {
+				truncated = truncated || readErr != io.EOF || len(out) >= protocol.MaxReadBytes
+				break
+			}
+		}
+		return out, truncated, nil
+	}
+	if p.Tail > 0 {
+		start, err := tailStart(f, size, p.Tail)
+		if err != nil {
+			return nil, false, err
+		}
+		if _, err := f.Seek(start, io.SeekStart); err != nil {
+			return nil, false, err
+		}
+		data, err := io.ReadAll(io.LimitReader(f, int64(protocol.MaxReadBytes)+1))
+		return data, len(data) > protocol.MaxReadBytes, err
+	}
+	if size > int64(protocol.MaxReadBytes) {
+		return nil, false, os.ErrInvalid
+	}
+	data, err := io.ReadAll(io.LimitReader(f, int64(protocol.MaxReadBytes)+1))
+	return data, len(data) > protocol.MaxReadBytes, err
+}
+
+// readLinePrefix consumes a complete line in fixed-size chunks while retaining
+// only the requested prefix and reporting whether bytes were discarded.
+func readLinePrefix(reader *bufio.Reader, lineBudget, aggregateBudget int) ([]byte, bool, error) {
+	keep := lineBudget
+	if aggregateBudget < keep {
+		keep = aggregateBudget
+	}
+	line := make([]byte, 0, minInt(keep, 4096))
+	clipped := false
+	delimiter := false
+	for {
+		chunk, err := reader.ReadSlice('\n')
+		if bytes.IndexByte(chunk, '\n') >= 0 {
+			delimiter = true
+		}
+		before := len(line)
+		if before < keep {
+			n := keep - before
+			if n > len(chunk) {
+				n = len(chunk)
+			}
+			line = append(line, chunk[:n]...)
+			if len(chunk) > n {
+				clipped = true
+			}
+		} else if len(chunk) > 0 {
+			clipped = true
+		}
+		if err != bufio.ErrBufferFull {
+			if err == io.EOF && len(chunk) == 0 && len(line) == 0 {
+				return nil, clipped, io.EOF
+			}
+			if len(chunk) > len(line) && keep <= len(line) {
+				clipped = true
+			}
+			if clipped && delimiter && keep > 0 {
+				if keep == 1 {
+					line = []byte{'\n'}
+				} else {
+					if len(line) >= keep {
+						line = line[:keep-1]
+					}
+					line = clampUTF8Prefix(line)
+					line = append(line, '\n')
+				}
+			}
+			return line, clipped, err
+		}
+		if len(line) >= keep {
+			clipped = true
+		}
+	}
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func tailStart(f *os.File, size int64, lines int) (int64, error) {
+	if size <= 0 {
+		return 0, nil
+	}
+	buf := make([]byte, 64*1024)
+	pos, remaining := size, lines
+	for pos > 0 {
+		n := int64(len(buf))
+		if n > pos {
+			n = pos
+		}
+		pos -= n
+		if _, err := f.ReadAt(buf[:n], pos); err != nil && err != io.EOF {
+			return 0, err
+		}
+		for i := int(n) - 1; i >= 0; i-- {
+			absolute := pos + int64(i)
+			if absolute == size-1 {
+				continue
+			} // trailing newline is not an empty line
+			if buf[i] == '\n' {
+				remaining--
+				if remaining == 0 {
+					return absolute + 1, nil
+				}
+			}
+		}
+	}
+	return 0, nil
 }
 
 func pathDenied(err error) bool {
@@ -267,16 +460,17 @@ func (d *Daemon) runLocalInfo(link *wsConn, msg protocol.Message) {
 	}
 	goos, arch := identity.OSArch()
 	body, _ := json.Marshal(map[string]any{
-		"device_id": id,
-		"os":        goos,
-		"arch":      arch,
-		"hostname":  identity.Hostname(),
-		"version":   buildinfo.Version(),
-		"build":     buildinfo.Current(),
-		"workspace": workspace,
-		"shell":     shell.Describe(d.store.ConfigSnapshot().Shell),
-		"docker":    false,
-		"nvidia":    false,
+		"device_id":       id,
+		"os":              goos,
+		"arch":            arch,
+		"hostname":        identity.Hostname(),
+		"version":         buildinfo.Version(),
+		"build":           buildinfo.Current(),
+		"workspace":       workspace,
+		"shell":           shell.Describe(d.store.ConfigSnapshot().Shell),
+		"execution_modes": []string{"script", "program"},
+		"docker":          false,
+		"nvidia":          false,
 	})
 	_ = link.send(protocol.Message{Type: protocol.TypeStdout, ExecID: msg.ExecID, Data: string(body)})
 	d.sendOKExit(link, msg.ExecID, start, false)

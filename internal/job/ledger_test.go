@@ -26,11 +26,13 @@ func TestLedger_should_boundConcurrentReservations_acrossJobKinds(t *testing.T) 
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			kind := "exec"
+			var o *Owner
+			var err error
 			if i%2 == 0 {
-				kind = "handoff"
+				o, err = l.ReserveHandoff(testScope, strconv.Itoa(i))
+			} else {
+				o, err = l.ReserveExec(testScope, strconv.Itoa(i))
 			}
-			o, err := l.Reserve(testScope, kind, strconv.Itoa(i))
 			if err == nil {
 				owners <- o
 			} else if !errors.Is(err, ErrCapacity) {
@@ -73,7 +75,11 @@ func TestLedger_should_keepOccupancy_whenRuntimeRestarts(t *testing.T) {
 	dir := t.TempDir()
 	l := New(dir)
 	for i := 0; i < Capacity; i++ {
-		if _, err := l.Reserve(testScope, "exec", strconv.Itoa(i)); err != nil {
+		o, err := l.ReserveExec(testScope, strconv.Itoa(i))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := l.prepareStart(o.ID()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -89,10 +95,10 @@ func TestLedger_should_keepOccupancy_whenRuntimeRestarts(t *testing.T) {
 			t.Fatal(r)
 		}
 	}
-	if _, err = l.Reserve(testScope, "exec", "new"); !errors.Is(err, ErrCapacity) {
+	if _, err = l.ReserveExec(testScope, "new"); !errors.Is(err, ErrCapacity) {
 		t.Fatal(err)
 	}
-	if _, err = l.Reserve(testScope, "exec", "0"); !errors.Is(err, ErrUncertain) {
+	if _, err = l.ReserveExec(testScope, "0"); !errors.Is(err, ErrUncertain) {
 		t.Fatal(err)
 	}
 }
@@ -113,11 +119,11 @@ func TestLedger_should_rejectLaunch_whenPersistenceFails(t *testing.T) {
 				}
 				return errors.New("lost write result")
 			}
-			if o, err := l.Reserve(testScope, "exec", "one"); o != nil || !errors.Is(err, ErrUnavailable) {
+			if o, err := l.ReserveExec(testScope, "one"); o != nil || !errors.Is(err, ErrUnavailable) {
 				t.Fatal(o, err)
 			}
 			l.write = write
-			if _, err := l.Reserve(testScope, "exec", "two"); !errors.Is(err, ErrUnavailable) {
+			if _, err := l.ReserveExec(testScope, "two"); !errors.Is(err, ErrUnavailable) {
 				t.Fatal("write uncertainty recovered without reopening")
 			}
 		})
@@ -129,7 +135,7 @@ func TestLedger_should_rejectLaunch_whenPersistenceFails(t *testing.T) {
 func TestLedger_should_retainUncertainOwner_and_releaseConfirmedOwnerOnce(t *testing.T) {
 	l := New(t.TempDir())
 	defer l.Close()
-	o, err := l.Reserve(testScope, "handoff", "session")
+	o, err := l.ReserveHandoff(testScope, "session")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,10 +143,10 @@ func TestLedger_should_retainUncertainOwner_and_releaseConfirmedOwnerOnce(t *tes
 	if !errors.Is(o.Finish(), ErrUncertain) || !errors.Is(o.Finish(), ErrUncertain) {
 		t.Fatal("uncertain owner freed")
 	}
-	if _, err = l.Reserve(testScope, "handoff", "session"); !errors.Is(err, ErrUncertain) {
+	if _, err = l.ReserveHandoff(testScope, "session"); !errors.Is(err, ErrUncertain) {
 		t.Fatal(err)
 	}
-	other, err := l.Reserve(testScope, "exec", "other")
+	other, err := l.ReserveExec(testScope, "other")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +164,7 @@ func TestLedger_should_failClosed_whenLockedOrCorrupt(t *testing.T) {
 	dir := t.TempDir()
 	first := New(dir)
 	defer first.Close()
-	if _, err := first.Reserve(testScope, "exec", "one"); err != nil {
+	if _, err := first.ReserveExec(testScope, "one"); err != nil {
 		t.Fatal(err)
 	}
 	second := New(dir)
