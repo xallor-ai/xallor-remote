@@ -15,7 +15,7 @@ import (
 
 // Probe opens a disposable client connection. It never registers a device,
 // changes credentials/inbound, executes a shell command or reuses live tasks.
-func Probe(ctx context.Context, relay, device, grant string, r *Report) {
+func Probe(ctx context.Context, relay, device, grant, accountToken string, r *Report) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	c, _, err := websocket.Dial(ctx, relay, nil)
@@ -27,7 +27,7 @@ func Probe(ctx context.Context, relay, device, grant string, r *Report) {
 	c.SetReadLimit(int64(protocol.MaxWSMessageBytes))
 	r.Set("relay_transport", "ok", "", "")
 	r.Set("authorization", "unknown", "", "")
-	err = wsjson.Write(ctx, c, protocol.Message{Type: protocol.TypeHelloClient, TargetID: device, Grant: grant})
+	err = wsjson.Write(ctx, c, protocol.Message{Type: protocol.TypeHelloClient, TargetID: device, Grant: grant, AccountToken: accountToken})
 	var msg protocol.Message
 	if err == nil {
 		err = wsjson.Read(ctx, c, &msg)
@@ -40,8 +40,8 @@ func Probe(ctx context.Context, relay, device, grant string, r *Report) {
 		setFailure(r, msg.Code)
 		return
 	}
-	if msg.Role != protocol.RoleClient {
-		r.Set("authorization", "unknown", "invalid_response", "中转返回异常，请检查版本。")
+	if !msg.ConfirmsClientAuth(accountToken != "") {
+		r.Set("authorization", "unknown", "invalid_response", "中转未确认连接认证，请检查版本。")
 		return
 	}
 	r.Set("authorization", "ok", "", "")

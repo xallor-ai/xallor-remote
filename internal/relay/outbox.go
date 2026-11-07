@@ -52,9 +52,19 @@ func (b *outbox) Context() context.Context { return b.ctx }
 // retainedBytes includes all variable-size envelope fields, including fields that
 // are not meaningful for this message type but can still arrive from a peer.
 func retainedBytes(m protocol.Message) int {
-	return 512 + len(m.Type) + len(m.Role) + len(m.DeviceID) + len(m.TargetID) + len(m.Secret) + len(m.Grant) +
-		len(m.NewGrantHash) + len(m.OS) + len(m.Arch) + len(m.AgentVersion) + len(m.Workspace) + len(m.ExecID) +
-		len(m.Op) + len(m.Payload) + len(m.Code) + len(m.Data) + len(m.Status)
+	nestedBytes := 0
+	if m.Scope != nil {
+		nestedBytes = m.Scope.RetainedBytes()
+	}
+	if m.DeviceContext != nil {
+		nestedBytes += m.DeviceContext.RetainedBytes()
+	}
+	if m.ClientAuth != nil {
+		nestedBytes += len(m.ClientAuth.Mode)
+	}
+	return 512 + len(m.Type) + len(m.Role) + len(m.DeviceID) + len(m.TargetID) + len(m.Secret) + len(m.Grant) + len(m.AccountToken) + len(m.RequestID) +
+		len(m.GrantHash) + len(m.OS) + len(m.Arch) + len(m.AgentVersion) + len(m.Workspace) + len(m.ExecID) +
+		len(m.Op) + len(m.Payload) + len(m.Code) + len(m.Data) + len(m.Status) + len(m.Delegation) + nestedBytes
 }
 
 func (b *outbox) Enqueue(m protocol.Message) error {
@@ -66,8 +76,8 @@ func (b *outbox) Enqueue(m protocol.Message) error {
 	size := retainedBytes(m)
 	if outputMessage(m) {
 		if b.buffered[m.ExecID]+size > protocol.MaxRelayBufferBytes ||
-			len(b.queue) >= protocol.MaxRelayQueueFrames-protocol.MaxConcurrentExec*2 ||
-			b.bytes+size > protocol.MaxRelayQueueBytes-protocol.MaxEnvelopeBytes*protocol.MaxConcurrentExec {
+			len(b.queue) >= protocol.MaxRelayQueueFrames-protocol.RelayControlReserveFrames ||
+			b.bytes+size > protocol.MaxRelayQueueBytes-protocol.RelayControlReserveBytes {
 			return errOutputDropped
 		}
 	} else if len(b.queue) >= protocol.MaxRelayQueueFrames || b.bytes+size > protocol.MaxRelayQueueBytes {

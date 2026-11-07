@@ -12,19 +12,13 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
-func Serve(addr, dataDir string, log *slog.Logger, quota Quota) error {
-	store, err := OpenSQLStore(dataDir)
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-	hub := NewHub(store)
+func Serve(addr string, hub *Hub, log *slog.Logger, quota Quota) error {
 	var lim *Limiter
 	if quota.Enabled {
 		lim = NewLimiter(quota)
 		log.Info("relay quota on")
 	}
-	log.Info("relay listen", "addr", addr, "data", dataDir)
+	log.Info("relay listen", "addr", addr)
 	srv := &http.Server{Addr: addr, Handler: HandlerQuota(hub, log, lim), ReadHeaderTimeout: 10 * time.Second}
 	return srv.ListenAndServe()
 }
@@ -95,11 +89,9 @@ func serveConn(parent context.Context, hub *Hub, c *websocket.Conn, log *slog.Lo
 			_ = s.Enqueue(protocol.Message{Type: protocol.TypeError, Code: code})
 			return
 		}
-		inb := false
-		if hello.Inbound != nil {
-			inb = *hello.Inbound
-		}
-		if code := hub.RegisterDevice(hello.DeviceID, hello.Secret, inb, s); code != "" {
+		// Hello proves identity only. Initial access stays disabled until the
+		// complete settings snapshot is committed and acknowledged.
+		if code := hub.RegisterDevice(hello.DeviceID, hello.Secret, false, s); code != "" {
 			_ = s.Enqueue(protocol.Message{Type: protocol.TypeError, Code: code})
 			return
 		}
@@ -107,10 +99,10 @@ func serveConn(parent context.Context, hub *Hub, c *websocket.Conn, log *slog.Lo
 		defer lim.OnDeviceDown(ip)
 		role, bindID = protocol.RoleDevice, hello.DeviceID
 	case protocol.TypeHelloClient:
-		if hello.TargetID == "" || hello.Grant == "" {
+		if hello.TargetID == "" {
 			return
 		}
-		if code := hub.RegisterClient(hello.TargetID, hello.Grant, s); code != "" {
+		if code := hub.RegisterClient(hello.TargetID, hello.Grant, hello.AccountToken, s); code != "" {
 			_ = s.Enqueue(protocol.Message{Type: protocol.TypeError, Code: code})
 			return
 		}

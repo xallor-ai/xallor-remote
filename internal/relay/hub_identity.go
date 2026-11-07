@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -64,18 +65,40 @@ func (h *Hub) RegisterDevice(id, secret string, inbound bool, conn Sender) strin
 	return ""
 }
 
-func (h *Hub) RegisterClient(targetID, grant string, conn Sender) string {
+func (h *Hub) RegisterClient(targetID, grant, accountToken string, conn Sender) string {
 	ctx, release, err := h.beginIdentity(conn, targetID)
 	if err != nil {
 		return identityErrorCode(err)
 	}
 	defer release()
+	var identity principal.Identity
+	authentication := protocol.ClientAuthentication{Mode: protocol.ClientAuthShared}
+	if accountToken != "" {
+		if h.accounts == nil {
+			return protocol.Unauthorized
+		}
+		identity, err = h.accounts.Authenticate(ctx, accountToken)
+		if err != nil {
+			return principalErrorCode(err)
+		}
+		authentication.Mode = protocol.ClientAuthAccount
+	}
 	want := protocol.SHA256Hex(grant)
 	var record access.Device
+	var decision access.Authorization
 	if h.store != nil {
 		record, err = h.store.LoadDevice(ctx, targetID)
 		if err != nil {
 			return identityErrorCode(err)
+		}
+		if record.OwnershipID != "" {
+			if h.accessService == nil {
+				return protocol.Unauthorized
+			}
+			decision, err = h.accessService.Resolve(ctx, record, identity)
+			if err != nil {
+				return accessErrorCode(err)
+			}
 		}
 	}
 	h.mu.Lock()
@@ -89,22 +112,25 @@ func (h *Hub) RegisterClient(targetID, grant string, conn Sender) string {
 		}
 		record = h.devices[targetID].record
 	}
-	if record.GrantHash == "" || record.GrantHash != want || record.UID == "" || record.GrantID == "" {
-		return protocol.Unauthorized
+	if record.OwnershipID == "" {
+		if record.GrantHash == "" || record.GrantHash != want || record.UID == "" || record.GrantID == "" {
+			return protocol.Unauthorized
+		}
+		decision = access.Authorization{Binding: record.Binding(), Permissions: access.AllPermissions()}
 	}
-	if err := conn.Enqueue(protocol.Message{Type: protocol.TypeHelloOK, Role: protocol.RoleClient}); err != nil {
+	if err := conn.Enqueue(protocol.Message{Type: protocol.TypeHelloOK, Role: protocol.RoleClient, ClientAuth: &authentication}); err != nil {
 		return protocol.RelayError
 	}
 	h.access[targetID] = record.Binding()
-	h.clients[conn] = clientSlot{targetID: targetID, access: record.Binding()}
+	h.clients[conn] = clientSlot{targetID: targetID, access: record.Binding(), identity: identity, authorization: decision}
 	return ""
 }
 
 func identityErrorCode(err error) string {
 	switch {
-	case errors.Is(err, ErrDeviceNotFound):
+	case errors.Is(err, access.ErrDeviceNotFound):
 		return protocol.UnknownDevice
-	case errors.Is(err, ErrDeviceIdentity):
+	case errors.Is(err, access.ErrDeviceIdentity):
 		return protocol.Unauthorized
 	default:
 		return protocol.RelayError

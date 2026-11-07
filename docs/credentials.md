@@ -1,6 +1,6 @@
 # 设备 ID 与授权码
 
-SSOT：三套秘密与授权语义。协议角色见 [protocol.md](protocol.md)。
+SSOT：设备密钥、共享码与账号凭据的分工。协议角色见 [protocol.md](protocol.md)，归属和主体级授权见 [platform.md](platform.md)。
 
 ---
 
@@ -17,7 +17,7 @@ Workspace: C:\Users\<you>\XallorRemote\workspace
 
 设备 ID 是 9 位数字，路由键。升级后已有数字 ID 不变；登录用户名不是设备 ID。
 
-需要给别人控：`xallor-remote grant issue`（**必须在这台被控机本机**）
+未认领设备需要给别人控：`xallor-remote grant issue`（**必须在这台被控机本机**）。已认领设备采用账号授权，入口见 [relay.md](relay.md) 的归属与分享。
 
 ```text
 授权码: xr_grant_8f3c…    ← 给对方 peer add / mcp 覆盖
@@ -27,21 +27,22 @@ Workspace: C:\Users\<you>\XallorRemote\workspace
 
 ---
 
-## 2. 三套秘密
+## 2. 身份与凭据
 
 | 名字 | 谁拿着 | 寿命 | 用途 |
 | --- | --- | --- | --- |
 | 设备 ID | 可见 | 直到撤机 | 路由 |
-| 授权码 grant | 控制端 | 直到轮换/吊销 | 允许指挥这台 |
+| 授权码 grant | 控制端 | 直到轮换/吊销 | 未认领设备的共享访问 |
 | 设备密钥 secret | 仅本机 Runtime | 直到重装/撤机 | 证明上线的是这台 |
+| 账号凭据 account_token | 当前 profile 的 Runtime | 有效期或撤销 | 证明签发方、主体与空间成员关系；不自动授予设备访问权 |
 
 `peers.json` 里存的是**对方**的 grant，等同密钥库：笔记本失窃 = 能控所有 peer。权限仅当前用户。
 
 ---
 
-## 3. Grant 是 bearer capability（写死）
+## 3. 未认领设备的共享码
 
-v0：**一台设备一个有效 grant**；轮换即作废旧的。多控制端（几台 Cursor、CLI）**共享这一份**。
+未认领设备至多一个有效 grant；轮换即作废旧的。多控制端（几台 Cursor、CLI）共享这一份。认领后该码不再授予访问权，不能用清除账号恢复匿名访问；重新连接时同步本机共享码也不能覆盖已提交的归属。
 
 ```text
 知道 device_id + 出示 grant 明文
@@ -51,7 +52,7 @@ v0：**一台设备一个有效 grant**；轮换即作废旧的。多控制端�
 - **不绑定**控制端 `device_id`、账号、Cursor 安装。
 - 审计 **不能** 声称「这是某个人的 Cursor」；最多 `client_meta`（连接侧元数据）。
 - 泄漏 grant = 执行权交给持有者。补救是目标机本机 `rotate`（换码、ID 不变）。撤机才 `revoke`。
-- v1 若要「换电脑不用换码」，另加 `consumer_type=account`，**不改** v0 这条主路径。
+- 账号授权是独立的主体/成员关系与设备权限，不是把共享码当成会员身份。
 
 禁止把 v0 grant 理解成 session（短 TTL、绑一台控制端）。它就是可复制的能力凭证。
 
@@ -65,6 +66,7 @@ v0：**一台设备一个有效 grant**；轮换即作废旧的。多控制端�
 | `inbound on/off` | 同上 | 同上 |
 | `revoke` | 同上 | Runtime 用 **device 连接 + device_secret** 通知 Relay 销登记 |
 | `reset` | 同上 | 本机清空数据目录，并走 `revoke` |
+| 认领、分享、撤销分享、转移 | 被控机本机 CLI，经 Runtime | 已认证 device 连接及有效账号凭据；已认领时校验所有者 |
 | 持 grant 的 MCP / 对端 Runtime | **不能** | client 连接发 revoke/rotate → 协议拒绝 |
 
 签发、轮换、吊销、开入站：**不走 MCP tool**，也不走对端的 `hello_client`。

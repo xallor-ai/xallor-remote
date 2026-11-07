@@ -52,13 +52,17 @@ func (d *Daemon) diagnose(device string) diagnostics.Report {
 		return r
 	}
 	peer, ok := d.store.Peer(device)
-	if !ok || peer.Grant == "" {
-		r.Set("peer", "fail", "not_paired", "请先添加对方设备 ID 和授权码。")
+	if !ok {
+		r.Set("peer", "fail", "not_paired", "请先添加对方设备 ID。")
 		return r
 	}
 	r.Set("peer", "ok", "", "")
-	_, _, _, _, relay, _, _ := d.store.Snapshot()
-	diagnostics.Probe(d.ctx, relay, device, peer.Grant, &r)
+	relay, token, err := d.store.Credentials()
+	if err != nil {
+		r.Set("peer", "fail", protocol.Unauthorized, err.Error())
+		return r
+	}
+	diagnostics.Probe(d.ctx, relay, device, peer.Grant, token, &r)
 	for _, check := range r.Checks {
 		if check.State == "fail" || check.State == "unknown" {
 			r.OK = false

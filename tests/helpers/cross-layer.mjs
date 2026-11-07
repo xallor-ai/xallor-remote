@@ -40,7 +40,7 @@ try {
   pass("utf8_file_roundtrip_and_workspace_boundary");
   const events = [];
   let firstObserved;
-  const result = await bounded(controller.stream("exec", { device_id: targetID, command: "echo first; " + (process.platform === "win32" ? "Start-Sleep -Milliseconds 500" : "sleep 0.5") + "; echo second" }, f => {
+  const result = await bounded(controller.stream("exec", { device_id: targetID, script: { text: "echo first; " + (process.platform === "win32" ? "Start-Sleep -Milliseconds 500" : "sleep 0.5") + "; echo second" } }, f => {
     events.push(f);
     if (f.data?.includes("first") && firstObserved === undefined) firstObserved = Date.now();
   }));
@@ -49,11 +49,11 @@ try {
   const text = events.map(f => f.data || "").join("");
   assert(text.includes("first") && text.includes("second"));
   assert(events.filter(f => f.data).length >= 2);
-  assert.equal(ok(await bounded(controller.stream("exec", { device_id: targetID, command: "exit 7" }, () => {}))).exit_code, 7);
+  assert.equal(ok(await bounded(controller.stream("exec", { device_id: targetID, script: { text: "exit 7" } }, () => {}))).exit_code, 7);
   pass("streaming_and_nonzero_exit_are_preserved");
   let execID, readyResolve;
   const ready = new Promise(r => { readyResolve = r; });
-  const running = controller.stream("exec", { device_id: targetID, command: "echo ready; " + sleep }, f => {
+  const running = controller.stream("exec", { device_id: targetID, script: { text: "echo ready; " + sleep } }, f => {
     if (f.exec_id) execID = f.exec_id;
     if (f.data?.includes("ready")) readyResolve();
   });
@@ -66,7 +66,7 @@ try {
   const timeoutMS = Number(process.env.XALLOR_TEST_TIMEOUT_MS || 5000);
   assert(timeoutMS >= 5000 && timeoutMS <= 30000);
   const longSleep = process.platform === "win32" ? "Start-Sleep -Seconds 60" : "sleep 60";
-  const timed = await bounded(controller.stream("exec", { device_id: targetID, command: "echo timeout-ready; " + longSleep, timeout_ms: timeoutMS }, f => {
+  const timed = await bounded(controller.stream("exec", { device_id: targetID, script: { text: "echo timeout-ready; " + longSleep }, timeout_ms: timeoutMS }, f => {
     timeoutOutput += f.data || "";
   }), timeoutMS + 10000);
   assert(timeoutOutput.includes("timeout-ready"), "timeout case did not reach a running child: " + JSON.stringify(timed));
@@ -78,7 +78,7 @@ try {
   }
   const flood = process.platform === "win32" ? "[Console]::Write(('x' * 9000000))" : "head -c 9000000 /dev/zero | tr '\\0' x";
   let bytes = 0;
-  const flooded = await bounded(controller.stream("exec", { device_id: targetID, command: flood }, f => { bytes += Buffer.byteLength(f.data || ""); }), 30000);
+  const flooded = await bounded(controller.stream("exec", { device_id: targetID, script: { text: flood } }, f => { bytes += Buffer.byteLength(f.data || ""); }), 30000);
   assert.equal(ok(flooded).truncated, true);
   assert(bytes > 0 && bytes <= 4 * 1024 * 1024);
   pass("output_flood_is_bounded_and_still_terminates");
@@ -97,10 +97,13 @@ try {
 
   let disconnectReady;
   const started = new Promise(r => { disconnectReady = r; });
-  const interrupted = controller.stream("exec", { device_id: targetID, command: "echo disconnect-ready; " + sleep }, f => {
+  const interrupted = controller.stream("exec", { device_id: targetID, script: { text: "echo disconnect-ready; " + sleep } }, f => {
     if (f.data?.includes("disconnect-ready")) disconnectReady();
   });
-  await bounded(started);
+  await bounded(Promise.race([
+    started,
+    interrupted.then(frame => { throw Error("Relay-loss execution ended before start: " + JSON.stringify(frame)); }),
+  ]));
   // Only the fixture-owned Relay PID is provided by the parent test harness.
   const relayPID = Number(process.env.XALLOR_TEST_RELAY_PID);
   assert(Number.isSafeInteger(relayPID) && relayPID > 0);

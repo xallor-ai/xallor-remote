@@ -3,6 +3,7 @@ package relay
 import (
 	"testing"
 
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -15,16 +16,16 @@ func TestAccess_should_requireFreshBinding_whenCredentialValueReused(t *testing.
 			name = "device-recreation"
 		}
 		t.Run(name, func(t *testing.T) {
-			h := NewHub(newMemStore())
+			h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 			dev, stale := &recSender{}, &recSender{}
 			if code := h.RegisterDevice("123456789", "initial", true, dev); code != "" {
 				t.Fatal(code)
 			}
 			rotate := func(hash string) {
-				h.Handle(dev, protocol.RoleDevice, "123456789", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex(hash)})
+				h.Handle(dev, protocol.RoleDevice, "123456789", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex(hash)})
 			}
 			rotate("shared")
-			if code := h.RegisterClient("123456789", "shared", stale); code != "" {
+			if code := h.RegisterClient("123456789", "shared", "", stale); code != "" {
 				t.Fatal(code)
 			}
 			if recreate {
@@ -38,15 +39,15 @@ func TestAccess_should_requireFreshBinding_whenCredentialValueReused(t *testing.
 			}
 			rotate("shared")
 			h.Handle(stale, protocol.RoleClient, "123456789", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "stale"})
-			if stale.last().Code != protocol.Unauthorized || dev.last().ExecID == "stale" {
+			if stale.last().Code != protocol.Unauthorized || h.requests[requestKey{client: stale, id: "stale"}] != "" {
 				t.Fatalf("stale connection regained access: %+v", stale.last())
 			}
 			fresh := &recSender{}
-			if code := h.RegisterClient("123456789", "shared", fresh); code != "" {
+			if code := h.RegisterClient("123456789", "shared", "", fresh); code != "" {
 				t.Fatal(code)
 			}
 			h.Handle(fresh, protocol.RoleClient, "123456789", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "fresh"})
-			if dev.last().ExecID != "fresh" {
+			if dev.last().Type != protocol.TypeInvoke || dev.last().ExecID != h.requests[requestKey{client: fresh, id: "fresh"}] {
 				t.Fatal("new authenticated binding could not route")
 			}
 		})

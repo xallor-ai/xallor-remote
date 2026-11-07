@@ -2,6 +2,8 @@ package relay
 
 import (
 	"context"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 	"testing"
 	"time"
 
@@ -29,12 +31,12 @@ func (s *blockedIdentityStore) LoadDevice(ctx context.Context, id string) (acces
 // An unrelated routing lookup must complete while another identity lookup is blocked.
 func TestIdentity_should_isolateRouting_whenStoreLookupBlocks(t *testing.T) {
 	s := &blockedIdentityStore{DeviceStore: newMemStore(), entered: make(chan struct{}), release: make(chan struct{})}
-	h := NewHub(s)
+	h := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	if code := h.RegisterDevice("healthy", "secret", true, &recSender{}); code != "" {
 		t.Fatal(code)
 	}
 	finished := make(chan struct{})
-	go func() { h.RegisterClient("blocked", "grant", &recSender{}); close(finished) }()
+	go func() { h.RegisterClient("blocked", "grant", "", &recSender{}); close(finished) }()
 	waitSignal(t, s.entered)
 	queried := make(chan bool, 1)
 	go func() { queried <- h.DeviceOnline("healthy") }()

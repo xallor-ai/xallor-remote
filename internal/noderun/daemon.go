@@ -2,9 +2,7 @@ package noderun
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
-	"os/exec"
 	stdruntime "runtime"
 	"sync"
 	"time"
@@ -17,37 +15,12 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/handoff"
 	"github.com/xallor-ai/xallor-remote/internal/identity"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
+	"github.com/xallor-ai/xallor-remote/internal/job"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
-type wsConn struct {
-	mu      sync.Mutex
-	ctx     context.Context
-	conn    *websocket.Conn
-	observe func(protocol.Message)
-}
-
-func (w *wsConn) send(m protocol.Message) error {
-	raw, err := json.Marshal(m)
-	if err != nil {
-		return err
-	}
-	if len(raw) > protocol.MaxWSMessageBytes {
-		return errMsgTooLarge
-	}
-	if w.observe != nil {
-		w.observe(m)
-	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.conn.Write(w.ctx, websocket.MessageText, raw)
-}
-
-var errMsgTooLarge = errStr(protocol.TooLarge)
-
 type clientLink struct {
 	target  string
-	grant   string
 	ws      *wsConn
 	cancel  context.CancelFunc
 	mu      sync.Mutex
@@ -60,15 +33,22 @@ type Daemon struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu        sync.Mutex
-	device    *wsConn
-	clients   map[string]*clientLink
-	ensuring  map[string]chan struct{}
-	local     map[string]context.CancelFunc
-	remote    map[string]*remoteExec
-	approvals *approvalHub
-	activity  *activity.Log
-	handoffs  *handoff.Manager
+	mu                sync.Mutex
+	device            *wsConn
+	clients           map[clientKey]*clientLink
+	ensuring          map[clientKey]chan struct{}
+	accountGeneration uint64
+	accessRequests    deviceReplies
+	executionReplies  deviceReplies
+	settingsReplies   deviceReplies
+	settings          settingsGate
+	local             map[string]context.CancelCauseFunc
+	localWG           sync.WaitGroup
+	remote            map[string]*remoteExec
+	approvals         *approvalHub
+	activity          *activity.Log
+	handoffs          *handoff.Manager
+	jobs              *job.Ledger
 }
 
 type remoteExec struct {
@@ -82,21 +62,24 @@ func New(store *identity.Store, log *slog.Logger) *Daemon {
 	ctx, cancel := context.WithCancel(context.Background())
 	d := &Daemon{
 		log: log, store: store, ctx: ctx, cancel: cancel,
-		clients:   map[string]*clientLink{},
-		ensuring:  map[string]chan struct{}{},
-		local:     map[string]context.CancelFunc{},
+		clients:   map[clientKey]*clientLink{},
+		ensuring:  map[clientKey]chan struct{}{},
+		local:     map[string]context.CancelCauseFunc{},
 		remote:    map[string]*remoteExec{},
 		approvals: newApprovalHub(),
 		activity:  activity.Open(store.Dir),
+		jobs:      job.New(store.Dir),
 	}
-	d.handoffs = handoff.New(ctx, store.Dir, handoff.Hooks{Prepare: func(cmd *exec.Cmd) { cmd.SysProcAttr = procAttr() }, Watch: startJob})
+	d.handoffs = handoff.New(ctx, store.Dir, d.jobs, d.renewExecution)
 	return d
 }
 
 func (d *Daemon) Stop() { d.cancel() }
 
 func (d *Daemon) Run() error {
+	defer d.jobs.Close()
 	defer d.handoffs.Close()
+	defer d.waitLocalExecs()
 	_ = buildinfo.Running()
 	ln, err := ipc.Listen()
 	if err != nil {
@@ -105,7 +88,7 @@ func (d *Daemon) Run() error {
 	defer ln.Close()
 	go func() { <-d.ctx.Done(); _ = ln.Close() }()
 	go d.keepDevice()
-	d.log.Info("runtime ipc up", "device", d.store.DeviceID)
+	d.log.Info("runtime ipc up", "device", d.store.ID())
 	for {
 		c, err := ln.Accept()
 		if err != nil {
@@ -134,39 +117,69 @@ func (d *Daemon) keepDevice() {
 }
 
 func (d *Daemon) connectDevice() error {
+	setup, setupCancel := context.WithTimeout(d.ctx, protocol.RelayIdentityTimeout)
+	defer setupCancel()
+	release, err := d.settings.acquire(setup)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if release != nil {
+			release()
+		}
+	}()
+	if err := d.store.RefreshDevice(); err != nil {
+		return err
+	}
 	id, secret, grant, ws, relay, inbound, _ := d.store.Snapshot()
 	ctx, cancel := context.WithCancel(d.ctx)
 	defer cancel()
-	conn, _, err := websocket.Dial(ctx, relay, nil)
+	conn, _, err := websocket.Dial(setup, relay, nil)
 	if err != nil {
 		return err
 	}
 	conn.SetReadLimit(int64(protocol.MaxWSMessageBytes))
 	defer conn.Close(websocket.StatusNormalClosure, "")
-	link := &wsConn{ctx: ctx, conn: conn, observe: func(msg protocol.Message) { d.recordTerminal("inbound", id, msg) }}
+	link := &wsConn{ctx: ctx, conn: conn, relay: relay, observe: func(msg protocol.Message) { d.recordTerminal("inbound", id, msg) }}
 	inb := inbound && grant != ""
 	hello := protocol.Message{
 		Type: protocol.TypeHelloDevice, DeviceID: id, Secret: secret,
 		OS: stdruntime.GOOS, Arch: stdruntime.GOARCH, AgentVersion: buildinfo.Version(),
-		Workspace: ws, Inbound: protocol.Bool(inb),
+		Workspace: ws,
 	}
-	if err := link.send(hello); err != nil {
+	if err := link.sendContext(setup, hello); err != nil {
 		return err
 	}
 	var ack protocol.Message
-	if err := wsjson.Read(ctx, conn, &ack); err != nil {
+	if err := wsjson.Read(setup, conn, &ack); err != nil {
 		return err
 	}
-	if ack.Type != protocol.TypeHelloOK {
+	if ack.Type != protocol.TypeHelloOK || ack.Role != protocol.RoleDevice {
 		return errHello(ack.Code)
 	}
-	if grant != "" {
-		_ = link.send(protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex(grant)})
-		_ = link.send(protocol.Message{Type: protocol.TypeInboundSet, Inbound: protocol.Bool(inb)})
+	settings := settingsMessage(grant, inb)
+	settings.RequestID, err = protocol.RandomHex(16)
+	if err != nil {
+		return err
+	}
+	if err := link.sendContext(setup, settings); err != nil {
+		return err
+	}
+	if err := wsjson.Read(setup, conn, &ack); err != nil {
+		return err
+	}
+	if ack.Type != protocol.TypeDeviceSettingsResult || ack.RequestID != settings.RequestID || ack.Code != "" {
+		return errStr("device settings unconfirmed")
+	}
+	if err := d.syncDeviceContext(ack); err != nil {
+		return err
 	}
 	d.mu.Lock()
 	d.device = link
 	d.mu.Unlock()
+	release()
+	release = nil
+	setupCancel()
 	defer func() {
 		d.mu.Lock()
 		if d.device == link {
@@ -206,7 +219,19 @@ type errStr string
 func (e errStr) Error() string { return string(e) }
 
 func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
+	if (msg.Type == protocol.TypeDeviceSettingsResult || msg.Type == protocol.TypeAccessResult) && msg.Code == "" {
+		if err := d.syncDeviceContext(msg); err != nil {
+			_ = link.conn.CloseNow()
+			return
+		}
+	}
 	switch msg.Type {
+	case protocol.TypeExecutionLease:
+		d.executionReplies.deliver(link, msg)
+	case protocol.TypeDeviceSettingsResult:
+		d.settingsReplies.deliver(link, msg)
+	case protocol.TypeAccessResult:
+		d.accessRequests.deliver(link, msg)
 	case protocol.TypeHeartbeat:
 	case protocol.TypeInvoke:
 		if msg.Op == protocol.OpCancel {
@@ -215,11 +240,11 @@ func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
 			cancel := d.local[msg.ExecID]
 			d.mu.Unlock()
 			if cancel != nil {
-				cancel()
+				cancel(nil)
 			}
 			return
 		}
-		d.recordActivity(activity.Entry{ExecID: msg.ExecID, Direction: "inbound", DeviceID: d.store.DeviceID, Op: msg.Op, Stage: "requested"})
+		d.recordActivity(activity.Entry{ExecID: msg.ExecID, Direction: "inbound", DeviceID: d.store.ID(), Op: msg.Op, Stage: "requested"})
 		if d.handleHandoffInvoke(link, msg) {
 			return
 		}
@@ -240,16 +265,19 @@ func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
 
 func (d *Daemon) dropClient(id string, inst *clientLink) {
 	d.mu.Lock()
-	cur := d.clients[id]
-	if inst != nil && cur != inst {
-		d.mu.Unlock()
-		inst.closeConn()
-		return
+	var removed []*clientLink
+	for key, cl := range d.clients {
+		if key.target == id && (inst == nil || cl == inst) {
+			delete(d.clients, key)
+			removed = append(removed, cl)
+		}
 	}
-	delete(d.clients, id)
 	d.mu.Unlock()
-	if cur != nil {
-		cur.closeConn()
+	for _, cl := range removed {
+		cl.closeConn()
+	}
+	if inst != nil && len(removed) == 0 {
+		inst.closeConn()
 	}
 }
 
@@ -259,21 +287,10 @@ func (d *Daemon) deviceOnline() bool {
 	return d.device != nil
 }
 
-func (d *Daemon) pushGrant(grant string) {
-	d.mu.Lock()
-	link := d.device
-	d.mu.Unlock()
-	if link == nil {
-		return
-	}
-	_ = link.send(protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex(grant)})
-	_ = link.send(protocol.Message{Type: protocol.TypeInboundSet, Inbound: protocol.Bool(true)})
-}
-
 func (d *Daemon) killAllLocal() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for _, c := range d.local {
-		c()
+		c(nil)
 	}
 }

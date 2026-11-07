@@ -96,9 +96,10 @@ func TestDropClient_should_keep_new_link_when_old_instance_drops(t *testing.T) {
 	newClosed := false
 	old := &clientLink{cancel: func() { oldClosed = true }}
 	neu := &clientLink{cancel: func() { newClosed = true }}
-	d := &Daemon{clients: map[string]*clientLink{"dev": neu}}
+	key := clientKey{target: "dev"}
+	d := &Daemon{clients: map[clientKey]*clientLink{key: neu}}
 	d.dropClient("dev", old)
-	if d.clients["dev"] != neu {
+	if d.clients[key] != neu {
 		t.Fatal("new link was removed")
 	}
 	if newClosed {
