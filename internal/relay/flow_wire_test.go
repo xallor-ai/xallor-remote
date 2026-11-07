@@ -40,7 +40,7 @@ func TestFlowWire_should_routeOtherClient_whenSocketConsumerStopsReading(t *test
 		t.Fatal(err)
 	}
 	setTestAccess(t, s, "device", grant, true)
-	h := NewHub(s, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	// Bound both TCP buffers so the fixture does not depend on OS autotuning
 	// or on JSON parsing being faster than a socket writer.
 	srv := httptest.NewUnstartedServer(Handler(h, nil))

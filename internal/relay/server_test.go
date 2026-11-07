@@ -14,7 +14,7 @@ import (
 )
 
 func TestHelloDeviceStaysOpenAfterHandlerReturns(t *testing.T) {
-	hub := NewHub(newMemStore(), nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	hub := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	srv := httptest.NewServer(Handler(hub, nil))
 	defer srv.Close()
 

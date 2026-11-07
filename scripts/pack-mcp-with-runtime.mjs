@@ -11,6 +11,8 @@ import { createHash } from "node:crypto";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const mcp = path.join(root, "packages", "mcp");
 const release = path.join(root, "dist", "release");
+const profileFormat = Number(fs.readFileSync(path.join(root, "internal/buildinfo/profile_format.txt"), "utf8").trim());
+if (!Number.isSafeInteger(profileFormat) || profileFormat < 1) throw Error("Invalid source profile format");
 const revision = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 const dirty = !!execFileSync("git", ["status", "--porcelain", "--untracked-files=normal"], { cwd: root, encoding: "utf8" }).trim();
 
@@ -38,6 +40,7 @@ for (const { from, to, platform } of copies) {
   const bytes = fs.readFileSync(from);
   if (manifest.schema !== 1 || manifest.build.version !== pkg.version ||
       manifest.build.revision !== revision || manifest.build.dirty !== dirty ||
+      manifest.build.profile_format !== profileFormat ||
       manifest.build.os !== platform || manifest.build.arch !== "amd64" || manifest.build.protocol !== 1 ||
       manifest.artifact.filename !== path.basename(from) || manifest.artifact.size !== bytes.length ||
       manifest.artifact.sha256 !== createHash("sha256").update(bytes).digest("hex")) {
@@ -58,7 +61,7 @@ for (const { from, to, platform } of copies) {
 
 fs.writeFileSync(path.join(mcp, "build.json"), JSON.stringify({
   version: JSON.parse(fs.readFileSync(path.join(mcp, "package.json"), "utf8")).version,
-  revision, dirty, built_at: new Date().toISOString(), protocol: 1
+  revision, dirty, built_at: new Date().toISOString(), protocol: 1, profile_format: profileFormat
 }, null, 2));
 
 const build = spawnSync("npm", ["run", "build"], { cwd: mcp, stdio: "inherit", shell: true });

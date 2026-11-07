@@ -42,14 +42,14 @@ Relay 默认官方 hosted（`wss://api.xallor.com/remote`），可改 URL 自托
 
 ---
 
-## 3. 双向
+## 3. 双向（未认领设备的共享模式示例）
 
 ```text
 B 执行 grant issue  →  A peer add B  →  A 控 B
 A 执行 grant issue  →  B peer add A  →  B 控 A
 ```
 
-两份 grant。入站默认关。ensure 后 Runtime 保持 `hello_device`（可 online 且 inbound_disabled）。
+两份 grant。入站默认关。ensure 后 Runtime 保持经初始设置确认的 device 连接（可 online 且 inbound_disabled）。
 
 Grant 是 bearer：多 Cursor / CLI 共享被控机这一份码，不绑控制端身份。签发、rotate、inbound、revoke **只在被控本机**经 IPC；MCP 和对端不能改授权。见 [credentials.md](credentials.md)。
 

@@ -4,39 +4,29 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/principal"
-	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
-const principalQuery = `SELECT a.id,m.principal_id,m.tenant_id,m.id,m.version,c.id,c.expires_at
-FROM principal_credentials c JOIN memberships m ON m.id=c.membership_id
-CROSS JOIN authority a WHERE a.singleton=1 AND c.revoked=0 AND m.active=1 AND c.expires_at>? AND `
+var _ principal.Reader = (*SQLStore)(nil)
 
-func scanPrincipal(row *sql.Row) (principal.Identity, error) {
-	var p principal.Identity
-	err := row.Scan(&p.Authority, &p.PrincipalID, &p.TenantID, &p.MembershipID, &p.MembershipVersion, &p.CredentialID, &p.ExpiresAt)
+const principalQuery = `SELECT a.id,m.principal_id,m.tenant_id,m.id,m.version,c.id,c.expires_at,c.revoked,m.active
+FROM principal_credentials c JOIN memberships m ON m.id=c.membership_id
+CROSS JOIN authority a WHERE a.singleton=1 AND `
+
+func scanPrincipal(row *sql.Row) (principal.Credential, error) {
+	var p principal.Credential
+	err := row.Scan(&p.Authority, &p.PrincipalID, &p.TenantID, &p.MembershipID, &p.MembershipVersion, &p.CredentialID, &p.ExpiresAt, &p.Revoked, &p.MembershipActive)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, principal.ErrUnauthorized
 	}
 	return p, err
 }
 
-func (s *SQLStore) Authenticate(ctx context.Context, token string) (principal.Identity, error) {
-	if !principal.ValidToken(token) {
-		return principal.Identity{}, principal.ErrUnauthorized
-	}
-	return scanPrincipal(s.db.QueryRowContext(ctx, principalQuery+`c.token_hash=?`, time.Now().Unix(), protocol.SHA256Hex(token)))
+func (s *SQLStore) CredentialByTokenHash(ctx context.Context, hash string) (principal.Credential, error) {
+	return scanPrincipal(s.db.QueryRowContext(ctx, principalQuery+`c.token_hash=?`, hash))
 }
 
-func (s *SQLStore) Verify(ctx context.Context, expected principal.Identity) error {
-	current, err := scanPrincipal(s.db.QueryRowContext(ctx, principalQuery+`c.id=?`, time.Now().Unix(), expected.CredentialID))
-	if err != nil {
-		return err
-	}
-	if current != expected {
-		return principal.ErrUnauthorized
-	}
-	return nil
+func (s *SQLStore) CredentialByID(ctx context.Context, id string) (principal.Credential, error) {
+	return scanPrincipal(s.db.QueryRowContext(ctx, principalQuery+`c.id=?`, id))
 }

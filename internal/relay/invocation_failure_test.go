@@ -25,7 +25,7 @@ func (s *routingFaultSender) Enqueue(m protocol.Message) error {
 func TestRouting_should_retireAllMappings_whenEitherQueueRejects(t *testing.T) {
 	for _, side := range []string{"device", "client"} {
 		t.Run(side, func(t *testing.T) {
-			h := NewHub(newMemStore(), nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+			h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 			d, c := &routingFaultSender{}, &routingFaultSender{}
 			if code := h.RegisterDevice("device", "secret", true, d); code != "" {
 				t.Fatal(code)
@@ -72,7 +72,7 @@ func TestRouting_should_retireAllMappings_whenEitherQueueRejects(t *testing.T) {
 func TestRouting_should_discardFormerOwnerEvents_whenOwnershipTransfers(t *testing.T) {
 	s := openIdentityTestStore(t)
 	a, b := enrollment(t, s, "alice", ""), enrollment(t, s, "bob", "")
-	h := NewHub(s, s, access.NewService(s), admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(s, s, access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	d, old, newOwner := &recSender{}, &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, d); code != "" {
 		t.Fatal(code)
@@ -84,7 +84,7 @@ func TestRouting_should_discardFormerOwnerEvents_whenOwnershipTransfers(t *testi
 	}
 	first := routeRequest(h, d, old, "same")
 	controlAccess(t, h, d, a.Token, access.Request{Action: "transfer", MembershipID: b.MembershipID})
-	if len(h.requests) != 0 || old.last().Code != protocol.Unauthorized || old.last().ExecID != "same" {
+	if len(h.requests) != 0 || old.last().Code != protocol.ResultUnknown || old.last().ExecID != "same" {
 		t.Fatal("old ownership retained correlation")
 	}
 	if code := h.RegisterClient("device", "", b.Token, newOwner); code != "" {

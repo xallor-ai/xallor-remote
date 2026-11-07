@@ -69,7 +69,7 @@ func TestIdentityGate_should_reclaimEntries_whenWaiterCancelled(t *testing.T) {
 // Disconnect cancellation must reach an in-progress store lookup and leave no client binding or gate.
 func TestIdentity_should_cancelLookup_whenConnectionCancelled(t *testing.T) {
 	s := &blockedIdentityStore{DeviceStore: newMemStore(), entered: make(chan struct{}), release: make(chan struct{})}
-	h := NewHub(s, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	client := &contextSender{ctx: ctx}
@@ -111,7 +111,7 @@ func (s *rotatingStore) UpdateDevice(ctx context.Context, id string, record acce
 // must observe the committed grant, and the old device connection cannot revoke it.
 func TestIdentity_should_serializeReplacementWithRotation_whenDeviceDrops(t *testing.T) {
 	s := &rotatingStore{DeviceStore: newMemStore(), entered: make(chan struct{}), release: make(chan struct{})}
-	h := NewHub(s, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	old, replacement := &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, old); code != "" {
 		t.Fatal(code)

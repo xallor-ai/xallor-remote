@@ -28,7 +28,7 @@ func (s *settingsCommitGate) UpdateDevice(ctx context.Context, id string, r acce
 // settings. Neither a blocked write nor hello is a settings confirmation.
 func TestDeviceSettings_should_confirmAndRouteOnlyAfterCommit(t *testing.T) {
 	s := &settingsCommitGate{DeviceStore: newMemStore(), entered: make(chan struct{}), release: make(chan struct{})}
-	h := NewHub(s, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	d := &recSender{}
 	if code := h.RegisterDevice("device", "secret", false, d); code != "" {
 		t.Fatal(code)
@@ -61,7 +61,7 @@ func TestDeviceSettings_should_confirmAndRouteOnlyAfterCommit(t *testing.T) {
 // real SQLite transaction. Both fields must roll back and no success may escape.
 func TestDeviceSettings_should_rollbackBothFields_whenGrantWriteFails(t *testing.T) {
 	s := openIdentityTestStore(t)
-	h := NewHub(s, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	d := &recSender{}
 	if code := h.RegisterDevice("device", "secret", false, d); code != "" {
 		t.Fatal(code)
@@ -116,7 +116,7 @@ func TestDeviceSettings_should_requireNewSnapshot_whenDeviceReconnects(t *testin
 // source. A new identity stays disabled until one complete snapshot is applied.
 func TestDeviceSettingsWire_should_disableNewIdentity_untilCompleteSnapshot(t *testing.T) {
 	s := openIdentityTestStore(t)
-	h := NewHub(s, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+	h := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	ctx, conn, hello := identityWire(t, h, protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "device", Secret: "secret", Inbound: protocol.Bool(true)})
 	if hello.Type != protocol.TypeHelloOK {
 		t.Fatal(hello.Code)

@@ -27,8 +27,8 @@ func (s *SQLStore) WriteAccess(ctx context.Context, operation func(access.Transa
 	return err
 }
 
-func (t accessTransaction) Principal(ctx context.Context, id string, now int64) (principal.Identity, error) {
-	return scanPrincipal(t.tx.QueryRowContext(ctx, principalQuery+`c.id=?`, now, id))
+func (t accessTransaction) CredentialByID(ctx context.Context, id string) (principal.Credential, error) {
+	return scanPrincipal(t.tx.QueryRowContext(ctx, principalQuery+`c.id=?`, id))
 }
 
 func (t accessTransaction) DeviceByID(ctx context.Context, id string) (access.Device, error) {

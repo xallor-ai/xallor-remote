@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/storage"
 )
 
@@ -14,6 +15,7 @@ import (
 // It is not the adapter's private pool; pool tests live in package storage.
 type relaySQLFixture struct {
 	*storage.SQLStore
+	*principal.Service
 	faults *sql.DB
 }
 
@@ -36,5 +38,5 @@ func openIdentityTestStore(t *testing.T) *relaySQLFixture {
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
-	return &relaySQLFixture{SQLStore: s, faults: db}
+	return &relaySQLFixture{SQLStore: s, Service: principal.NewService(s), faults: db}
 }

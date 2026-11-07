@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"path/filepath"
 	"testing"
 	"time"
@@ -66,7 +67,7 @@ PRAGMA user_version=3;`)
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	got, err := reopened.Authenticate(ctx, a.Token)
+	got, err := principal.NewService(reopened).Authenticate(ctx, a.Token)
 	if err != nil || got != a.Identity {
 		t.Fatal("reopen replaced authority or membership", err)
 	}

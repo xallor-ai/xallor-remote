@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"path/filepath"
 	"testing"
 
@@ -25,7 +26,7 @@ func TestAccessSchema_should_preserveIdentityAndCascade_whenUpgraded(t *testing.
 		s.Close()
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`DROP TABLE device_shares; DROP TABLE device_ownership; PRAGMA user_version=4; CREATE VIEW device_shares AS SELECT 'conflict';`); err != nil {
+	if _, err := s.db.Exec(`DROP TABLE execution_signing_key; DROP TABLE device_shares; DROP TABLE device_ownership; PRAGMA user_version=4; CREATE VIEW device_shares AS SELECT 'conflict';`); err != nil {
 		s.Close()
 		t.Fatal(err)
 	}
@@ -56,7 +57,7 @@ func TestAccessSchema_should_preserveIdentityAndCascade_whenUpgraded(t *testing.
 		t.Fatal(err)
 	}
 	defer s.Close()
-	p, err := s.Authenticate(ctx, a.Token)
+	p, err := principal.NewService(s).Authenticate(ctx, a.Token)
 	if err != nil || p != a.Identity {
 		t.Fatal("upgrade replaced principal", err)
 	}
@@ -73,7 +74,7 @@ func TestAccessSchema_should_preserveIdentityAndCascade_whenUpgraded(t *testing.
 	if err := s.db.QueryRow(`SELECT (SELECT count(*) FROM device_ownership)+(SELECT count(*) FROM device_shares)`).Scan(&count); err != nil || count != 0 {
 		t.Fatal("cascade lost on replacement connection", count, err)
 	}
-	if _, err := s.Authenticate(ctx, a.Token); err != nil {
+	if _, err := principal.NewService(s).Authenticate(ctx, a.Token); err != nil {
 		t.Fatal("device removal removed account", err)
 	}
 }
