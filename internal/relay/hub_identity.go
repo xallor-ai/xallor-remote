@@ -72,6 +72,7 @@ func (h *Hub) RegisterClient(targetID, grant, accountToken string, conn Sender) 
 	}
 	defer release()
 	var identity principal.Identity
+	authentication := protocol.ClientAuthentication{Mode: protocol.ClientAuthShared}
 	if accountToken != "" {
 		if h.accounts == nil {
 			return protocol.Unauthorized
@@ -80,6 +81,7 @@ func (h *Hub) RegisterClient(targetID, grant, accountToken string, conn Sender) 
 		if err != nil {
 			return principalErrorCode(err)
 		}
+		authentication.Mode = protocol.ClientAuthAccount
 	}
 	want := protocol.SHA256Hex(grant)
 	var record access.Device
@@ -116,7 +118,7 @@ func (h *Hub) RegisterClient(targetID, grant, accountToken string, conn Sender) 
 		}
 		decision = access.Authorization{Binding: record.Binding(), Permissions: access.AllPermissions()}
 	}
-	if err := conn.Enqueue(protocol.Message{Type: protocol.TypeHelloOK, Role: protocol.RoleClient}); err != nil {
+	if err := conn.Enqueue(protocol.Message{Type: protocol.TypeHelloOK, Role: protocol.RoleClient, ClientAuth: &authentication}); err != nil {
 		return protocol.RelayError
 	}
 	h.access[targetID] = record.Binding()

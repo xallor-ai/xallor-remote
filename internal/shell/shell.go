@@ -3,8 +3,6 @@
 package shell
 
 import (
-	"encoding/base64"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -107,30 +105,10 @@ func Describe(name string) Capability {
 	return c
 }
 
-const encodingPrefix = "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); $OutputEncoding = [Console]::OutputEncoding; "
-
-// Capture the last statement's success inside the script block. WinPS resets
-// $? after invoking a script block containing a non-terminating error. Explicit
-// exit still leaves immediately, and stale native LASTEXITCODE is never used.
-const statusSuffix = "\nif (-not $?) { exit 1 } else { exit 0 }"
-
-func encode(command string) string {
-	words := utf16.Encode([]rune(encodingPrefix + command + statusSuffix))
-	b := make([]byte, 2*len(words))
-	for i, w := range words {
-		binary.LittleEndian.PutUint16(b[2*i:], w)
-	}
-	return base64.StdEncoding.EncodeToString(b)
-}
-
 func arguments(name, command string) []string {
 	switch name {
 	case "powershell", "pwsh":
-		// -EncodedCommand forces redirected WinPS stderr to CLIXML even with
-		// -OutputFormat Text. A fixed ASCII launcher decodes the script instead;
-		// only base64 data is inserted, never user text or path quoting.
-		launcher := "& ([scriptblock]::Create([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('" + encode(command) + "'))))"
-		return []string{"-NoLogo", "-NoProfile", "-NonInteractive", "-Command", launcher}
+		return powerShellArguments(command)
 	case "bash":
 		return []string{"--noprofile", "--norc", "-c", command}
 	default:

@@ -29,7 +29,7 @@ func TestPrincipal_should_rejectNewInvoke_whenCredentialRevoked(t *testing.T) {
 		t.Fatal(code)
 	}
 	h.Handle(client, protocol.RoleClient, "device", protocol.Message{Type: protocol.TypeInvoke, Op: protocol.OpInfo, ExecID: "before", AccountToken: "not-forwarded"})
-	if h.inflight[dev.last().ExecID].identity != a.Identity || dev.last().AccountToken != "" {
+	if h.inflight[dev.last().ExecID].binding.identity != a.Identity || dev.last().AccountToken != "" {
 		t.Fatal("trusted invocation context missing or token forwarded")
 	}
 	if err := account.New(s).RevokeCredential(context.Background(), a.CredentialID); err != nil {

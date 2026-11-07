@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/delegation"
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 )
 
@@ -22,4 +23,5 @@ var _ DeviceAccess = (*access.Service)(nil)
 type ExecutionAuthority interface {
 	Issue(string, access.Binding, principal.Identity, access.Authorization) (string, error)
 	Renew(context.Context, string, string, string) (time.Duration, error)
+	RenewForeground(context.Context, delegation.Invocation) (time.Duration, error)
 }

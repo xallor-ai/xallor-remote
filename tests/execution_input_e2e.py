@@ -56,6 +56,7 @@ try:
     env = dict(cluster.env("controller"), XALLOR_TEST_CLUSTER=str(cluster.root), XALLOR_TEST_TARGET=target, XALLOR_TEST_PROGRAM=str(fixture))
     subprocess.run(["node", str(root/"tests/helpers/execution-input.mjs")], env=env, check=True, timeout=120)
     results.append("ipc_validates_modes_and_preserves_native_exit_without_job_leak")
+    results.append("relative_and_absolute_workspaces_programs_scripts_and_cwd_boundary")
     subprocess.run(["node", str(root/"tests/helpers/mcp-release-smoke.mjs")], env=env, check=True, timeout=120)
     results.append("mcp_exec_accepts_script_and_program_contracts")
 finally:
