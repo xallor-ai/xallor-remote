@@ -24,6 +24,7 @@ const (
 	MaxPathBytes              = 4096
 	MaxEnvelopeBytes          = 8192
 	MaxWSMessageBytes         = 6*(MaxWriteBytes+MaxPathBytes) + MaxEnvelopeBytes
+	MaxIPCMessageBytes        = 6*(MaxWriteBytes+MaxPathBytes) + MaxEnvelopeBytes
 	MaxDeviceShares           = 128
 	HeartbeatEvery            = 30 * time.Second
 	ConnStaleAfter            = 60 * time.Second
