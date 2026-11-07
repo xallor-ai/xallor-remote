@@ -25,7 +25,7 @@ JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本
 | --- | --- | --- | --- |
 | `hello_device` | device | device_id, secret, os, arch, agent_version, workspace | 证明设备身份；新设备默认关闭入站 |
 | `hello_client` | client | target_device_id, grant?, account_token? | 未认领设备验证共享码，已认领设备验证账号访问权 |
-| `hello_ok` | Relay | role | hello 成功，此后可 heartbeat / invoke |
+| `hello_ok` | Relay | role；client 另必带 client_auth | hello 成功，client 验证认证确认后可 heartbeat / invoke |
 | `heartbeat` | 双向 | — | 保活 |
 | `invoke` | client | exec_id, op, payload | op 见下；目标取自该 client 连接的 hello |
 | `invoke_nack` | Relay 或目标 | exec_id, code | 未开跑 |
@@ -39,6 +39,8 @@ JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本
 | `execution.lease` | Relay → device | request_id, code? / lease_ms? | 短期执行许可；不确认任务结束或释放额度 |
 
 client 连接上出现 `revoke` / `device.settings` → 忽略或 nack `unauthorized`，**不得执行**。
+
+每条 client 连接的 `hello_ok` 必须携带 `client_auth:{mode:"shared"|"account"}`，由 Relay 在对应认证成功后生成。请求中提供 `account_token` 时必须确认 `account`，未提供时必须确认 `shared`；有效共享码不能替代失败的账号认证。Runtime 和诊断探针必须检查 type、client role、无错误 code 及匹配的 mode，缺失、未知或不匹配的确认一律拒绝，不缓存连接、不发后续 invoke，也不报告授权正常。所有 client 使用这一个明确合同，不接受只有 role 的普通成功回执。确认不携带原始凭据，不替代后续每次调用的身份及访问权限复验。
 
 `device.settings` 的 `request_id` 非空且最多 128 字节；`inbound` 必须明确提供。`grant_hash` 为 64 位小写十六进制 SHA-256；省略或空字符串表示没有授权码，仅允许入站关闭，也会清除现有共享码。整个快照在一个存储事务中替换，不能分别应用开关与授权码；设备身份由实际连接推导。非法快照返回 `device.settings.result` + `agent_error`，不改变状态；存储结果不确定时停止旧路由并关闭连接，不发送成功确认。确认绑定请求 ID 和连接实例，不是可跨连接重放的操作凭据。
 
@@ -74,7 +76,7 @@ Relay 在通过准入后重新构造发往 device 的非 cancel `invoke`，保�
 
 scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据续签、成员代次或重新签发同主体分享不改变它；新的设备 UID、归属实例或未认领共享授权实例会改变它。每次新调用仍独立完成现有认证和操作授权。handoff 收到缺失或非法 scope 返回 `unauthorized`，不回退设备级查询。原连接的 cancel 仍按 inflight 归属路由，不需要客户端传 scope。
 
-`info` 的 JSON 结果包含 `build`：version、revision、built_at（可省略）、dirty、protocol（当前为 1）、os、arch；用于区分运行制品与代码版本。未知 revision 为 `unknown`，不猜测提交。Relay health 返回同形构建身份。
+`info` 的 JSON 结果包含 `build`：version、revision、built_at（可省略）、dirty、protocol（当前为 1）、profile_format（本机持久化格式）、os、arch；用于区分运行制品与代码版本。未知 revision 为 `unknown`，不猜测提交。Relay health 返回同形构建身份。
 
 `info.shell` 为 `{configured,selected?,available:[],code?}`：configured 为目标配置名或 auto，selected 是当前能找到的解释器名，available 是本系统受支持且可找到的名字；不能解析选择时返回 code，不伪造 selected。只探测可执行文件，不包含路径、版本或远程凭据。可选解释器及执行语义见 [os.md](os.md)。
 
@@ -168,6 +170,7 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 | --- | --- |
 | WSS 单帧 `data` | 64 KiB（解码后）；超则丢该数据帧并标 truncated |
 | WSS 读上限 | `MaxWSMessageBytes` = 6 × (write 上限 + 路径上限) + 8 KiB 信封；覆盖 JSON `\u00XX` 最坏转义 |
+| Runtime IPC / MCP 单条 JSON | `MaxIPCMessageBytes` = 6 × (write 上限 + 路径上限) + 8 KiB 信封，不含末尾换行；请求/回复同限额，未收到换行也须在超限时关闭连接。输出仍逐块传输，不累计事件副本；GUI 桥另有更小的本机展示预算 |
 | 路径 | 最长 4096 字节；超则 `policy_deny` |
 | 单次 stdout+stderr | **4 MiB** 后丢后续输出，`exit.truncated=true` |
 | Relay 每 inflight 待发缓冲 | **1 MiB**；超则丢数据帧并 truncated，不堵整条 device 连接 |
@@ -178,6 +181,7 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 | Relay 控制字节预留 | 接收/待发队列各从输出可用预算中预留 **128 KiB**；控制消息本身仍服从队列总上限，超载仍会断开 |
 | read 默认 / 上限 | 64 KiB / 1 MiB；少给则 `exit.truncated=true`，按 rune 边界切 |
 | read `offset` | 字节起点，可大于 1 MiB；落在 rune 中间则回退到该 rune 起点 |
+| read `head` / `tail` | 最多 1024 行；每个选中行按窗口预算保留前缀，超出返回 `truncated=true` |
 | **write 上限** | **1 MiB**（解码后）；整包 marshal 超 WSS 读上限则 `too_large`，不落盘 |
 | Relay 每设备在途请求 | **16**，所有非 cancel 操作合计，跨 client 连接共享；cancel 不占新名额。此项是传输预算，不是会员或本机作业额度 |
 | Runtime 本机作业占用 | 前台 exec 与后台 handoff 合计 **4**；其中 handoff 最多 **2**，不确定占用也计入；独立于 Relay inflight |

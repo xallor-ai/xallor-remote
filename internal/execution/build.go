@@ -25,6 +25,12 @@ func Build(r Request, configuredShell, cwd string) (*exec.Cmd, error) {
 		}
 		return shell.Build(name, r.Script.Text, cwd)
 	}
+	// Resolve against the Runtime directory once. A relative executable must
+	// not be interpreted a second time after the child changes directory.
+	cwd, err := filepath.Abs(cwd)
+	if err != nil {
+		return nil, err
+	}
 	p := r.Program
 	name := p.Executable
 	// Explicit relative paths belong to the target working directory. A bare

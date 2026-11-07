@@ -36,6 +36,9 @@ func (m Manifest) validate() error {
 	if m.Build.Version == "" || m.Build.Revision == "" || m.Build.Protocol != buildinfo.Protocol {
 		return errors.New("invalid build identity or incompatible protocol")
 	}
+	if m.Build.ProfileFormat != buildinfo.ProfileFormat() {
+		return errors.New("incompatible or unknown profile format; restore a matching binary and profile backup before switching formats")
+	}
 	if m.Build.OS != runtime.GOOS || m.Build.Arch != runtime.GOARCH {
 		return errors.New("release is for a different platform")
 	}
