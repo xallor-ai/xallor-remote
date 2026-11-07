@@ -23,11 +23,15 @@ SSOT：Windows / Linux / macOS 行为。协议与 tool 名字相同；差异只�
 
 ## 2. Shell
 
-MCP **原样**传 `command`，目标 Runtime 的 `internal/shell` 选择解释器，`internal/job` 拥有启动与清理。Windows 支持 powershell/pwsh；Linux 支持 bash/sh/pwsh。`auto` 在 Windows 使用 powershell，在 Linux 优先 bash，只有找不到 bash 时才选 sh。显式选择不会回退，不接受任意可执行路径或带参数的 shell 字符串；不支持 cmd。已开始执行后无论解析失败、非零退出还是断线，都不会换壳重试。
+各头按 [protocol.md](protocol.md) 传 script 或 program。目标 Runtime 的 `internal/execution` 校验并构造命令，脚本通过 `internal/shell` 选择解释器，`internal/job` 拥有启动与清理。Windows 支持 powershell/pwsh；Linux 支持 bash/sh/pwsh。`auto` 在 Windows 使用 powershell，在 Linux 优先 bash，只有找不到 bash 时才选 sh。显式选择不会回退，不接受任意可执行路径或带参数的 shell 字符串；不支持 cmd。已开始执行后无论解析失败、非零退出还是断线，都不会换壳重试。
 
-PowerShell 禁用 profile 和交互，脚本按 UTF-16LE/Base64 放入固定 ASCII 启动表达式后解码执行，避免原始脚本参与原生命令行转义；不用会使 Windows PowerShell stderr 变成 CLIXML 的 `-EncodedCommand`。保留显式 exit，最后语句失败返回 1，成功返回 0，不提升之前原生程序遗留的 LASTEXITCODE。bash 禁用 profile/rc 并用 `-c`，sh 用 `-c`。不翻译 bash↔PowerShell，cwd 相对 workspace。配置操作见 [clients.md](clients.md)，能力和错误字段见 [protocol.md](protocol.md)。
+PowerShell 禁用 profile 和交互，脚本按 UTF-16LE/Base64 放入固定 ASCII 启动表达式后解码执行，避免原始脚本参与原生命令行转义；UTF-8 输出初始化位于外层启动表达式，保留用户块中 `using` / `param` 声明所需的首部位置。不用会使 Windows PowerShell stderr 变成 CLIXML 的 `-EncodedCommand`。使用目标 PowerShell 的语法树把状态检查放到最后执行块内，支持命名的 begin/process/end，保留 dynamicparam 参数绑定和受支持版本的 clean 清理；不按正则猜测，也不把普通语句拼在命名块之后。保留显式 exit，最后执行块的最后语句失败返回 1，成功返回 0，不提升之前原生程序遗留的 LASTEXITCODE。bash 禁用 profile/rc 并用 `-c`，sh 用 `-c`。不翻译 bash↔PowerShell，cwd 相对 workspace。配置操作见 [clients.md](clients.md)，能力和错误字段见 [protocol.md](protocol.md)。
 
 能力探测仅查找目标可执行文件，不启动 profile 或版本探针；不承诺 shell 版本、插件、环境工具或后续命令一定可执行。PowerShell 相关行为依据 [官方 CLI 说明](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe?view=powershell-5.1)及[上游重定向 stderr 问题](https://github.com/PowerShell/PowerShell/issues/5912)，并以实际进程测试验证。
+
+program 模式绕过 Shell 选择，直接启动程序，参数不经过变量、通配符、管道或重定向展开。裸程序名从目标 Runtime 的 PATH 查找，不隐式搜索 workspace；带目录的相对路径基于目标 cwd，绝对路径按目标系统解释，不在控制端转换。Windows 的 `C:foo` 盘符相对路径和 `\foo` 缺少盘符的根路径拒绝；Linux 的反斜杠是文件名字符。
+
+Windows 启动 API 实际接收一条命令行，Go 按标准 Windows 参数规则编码；自定义命令行解析器仍可能有不同语义，不能承诺任意程序都与标准 argv 一致。`.bat` / `.cmd` 与 cmd.exe 不接受 program 模式；需要时写明确的 PowerShell 脚本调用并自行遵循批处理转义规则。原生程序的输出编码由程序决定，不保证 GBK 等输出自动转码。CLI 脚本文件仅避免控制端转义，仍使用上述目标启动方式和长度上限，不能据此认为支持任意长度 PowerShell 脚本。
 
 ---
 
@@ -51,7 +55,7 @@ Windows：当前用户可见进程，pid + name。Linux：`/proc` 或 `ps`，pid
 
 `internal/process` 统一拥有前台命令、交接 CLI 及其预检进程。父进程正常退出也要回收受监督子进程；取消、超时和 Runtime 正常停止同样等待回收。不能把父进程退出码 0 当作全部进程已结束。需要持续后台执行的任务应有明确的独立生命周期，不能依赖前台命令留下孤儿进程。
 
-Windows 先创建带 `KILL_ON_JOB_CLOSE` 的 Job，暂停启动根进程，纳入 Job 后才恢复运行；监督建立失败则终止并回收根进程，不降级为 taskkill 或只杀父进程。终止后查询 Job 的活动进程数，确认清空。Runtime 崩溃会关闭其已持有的 Job；创建暂停进程到加入 Job 之间的崩溃恢复尚未实现，不能承诺任意时点崩溃均无遗留。
+Windows 先创建带 `KILL_ON_JOB_CLOSE` 的 Job，通过 `PROC_THREAD_ATTRIBUTE_JOB_LIST` 在创建暂停进程时绑定 Job，再恢复保留的主线程句柄；文件、普通 reader/writer 与缺省标准流使用同一路径，不保留创建后再纳入 Job 的回退。普通流先适配为管道，缺省流使用 NUL；`HANDLE_LIST` 只允许三个标准流句柄继承，其他继承句柄、令牌和父进程替换等未支持属性在启动前拒绝。监督建立失败则终止并回收根进程，不降级为 taskkill 或只杀父进程。终止后查询 Job 的活动进程数，确认清空，再完成输出排空。Runtime 崩溃时最后的 Job 句柄关闭会终止已原子纳入的进程；本机持久占用的自动恢复仍待实现，不能从进程启动修复推断账本可清空。该创建属性要求 Windows 10 / Server 2016 及以上，见 [Windows 进程创建属性](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)。
 
 Linux 创建独立进程组，先用 `waitid(WNOWAIT)` 观察父进程退出但不回收，保留组 ID；终止进程组并检查 `/proc` 中不再有该组的活进程，再回收父进程。僵尸不再执行，由其 OS 父进程回收。`/proc` 无法读取或组未在期限内清空均视为回收未确认。此机制不能约束主动 `setsid/setpgid` 脱组、通过外部服务创建进程或 Runtime 崩溃后的任意进程；严格隔离需 cgroup/独立执行环境。macOS 执行监督尚未实现。
 

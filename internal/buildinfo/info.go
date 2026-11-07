@@ -24,18 +24,19 @@ var Modified string
 const Protocol = 1
 
 type Info struct {
-	Version  string `json:"version"`
-	Revision string `json:"revision"`
-	BuiltAt  string `json:"built_at,omitempty"`
-	Dirty    bool   `json:"dirty"`
-	Protocol int    `json:"protocol"`
-	OS       string `json:"os"`
-	Arch     string `json:"arch"`
+	Version       string `json:"version"`
+	Revision      string `json:"revision"`
+	BuiltAt       string `json:"built_at,omitempty"`
+	Dirty         bool   `json:"dirty"`
+	Protocol      int    `json:"protocol"`
+	ProfileFormat int    `json:"profile_format"`
+	OS            string `json:"os"`
+	Arch          string `json:"arch"`
 }
 
 func Version() string { return strings.TrimSpace(sourceVersion) }
 func Current() Info {
-	info := Info{Version: Version(), Revision: Revision, BuiltAt: BuiltAt, Dirty: Modified == "true", Protocol: Protocol, OS: runtime.GOOS, Arch: runtime.GOARCH}
+	info := Info{Version: Version(), Revision: Revision, BuiltAt: BuiltAt, Dirty: Modified == "true", Protocol: Protocol, ProfileFormat: ProfileFormat(), OS: runtime.GOOS, Arch: runtime.GOARCH}
 	if b, ok := debug.ReadBuildInfo(); ok {
 		for _, s := range b.Settings {
 			switch s.Key {

@@ -23,7 +23,7 @@ SSOT：命名管道 / Unix socket 上的报文与 ensure。路径与权限见 [d
 请求：
 
 ```json
-{"id":"c1","method":"exec","params":{"device_id":"dev_B","command":"whoami"}}
+{"id":"c1","method":"exec","params":{"device_id":"dev_B","program":{"executable":"whoami","args":[]}}}
 ```
 
 后续与之关联的事件 / 结果带同一个 `id`：
@@ -46,6 +46,10 @@ SSOT：命名管道 / Unix socket 上的报文与 ensure。路径与权限见 [d
 - 流式方法：0..n 条 `event`，**恰好一条**终态（`ok` true/false）。
 - 非流式：没有 `event`，只有一条终态。
 - `code` 与 [protocol.md](protocol.md) 同一套。`exec_id` 由 Runtime 生成（头不要自己编 WSS 用的 id）。
+
+执行头只在收到匹配请求 ID 的明确终态、`ok=true`、`status=completed` 和数值退出码 0 时显示成功。缺失/非法 status、缺失/null/字符串退出码、矛盾的事件与终态字段均不能推断成功；没有终态就断开时显示结果未确认，不重放。`ok=true` 仅表示 Runtime 返回了执行结果，非零退出、cancelled、timeout 仍是任务失败或中断。CLI/TUI 共用 IPC 流解析，MCP 按相同确定性规则解释结果。
+
+已收到的 stdout/stderr 不因非零退出、取消、超时或断线丢弃；已知的截断标志与失败状态同时呈现。MCP 中断回执保留已知任务 ID、状态和输出信息；缺失字段写明 unknown，不合成退出码 0。输出文本仍不是恢复或重复执行的凭据。
 **单帧：** 默认 64 KiB（stdout 块）。`write` 的 `params.content` 允许单条 JSON 最大 1 MiB（与 [protocol.md](protocol.md) write 上限一致）。
 
 `event` 取值：`stdout` / `stderr` / `approval`（可选）。不要在 IPC 上再包一层 WSS 的 `type=invoke`。
@@ -78,6 +82,8 @@ MCP **可以**调 `status` / `peer.*` / 下面远程方法；**不要**调 grant
 
 `device.access` 经当前 device 出站连接发送，校验连接 Relay 地址与当前凭据绑定地址一致；请求和响应关联到该连接实例。最多 16 个等待 Relay 结果的请求，每次 5 秒期限包含写入排队；断线/超时返回结果未确认，不自动重放管理动作。响应来自已认证 Relay，成功状态直接回到调用头。`peer.add` 的 grant 可以省略，供账号授权访问；添加 peer 不表示已通过远程授权验证。
 
+`grant.issue`、`grant.rotate`、`inbound.set` 先保存本机期望设置，再等待当前 Relay 确认完整快照。只有确认后返回 `ok:true`；离线、断线、超时或存储结果不确定返回 `relay_error` 并提示尚未确认生效，本机已保存的设置仍保留。签发动作不自动重试，授权码可用 `grant.show` 读取。设置修改、重连初始快照、配置切换及本机撤机/重置共用串行边界，最多 16 个等待者，5 秒期限包含排队和发送；排队失败不修改设置。`status.online` 表示当前连接已完成初始设置确认，不表示后来未确认的修改已经生效。CLI、GUI、TUI 均沿用这一结果，不自行假定 Relay 已更新。
+
 `account.set` 原子持久化到当前 profile 的 `account.json`，绑定当前 Relay URL。成功后递增本机身份代次并关闭旧控制连接，等待中的调用可能收到通道失败，不能自动重放。导入只校验凭据格式，实际有效性在远程握手和新调用时验证；设置失败保留旧配置。目标 `doctor` 使用与实际调用相同的身份凭据，不能匿名探测后冒充账号访问成功。
 
 凭据文件损坏时 Runtime 仍启动本机恢复入口，所有需要该凭据的远程连接明确失败；只有成功重新导入或明确清除后才恢复调用，不自动按匿名方式访问。
@@ -94,7 +100,7 @@ CLI `doctor [--device ID] [--json]` 不调用 ensure，也不创建数据目录�
 
 | method | 对应 |
 | --- | --- |
-| `exec` | invoke op=exec |
+| `exec` | invoke op=exec；params 为 [protocol.md](protocol.md) 的 script/program 输入，另带 device_id |
 | `exec.cancel` | 仅取消 **这条 IPC 连接** 发起的 exec（Runtime 再映射到自己的 client 连接） |
 | `read` / `write` / `processes` / `info` | 对应 op |
 | `handoff.submit` / `handoff.get` | 对应 op，`params.device_id` 必填，载荷见 [protocol.md](protocol.md#cursor-交接载荷与回执)。非流式 `result.content` 为 JSON 回执/错误，外层成功仅表示提交或查询已返回 |

@@ -5,6 +5,7 @@
  */
 import { spawn } from "node:child_process";
 import { findBinary, INSTALL_HINT } from "./ensure.js";
+import { guardedArgs } from "./profile-format.js";
 
 const bin = findBinary(process.env, { managed: process.argv[2] !== "runtime" });
 if (!bin) {
@@ -12,7 +13,7 @@ if (!bin) {
   process.exit(1);
 }
 
-const child = spawn(bin, process.argv.slice(2), {
+const child = spawn(bin, guardedArgs(process.argv.slice(2)), {
   stdio: "inherit",
   windowsHide: false,
 });

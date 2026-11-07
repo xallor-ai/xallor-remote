@@ -23,7 +23,7 @@ def main():
         target = cluster.add("target")
         cluster.add("controller")
         cluster.cli("target", "inbound", "on")
-        grant = (cluster.root / "target/grant").read_text(encoding="utf-8")
+        grant = cluster.grant("target")
         cluster.cli("controller", "peer", "add", "--id", target, "--grant", grant)
         admin = ["relay", "--data", str(cluster.root / "relay"), "principal"]
         alice = json.loads(cluster.cli("controller", *admin, "create", "--name", "alice").stdout)
@@ -45,13 +45,17 @@ def main():
                        env=dict(cluster.env("controller"), XALLOR_TEST_CLUSTER=str(cluster.root),
                                 XALLOR_TEST_CLI=str(cluster.binary), XALLOR_TEST_TARGET=target), check=True, timeout=90)
         results += json.loads((cluster.root / "principal-results.json").read_text(encoding="utf-8"))
-        cluster.stop("controller")
-        (cluster.root / "controller/account.json").write_text('{"token":', encoding="utf-8")
-        cluster.cli("controller", "ensure")
-        denied = cluster.cli("controller", "exec", "--device", target, "--", "echo invalid-credential", check=False)
-        assert denied.returncode != 0 and "invalid-credential" not in denied.stdout
-        cluster.cli("controller", "account", "clear")
-        assert "recovered-credential" in cluster.cli("controller", "exec", "--device", target, "--", "echo recovered-credential").stdout
+        for raw in ('{"token":', 'null', '{}', '{"relay":"","token":null}',
+                    '{"relay":"","token":"","token":""}',
+                    json.dumps({"relay": cluster.url, "token": ""})):
+            cluster.stop("controller")
+            (cluster.root / "controller/account.json").write_text(raw, encoding="utf-8")
+            cluster.cli("controller", "ensure")
+            assert json.loads(cluster.cli("controller", "account", "status").stdout)["configured"] is True
+            denied = cluster.cli("controller", "exec", "--device", target, "--", "echo invalid-credential", check=False)
+            assert denied.returncode != 0 and "invalid-credential" not in denied.stdout
+            cluster.cli("controller", "account", "clear")
+            assert "recovered-credential" in cluster.cli("controller", "exec", "--device", target, "--", "echo recovered-credential").stdout
         results.append({"name": "corrupt_profile_blocks_remote_but_preserves_local_recovery", "status": "pass"})
     finally:
         cluster.close()

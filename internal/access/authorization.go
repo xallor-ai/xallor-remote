@@ -1,7 +1,6 @@
 package access
 
 import (
-	"context"
 	"errors"
 
 	"github.com/xallor-ai/xallor-remote/internal/principal"
@@ -110,12 +109,6 @@ type State struct {
 type Mutation struct {
 	Device Device
 	State  State
-}
-
-type Store interface {
-	ResolveAccess(context.Context, Device, principal.Identity) (Authorization, error)
-	VerifyAccess(context.Context, principal.Identity, Authorization, string) error
-	ManageAccess(context.Context, string, Device, principal.Identity, Request) (Mutation, error)
 }
 
 func (d Device) OwnedBy(p principal.Identity) bool {
