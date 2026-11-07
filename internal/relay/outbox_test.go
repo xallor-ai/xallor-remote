@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -44,12 +45,12 @@ func waitSignal(t *testing.T, signal <-chan struct{}) {
 // A blocked real writer must neither block another device nor lose the flooded execution's terminal.
 func TestOutbox_should_isolateSlowConsumer_and_preserveTruncatedExit(t *testing.T) {
 	b, entered, release, written := blockedOutbox(t, protocol.TypeStdout)
-	h := NewHub(nil)
+	h := NewHub(nil, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	a, other := &recSender{}, &recSender{}
 	if h.RegisterDevice("a", "secret-a", true, a) != "" || h.RegisterDevice("b", "secret-b", true, other) != "" {
 		t.Fatal("register")
 	}
-	h.Handle(a, protocol.RoleDevice, "a", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("grant")})
+	h.Handle(a, protocol.RoleDevice, "a", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("grant")})
 	if h.RegisterClient("a", "grant", "", b) != "" {
 		t.Fatal("client")
 	}
@@ -177,19 +178,19 @@ func TestOutbox_should_greetBeforeInvoke_whenDeviceBecomesRoutable(t *testing.T)
 	written := make(chan protocol.Message, 4)
 	b := newOutbox(context.Background(), func(_ context.Context, m protocol.Message) error { written <- m; return nil }, func() {})
 	t.Cleanup(b.shutdown)
-	h := NewHub(nil)
+	h := NewHub(nil, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	if h.RegisterDevice("device", "secret", true, b) != "" {
 		t.Fatal("register")
 	}
-	h.Handle(b, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex("grant")})
+	h.Handle(b, protocol.RoleDevice, "device", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex("grant")})
 	client := &recSender{}
 	if h.RegisterClient("device", "grant", "", client) != "" {
 		t.Fatal("client")
 	}
 	h.Handle(client, protocol.RoleClient, "device", protocol.Message{Type: protocol.TypeInvoke, ExecID: "exec", Op: protocol.OpExec})
 	b.shutdown()
-	if first, second := <-written, <-written; first.Type != protocol.TypeHelloOK || second.Type != protocol.TypeInvoke {
-		t.Fatalf("out of order: %+v %+v", first, second)
+	if first, second, third := <-written, <-written, <-written; first.Type != protocol.TypeHelloOK || second.Type != protocol.TypeDeviceSettingsResult || third.Type != protocol.TypeInvoke {
+		t.Fatalf("out of order: %+v %+v %+v", first, second, third)
 	}
 }
 

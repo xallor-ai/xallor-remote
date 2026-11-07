@@ -17,6 +17,9 @@ import (
 
 type group struct{ pid int }
 
+func (g *group) start(cmd *exec.Cmd) error { return cmd.Start() }
+func (g *group) wait(cmd *exec.Cmd) error  { return cmd.Wait() }
+
 func prepare(cmd *exec.Cmd) (boundary, error) {
 	attr := syscall.SysProcAttr{}
 	if cmd.SysProcAttr != nil {

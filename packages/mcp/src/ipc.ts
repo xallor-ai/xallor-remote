@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import net from "node:net";
 import { ipcPath } from "./ensure.js";
 
+// protocol.md: serialized JSON bytes, excluding the newline delimiter.
+export const MAX_IPC_MESSAGE_BYTES = 6 * (1024 * 1024 + 4096) + 8192;
+
 export type Frame = {
   id?: string;
   event?: string;
@@ -14,7 +17,6 @@ export type Frame = {
 };
 
 type Waiter = {
-  events: Frame[];
   resolve: (f: Frame) => void;
   reject: (e: Error) => void;
   onEvent?: (f: Frame) => void;
@@ -49,6 +51,7 @@ export class RuntimeIpc {
     this.sock.setEncoding("utf8");
     this.sock.on("data", (chunk: string) => this.onData(chunk));
     this.sock.on("close", () => {
+      this.buf = "";
       for (const [id, w] of this.waiters) {
         w.reject(new Error("IPC 已断开"));
         this.waiters.delete(id);
@@ -59,6 +62,7 @@ export class RuntimeIpc {
   close(): void {
     this.sock?.destroy();
     this.sock = undefined;
+    this.buf = "";
   }
 
   async call(method: string, params: Record<string, unknown> = {}): Promise<Frame> {
@@ -83,8 +87,11 @@ export class RuntimeIpc {
     }
     const id = randomUUID();
     const line = JSON.stringify({ id, method, params }) + "\n";
+    if (Buffer.byteLength(line, "utf8") - 1 > MAX_IPC_MESSAGE_BYTES) {
+      return Promise.reject(new Error("IPC 参数超过上限"));
+    }
     return new Promise<Frame>((resolve, reject) => {
-      this.waiters.set(id, { events: [], resolve, reject, onEvent });
+      this.waiters.set(id, { resolve, reject, onEvent });
       this.sock!.write(line, (err) => {
         if (err) {
           this.waiters.delete(id);
@@ -101,24 +108,41 @@ export class RuntimeIpc {
       if (i < 0) break;
       const line = this.buf.slice(0, i);
       this.buf = this.buf.slice(i + 1);
+      if (Buffer.byteLength(line, "utf8") > MAX_IPC_MESSAGE_BYTES) {
+        this.failConnection(new Error("IPC 报文超过上限"));
+        return;
+      }
       if (!line.trim()) continue;
       let f: Frame;
       try {
         f = JSON.parse(line) as Frame;
       } catch {
-        continue;
+        this.failConnection(new Error("IPC 报文格式无效"));
+        return;
+      }
+      if (!f || typeof f !== "object" || Array.isArray(f)) {
+        this.failConnection(new Error("IPC 报文格式无效"));
+        return;
       }
       if (!f.id) continue;
       const w = this.waiters.get(f.id);
       if (!w) continue;
       if (f.event) {
-        w.events.push(f);
         w.onEvent?.(f);
         continue;
       }
       this.waiters.delete(f.id);
       w.resolve(f);
     }
+    if (Buffer.byteLength(this.buf, "utf8") > MAX_IPC_MESSAGE_BYTES) {
+      this.failConnection(new Error("IPC 报文超过上限"));
+    }
+  }
+
+  private failConnection(error: Error): void {
+    for (const waiter of this.waiters.values()) waiter.reject(error);
+    this.waiters.clear();
+    this.close();
   }
 }
 

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -29,7 +30,7 @@ func (m *memStore) LoadDevice(ctx context.Context, id string) (access.Device, er
 	defer m.mu.Unlock()
 	r, ok := m.rows[id]
 	if !ok {
-		return access.Device{}, ErrDeviceNotFound
+		return access.Device{}, access.ErrDeviceNotFound
 	}
 	return r, nil
 }
@@ -42,7 +43,7 @@ func (m *memStore) RegisterDevice(ctx context.Context, id, secretHash string, in
 	defer m.mu.Unlock()
 	if r, ok := m.rows[id]; ok {
 		if r.SecretHash != secretHash {
-			return access.Device{}, ErrDeviceIdentity
+			return access.Device{}, access.ErrDeviceIdentity
 		}
 		return r, nil
 	}
@@ -62,7 +63,7 @@ func (m *memStore) UpdateDevice(ctx context.Context, id string, r access.Device)
 	defer m.mu.Unlock()
 	old, ok := m.rows[id]
 	if !ok || old.SecretHash != r.SecretHash || old.UID != r.UID {
-		return access.Device{}, ErrDeviceIdentity
+		return access.Device{}, access.ErrDeviceIdentity
 	}
 	r, err := old.WithAccess(r.GrantHash, r.Inbound)
 	if err != nil {
@@ -79,7 +80,7 @@ func (m *memStore) DeleteDevice(ctx context.Context, id, uid, secretHash string)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if old, ok := m.rows[id]; !ok || old.SecretHash != secretHash || old.UID != uid {
-		return ErrDeviceIdentity
+		return access.ErrDeviceIdentity
 	}
 	delete(m.rows, id)
 	return nil
@@ -111,13 +112,13 @@ func (r *recSender) last() protocol.Message {
 }
 
 func TestInvokeRoutesAndExitDeletesInflight(t *testing.T) {
-	h := NewHub(newMemStore())
+	h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	dev, cli := &recSender{}, &recSender{}
 	if code := h.RegisterDevice("dev_a", "secret", true, dev); code != "" {
 		t.Fatal(code)
 	}
 	grant := "xr_grant_test"
-	h.Handle(dev, protocol.RoleDevice, "dev_a", protocol.Message{Type: protocol.TypeGrantRotate, NewGrantHash: protocol.SHA256Hex(grant)})
+	h.Handle(dev, protocol.RoleDevice, "dev_a", protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "settings", Inbound: protocol.Bool(true), GrantHash: protocol.SHA256Hex(grant)})
 	if code := h.RegisterClient("dev_a", grant, "", cli); code != "" {
 		t.Fatal(code)
 	}
@@ -160,7 +161,7 @@ func TestInvokeRoutesAndExitDeletesInflight(t *testing.T) {
 }
 
 func TestOversizeStdoutMarksTruncatedOnExit(t *testing.T) {
-	h := NewHub(newMemStore())
+	h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	dev, cli := &recSender{}, &recSender{}
 	h.RegisterDevice("dev_a", "secret", true, dev)
 	authorizeTestClient(t, h, dev, cli)
@@ -186,7 +187,7 @@ func TestOversizeStdoutMarksTruncatedOnExit(t *testing.T) {
 }
 
 func TestClientCannotRevoke(t *testing.T) {
-	h := NewHub(newMemStore())
+	h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	cli := &recSender{}
 	h.Handle(cli, protocol.RoleClient, "dev_a", protocol.Message{Type: protocol.TypeRevoke, DeviceID: "dev_a"})
 	if cli.last().Code != protocol.Unauthorized {
@@ -195,7 +196,7 @@ func TestClientCannotRevoke(t *testing.T) {
 }
 
 func TestClientDropSendsCancelToDevice(t *testing.T) {
-	h := NewHub(newMemStore())
+	h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	dev, cli := &recSender{}, &recSender{}
 	h.RegisterDevice("dev_a", "secret", true, dev)
 	authorizeTestClient(t, h, dev, cli)
@@ -225,7 +226,7 @@ func TestClientDropSendsCancelToDevice(t *testing.T) {
 }
 
 func TestCancelUnknownExec(t *testing.T) {
-	h := NewHub(newMemStore())
+	h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	cli := &recSender{}
 	h.handleCancel(cli, "ex_missing")
 	if cli.last().Code != protocol.UnknownExec {
@@ -234,7 +235,7 @@ func TestCancelUnknownExec(t *testing.T) {
 }
 
 func TestInboundDisabled(t *testing.T) {
-	h := NewHub(newMemStore())
+	h := NewHub(newMemStore(), nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	dev, cli := &recSender{}, &recSender{}
 	h.RegisterDevice("dev_a", "secret", false, dev)
 	authorizeTestClient(t, h, dev, cli)

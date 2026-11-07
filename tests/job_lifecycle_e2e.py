@@ -72,11 +72,15 @@ try:
     reservations=cluster.root/("reservations"+suffix)
     for path,source in ((tree,"process-tree"),(agent,"cursor-cli"),(reservations,"job-reservations")):
         subprocess.run([args.go,"build","-o",str(path),"./tests/fixtures/"+source],cwd=root,check=True,timeout=180)
+    subprocess.run([str(reservations),"sequence",str(cluster.root/"sequence")],check=True,timeout=30)
+    results.append("one_owner_rejects_parallel_launch_and_reuses_slot_after_cleanup")
+    subprocess.run([str(reservations),"close",str(cluster.root/"close")],check=True,timeout=30)
+    results.append("closed_owner_cannot_launch_or_release_replacement_ledger_debt")
     cluster.start()
     target=cluster.add("target")
     cluster.add("controller")
     cluster.cli("target","inbound","on")
-    grant=(cluster.root/"target/grant").read_text(encoding="utf-8")
+    grant=cluster.grant("target")
     cluster.cli("controller","peer","add","--id",target,"--grant",grant)
     cluster.stop("target")
     ready=cluster.root/"reservations-ready.json"
