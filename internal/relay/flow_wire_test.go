@@ -11,6 +11,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -39,7 +40,7 @@ func TestFlowWire_should_routeOtherClient_whenSocketConsumerStopsReading(t *test
 		t.Fatal(err)
 	}
 	setTestAccess(t, s, "device", grant, true)
-	h := NewHub(s)
+	h := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	// Bound both TCP buffers so the fixture does not depend on OS autotuning
 	// or on JSON parsing being faster than a socket writer.
 	srv := httptest.NewUnstartedServer(Handler(h, nil))
@@ -79,6 +80,13 @@ func TestFlowWire_should_routeOtherClient_whenSocketConsumerStopsReading(t *test
 		return c
 	}
 	device := dial(protocol.Message{Type: protocol.TypeHelloDevice, DeviceID: "device", Secret: "secret"}, nil)
+	if err := wsjson.Write(ctx, device, protocol.Message{Type: protocol.TypeDeviceSettings, RequestID: "ready", GrantHash: grant, Inbound: protocol.Bool(true)}); err != nil {
+		t.Fatal(err)
+	}
+	var settingsAck protocol.Message
+	if err := wsjson.Read(ctx, device, &settingsAck); err != nil || settingsAck.Type != protocol.TypeDeviceSettingsResult || settingsAck.Code != "" {
+		t.Fatalf("settings: %+v %v", settingsAck, err)
+	}
 	slow := dial(protocol.Message{Type: protocol.TypeHelloClient, TargetID: "device", Grant: "grant"}, &websocket.DialOptions{HTTPClient: &http.Client{Transport: transport}})
 	healthy := dial(protocol.Message{Type: protocol.TypeHelloClient, TargetID: "device", Grant: "grant"}, nil)
 	if err := wsjson.Write(ctx, slow, protocol.Message{Type: protocol.TypeInvoke, ExecID: "flood", Op: protocol.OpExec}); err != nil {

@@ -2,19 +2,13 @@ package relay
 
 import (
 	"context"
-	"errors"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
 )
 
-var (
-	ErrDeviceNotFound = errors.New("device not found")
-	ErrDeviceIdentity = errors.New("device identity does not match")
-)
-
 // DeviceStore must commit a mutation before returning success. Registration
 // atomically creates an absent identity or authenticates the existing one.
-// Operational errors must never be returned as ErrDeviceNotFound.
+// Operational errors must never be returned as access.ErrDeviceNotFound.
 type DeviceStore interface {
 	// Authority is immutable, loaded when the store opens; it must not perform I/O.
 	Authority() string

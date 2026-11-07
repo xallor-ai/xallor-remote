@@ -17,6 +17,23 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "close" {
+		verifyClose(os.Args[2])
+		return
+	}
+	if len(os.Args) == 3 && os.Args[1] == "sequence" {
+		verifySequence(os.Args[2])
+		return
+	}
+	if len(os.Args) == 3 && (os.Args[1] == "wait" || os.Args[1] == "done") {
+		if err := os.WriteFile(os.Args[2], []byte("started"), 0600); err != nil {
+			panic(err)
+		}
+		if os.Args[1] == "wait" {
+			time.Sleep(time.Minute)
+		}
+		return
+	}
 	if len(os.Args) != 3 || !filepath.IsAbs(os.Args[1]) || !filepath.IsAbs(os.Args[2]) {
 		panic("expected absolute profile and readiness file")
 	}
@@ -24,7 +41,7 @@ func main() {
 	defer l.Close()
 	scope := invocation.Scope{Authority: strings.Repeat("a", 32), DeviceUID: strings.Repeat("b", 32), GrantID: strings.Repeat("c", 32)}
 	for i := 0; i < job.Capacity; i++ {
-		if _, err := l.Reserve(scope, "exec", strconv.Itoa(i)); err != nil {
+		if _, err := l.ReserveExec(scope, strconv.Itoa(i)); err != nil {
 			panic(err)
 		}
 	}

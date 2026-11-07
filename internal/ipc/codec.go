@@ -1,12 +1,13 @@
 package ipc
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
+
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 type Request struct {
@@ -30,17 +31,18 @@ type Frame struct {
 type Conn struct {
 	c      net.Conn
 	mu     sync.Mutex
-	rd     *bufio.Reader
+	rd     *lineReader
 	closed atomic.Bool
 }
 
 func NewConn(c net.Conn) *Conn {
-	return &Conn{c: c, rd: bufio.NewReader(c)}
+	return &Conn{c: c, rd: newLineReader(c)}
 }
 
 func (c *Conn) ReadRequest() (Request, error) {
-	line, err := c.rd.ReadBytes('\n')
+	line, err := c.rd.read()
 	if err != nil {
+		_ = c.Close()
 		return Request{}, err
 	}
 	var r Request
@@ -51,8 +53,9 @@ func (c *Conn) ReadRequest() (Request, error) {
 }
 
 func (c *Conn) ReadFrame() (Frame, error) {
-	line, err := c.rd.ReadBytes('\n')
+	line, err := c.rd.read()
 	if err != nil {
+		_ = c.Close()
 		return Frame{}, err
 	}
 	var f Frame
@@ -66,6 +69,10 @@ func (c *Conn) WriteFrame(f Frame) error {
 	b, err := json.Marshal(f)
 	if err != nil {
 		return err
+	}
+	if len(b) > protocol.MaxIPCMessageBytes {
+		_ = c.Close()
+		return ErrMessageTooLarge
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -110,10 +117,22 @@ func Call(c *Conn, id, method string, params any) error {
 	if err != nil {
 		return err
 	}
+	if len(b) > protocol.MaxIPCMessageBytes {
+		return ErrMessageTooLarge
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	_, err = c.c.Write(append(b, '\n'))
 	return err
+}
+
+// FailureMessage preserves the Runtime's actionable explanation, including an
+// unconfirmed mutation. A generic code translation must not erase that state.
+func FailureMessage(frame Frame) string {
+	if frame.Message != "" {
+		return frame.Message
+	}
+	return Human(frame.Code)
 }
 
 func Human(code string) string {
