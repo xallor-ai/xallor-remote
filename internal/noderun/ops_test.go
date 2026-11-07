@@ -123,6 +123,31 @@ func TestReadWorkspaceWindow_should_clampOversizedLineLimitToMax(t *testing.T) {
 	}
 }
 
+func TestReadWorkspaceWindow_should_notDivideBudgetForManyLinesInSmallFile(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "small-many.txt")
+	body := bytes.Repeat([]byte("x\n"), 1024)
+	if err := os.WriteFile(path, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, truncated, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 1024, Path: "small-many.txt"}, int64(len(body)))
+	if err != nil || truncated || len(got) != len(body) {
+		t.Fatalf("len=%d truncated=%v err=%v", len(got), truncated, err)
+	}
+}
+
+func TestReadWorkspaceWindow_should_notMarkExactFitLineTruncated(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "exact.txt")
+	if err := os.WriteFile(path, []byte("a\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, truncated, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Head: 1, Limit: 2, Path: "exact.txt"}, 2)
+	if err != nil || truncated || string(got) != "a\n" {
+		t.Fatalf("got=%q truncated=%v err=%v", got, truncated, err)
+	}
+}
+
 func TestSliceRead_should_keep_last_line_when_file_ends_with_newline(t *testing.T) {
 	raw := []byte("a\nb\n")
 	got, trunc := sliceRead(raw, protocol.ReadPayload{Tail: 1}, 64*1024)
