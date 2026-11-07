@@ -11,6 +11,16 @@ import {
   type ToolCtx,
 } from "./exec-result.js";
 
+// Ownership retirement can arrive after output; it cannot promise a stopped process.
+test("uncertain route termination retains output without claiming confirmed stop", () => {
+  const result = execFrameText({ ok: false, code: "result_unknown", message: "执行结果未确认。" }, "already executed\n", "", "route-1");
+  assert.equal(result.isError, true);
+  assert.match(result.text, /already executed/);
+  assert.match(result.text, /执行结果未确认/);
+  assert.match(result.text, /exec_id=route-1/);
+  assert.doesNotMatch(result.text, /已停止|status=completed/);
+});
+
 function ctxWith(partial: NonNullable<ToolCtx["mcpReq"]>): ToolCtx {
   return { mcpReq: partial };
 }
@@ -32,10 +42,14 @@ test("missing or coerced exit values never confirm success", () => {
 
 // Cancellation still preserves the observed output, identity and truncation.
 test("cancelled and timeout retain output and terminal metadata", () => {
-  for (const status of ["cancelled", "timeout"]) {
+  for (const status of ["cancelled", "timeout", "authorization_lost"]) {
     const got = execToolText(status, 1, 10, true, "ex", "out", "diagnostic");
     assert.equal(got.isError, true);
     for (const expected of ["out", "diagnostic", `status=${status}`, "exec_id=ex", "truncated=true"]) assert(got.text.includes(expected));
+    if (status === "authorization_lost") {
+      assert(got.text.includes("授权已失效，任务已停止。"));
+      assert(!got.text.includes("执行结果未确认"));
+    }
   }
 });
 

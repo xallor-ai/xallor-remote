@@ -17,18 +17,10 @@ func (d *Daemon) serveIPC(c *ipc.Conn) {
 		if err != nil {
 			return
 		}
-		if d.handleDeviceAccess(c, req) || d.handleAccount(c, req) || d.handleObservation(c, req) || d.handleHeadState(c, req) || d.handleHandoffIPC(c, req) || d.handleLocal(c, req) {
+		if d.handleDeviceSettings(c, req) || d.handleDeviceAccess(c, req) || d.handleAccount(c, req) || d.handleObservation(c, req) || d.handleHeadState(c, req) || d.handleHandoffIPC(c, req) || d.handleLocal(c, req) {
 			continue
 		}
 		switch req.Method {
-		case "grant.issue":
-			g, err := d.store.IssueGrant()
-			if err != nil {
-				_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, err.Error()))
-				continue
-			}
-			d.pushGrant(g)
-			_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"grant": g}))
 		case "grant.show":
 			_, _, g, _, _, _, _ := d.store.Snapshot()
 			_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"grant": g}))

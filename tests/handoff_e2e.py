@@ -22,7 +22,7 @@ try:
     cluster.start()
     controller, target = cluster.add("controller"), cluster.add("target")
     cluster.cli("target", "grant", "issue")
-    grant = (cluster.root / "target" / "grant").read_text(encoding="utf-8").strip()
+    grant = cluster.grant("target")
     cluster.cli("controller", "peer", "add", "--id", target, "--grant", grant)
     workspace = cluster.root / "workspaces" / "target"
     def git(*values):
