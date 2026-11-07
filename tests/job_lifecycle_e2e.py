@@ -74,6 +74,8 @@ try:
         subprocess.run([args.go,"build","-o",str(path),"./tests/fixtures/"+source],cwd=root,check=True,timeout=180)
     subprocess.run([str(reservations),"sequence",str(cluster.root/"sequence")],check=True,timeout=30)
     results.append("one_owner_rejects_parallel_launch_and_reuses_slot_after_cleanup")
+    subprocess.run([str(reservations),"close",str(cluster.root/"close")],check=True,timeout=30)
+    results.append("closed_owner_cannot_launch_or_release_replacement_ledger_debt")
     cluster.start()
     target=cluster.add("target")
     cluster.add("controller")

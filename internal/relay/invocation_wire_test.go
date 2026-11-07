@@ -9,6 +9,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -31,7 +32,7 @@ func TestRoutingWire_should_dropLatePrivateResult_whenAnotherPrincipalReusesID(t
 	if _, err = access.NewService(s).Manage(ctx, "device", claimed.Device, a.Identity, access.Request{Action: "share", MembershipID: b.MembershipID, Operations: []string{protocol.OpHandoffGet}, TTLSeconds: 3600}); err != nil {
 		t.Fatal(err)
 	}
-	h := NewHub(s)
+	h := NewHub(s, s, access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	srv := httptest.NewTLSServer(Handler(h, nil))
 	defer srv.Close()
 	write := func(c *websocket.Conn, m protocol.Message) {

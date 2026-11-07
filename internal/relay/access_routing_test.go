@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -32,7 +33,7 @@ func TestAccess_should_rejectControllerClaimAndInvalidateBearer_whenDeviceClaims
 	s := openIdentityTestStore(t)
 	a := enrollment(t, s, "alice", "")
 	b := enrollment(t, s, "bob", "")
-	h := NewHub(s)
+	h := NewHub(s, s, access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device, controller := &recSender{}, &recSender{}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)

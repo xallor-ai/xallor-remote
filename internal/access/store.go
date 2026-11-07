@@ -14,10 +14,9 @@ type Store interface {
 }
 
 type Reader interface {
-	// Principal resolves a credential whose membership is active, credential is
-	// not revoked, and expiry is after the supplied time. Missing/invalid state
-	// returns principal.ErrUnauthorized; operational failures stay distinct.
-	Principal(context.Context, string, int64) (principal.Identity, error)
+	// CredentialByID returns membership/credential state from this transaction,
+	// without deciding validity. Missing records return principal.ErrUnauthorized.
+	CredentialByID(context.Context, string) (principal.Credential, error)
 	DeviceByID(context.Context, string) (Device, error)
 	// Missing UID/member/share returns ErrDenied, never an empty success.
 	DeviceByUID(context.Context, string) (Device, error)

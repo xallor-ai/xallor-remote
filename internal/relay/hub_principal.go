@@ -32,11 +32,10 @@ func (h *Hub) verifyClientAccess(from Sender, operation string) string {
 	if client.identity.PrincipalID == "" {
 		return ""
 	}
-	auth, ok := h.store.(principal.Authenticator)
-	if !ok {
+	if h.accounts == nil {
 		return protocol.Unauthorized
 	}
-	if err := auth.Verify(ctx, client.identity); err != nil {
+	if err := h.accounts.Verify(ctx, client.identity); err != nil {
 		return principalErrorCode(err)
 	}
 	return ""

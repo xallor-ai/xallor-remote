@@ -16,8 +16,7 @@ func (s *Service) Manage(ctx context.Context, id string, expected Device, actor 
 	}
 	var result Mutation
 	err := s.store.WriteAccess(ctx, func(tx Transaction) error {
-		now := s.now().Unix()
-		if err := s.verifyActor(ctx, tx, actor, now); err != nil {
+		if err := s.verifyActor(ctx, tx, actor); err != nil {
 			return err
 		}
 		device, err := tx.DeviceByID(ctx, id)
@@ -45,7 +44,7 @@ func (s *Service) Manage(ctx context.Context, id string, expected Device, actor 
 				err = setOwner(ctx, tx, device.UID, member.TenantID, member.PrincipalID)
 			}
 		case "share":
-			err = replaceShare(ctx, tx, device, req, now)
+			err = replaceShare(ctx, tx, device, req, s.now().Unix())
 		case "unshare":
 			err = tx.DeleteShare(ctx, device.OwnershipID, req.ShareID)
 		}

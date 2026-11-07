@@ -42,6 +42,7 @@ type diskState struct {
 }
 
 type Ledger struct {
+	launch sync.RWMutex // Close must not hand off the file lock during OS startup.
 	mu     sync.Mutex
 	dir    string
 	jobs   map[string]Record
@@ -248,9 +249,12 @@ func (l *Ledger) Snapshot() ([]Record, error) {
 	return rows, nil
 }
 
-// Close stops admission and releases the file lock, never occupied resources.
-// The Runtime waits for all Owners before closing its shared Ledger.
+// Close waits for in-progress OS startup before handing off the file lock. It
+// invalidates further launches but never proves active processes have stopped.
+// The Runtime still waits for all Owners before closing its shared Ledger.
 func (l *Ledger) Close() {
+	l.launch.Lock()
+	defer l.launch.Unlock()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.closed {

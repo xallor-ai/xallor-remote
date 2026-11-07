@@ -21,7 +21,7 @@ func bundle(t *testing.T, label string) (string, Manifest) {
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	m := Manifest{Schema: 1, Build: buildinfo.Info{Version: "0.2.0", Revision: label, Protocol: buildinfo.Protocol, OS: runtime.GOOS, Arch: runtime.GOARCH}, Artifact: Artifact{Filename: name, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(content))}}
+	m := Manifest{Schema: 1, Build: buildinfo.Info{Version: "0.2.0", Revision: label, Protocol: buildinfo.Protocol, ProfileFormat: buildinfo.ProfileFormat(), OS: runtime.GOOS, Arch: runtime.GOARCH}, Artifact: Artifact{Filename: name, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(content))}}
 	os.WriteFile(filepath.Join(dir, name), content, 0700)
 	writeManifest(t, dir, m)
 	return dir, m
