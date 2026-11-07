@@ -136,6 +136,19 @@ func TestReadWorkspaceWindow_should_notDivideBudgetForManyLinesInSmallFile(t *te
 	}
 }
 
+func TestReadWorkspaceWindow_should_preserveSeparatorAfterClippedTailLine(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "clipped-tail.txt")
+	body := append(bytes.Repeat([]byte("A"), protocol.MaxReadBytes/2+100), []byte("\nB\n")...)
+	if err := os.WriteFile(path, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := readWorkspaceWindow(workspace, protocol.ReadPayload{Tail: 2, Limit: protocol.MaxReadBytes, Path: "clipped-tail.txt"}, int64(len(body)))
+	if err != nil || !bytes.Contains(got, []byte("\nB\n")) {
+		t.Fatalf("separator missing len=%d err=%v", len(got), err)
+	}
+}
+
 func TestReadWorkspaceWindow_should_notMarkExactFitLineTruncated(t *testing.T) {
 	workspace := t.TempDir()
 	path := filepath.Join(workspace, "exact.txt")

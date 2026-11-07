@@ -310,8 +310,12 @@ func readLinePrefix(reader *bufio.Reader, lineBudget, aggregateBudget int) ([]by
 	}
 	line := make([]byte, 0, minInt(keep, 4096))
 	clipped := false
+	delimiter := false
 	for {
 		chunk, err := reader.ReadSlice('\n')
+		if bytes.IndexByte(chunk, '\n') >= 0 {
+			delimiter = true
+		}
 		before := len(line)
 		if before < keep {
 			n := keep - before
@@ -331,6 +335,16 @@ func readLinePrefix(reader *bufio.Reader, lineBudget, aggregateBudget int) ([]by
 			}
 			if len(chunk) > len(line) && keep <= len(line) {
 				clipped = true
+			}
+			if clipped && delimiter && keep > 0 {
+				if keep == 1 {
+					line = []byte{'\n'}
+				} else {
+					if len(line) >= keep {
+						line = line[:keep-1]
+					}
+					line = append(line, '\n')
+				}
 			}
 			return line, clipped, err
 		}
