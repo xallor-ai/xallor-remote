@@ -1,10 +1,9 @@
 package cli
 
 import (
+	"fmt"
 	"github.com/xallor-ai/xallor-remote/internal/buildinfo"
-	"github.com/xallor-ai/xallor-remote/internal/ipc"
 	"os"
-	"time"
 )
 
 func ensureRuntime() error {
@@ -17,8 +16,14 @@ func ensureRuntime() error {
 		return err
 	}
 	defer unlock()
-	if c, err := ipc.Dial(500 * time.Millisecond); err == nil {
-		_ = c.Close()
+	live, err := (runtimeControl{}).Running()
+	if err != nil {
+		return err
+	}
+	if live != nil {
+		if live.ProfileFormat != buildinfo.ProfileFormat() || live.Protocol != buildinfo.Protocol {
+			return fmt.Errorf("正在运行的 Runtime 与当前数据格式不匹配，请先停止服务并检查配套安装与备份。")
+		}
 		return nil
 	}
 	bin, err := s.ActivePath()

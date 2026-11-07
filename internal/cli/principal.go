@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/xallor-ai/xallor-remote/internal/account"
 	"github.com/xallor-ai/xallor-remote/internal/principal"
-	"github.com/xallor-ai/xallor-remote/internal/relay"
+	"github.com/xallor-ai/xallor-remote/internal/storage"
 )
 
 func cmdRelayPrincipal(data *string) *cobra.Command {
@@ -19,7 +19,7 @@ func cmdRelayPrincipal(data *string) *cobra.Command {
 		if *data == "" {
 			return fmt.Errorf("需要 --data 指定中转数据目录")
 		}
-		s, err := relay.OpenSQLStore(*data)
+		s, err := storage.OpenSQLStore(*data)
 		if err != nil {
 			return err
 		}

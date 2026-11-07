@@ -2,17 +2,18 @@ package noderun
 
 import (
 	"context"
+
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 // Register before dispatching the goroutine: cancel can be the next Relay frame,
 // before payload parsing, approval, or child startup has run.
 func (d *Daemon) startLocalExec(link *wsConn, msg protocol.Message) {
-	ctx, cancel := context.WithCancel(d.ctx)
+	ctx, cancel := context.WithCancelCause(d.ctx)
 	d.mu.Lock()
 	if d.ctx.Err() != nil {
 		d.mu.Unlock()
-		cancel()
+		cancel(nil)
 		return
 	}
 	d.local[msg.ExecID] = cancel
@@ -21,7 +22,7 @@ func (d *Daemon) startLocalExec(link *wsConn, msg protocol.Message) {
 	go func() {
 		defer d.localWG.Done()
 		defer func() {
-			cancel()
+			cancel(nil)
 			d.mu.Lock()
 			delete(d.local, msg.ExecID)
 			d.mu.Unlock()

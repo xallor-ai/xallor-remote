@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -27,7 +28,7 @@ func TestIdentity_should_publishCommittedGrant_whenCancellationFollowsCommit(t *
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	s := &cancelAfterCommitStore{DeviceStore: newMemStore(), cancel: cancel}
-	h := NewHub(s, nil, nil)
+	h := NewHub(s, nil, nil, nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 	device := &contextSender{ctx: ctx}
 	if code := h.RegisterDevice("device", "secret", true, device); code != "" {
 		t.Fatal(code)
