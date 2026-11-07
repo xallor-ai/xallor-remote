@@ -173,15 +173,11 @@ func readTooLarge(size int64, p protocol.ReadPayload) bool {
 		return true
 	}
 	if p.Head > 0 || p.Tail > 0 {
-		budget := p.Limit
-		if budget <= 0 || budget > protocol.MaxReadBytes {
-			budget = protocol.DefaultReadBytes
-		}
 		count := p.Head
 		if count == 0 {
 			count = p.Tail
 		}
-		if int64(count)*int64(budget) > int64(protocol.MaxReadBytes) {
+		if count > protocol.MaxReadLines {
 			return true
 		}
 	}
@@ -244,7 +240,7 @@ func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) (
 			}
 			out = append(out, line...)
 			if len(out) >= protocol.MaxReadBytes || readErr == io.EOF {
-				truncated = readErr != io.EOF || len(out) >= protocol.MaxReadBytes
+				truncated = truncated || readErr != io.EOF || len(out) >= protocol.MaxReadBytes
 				break
 			}
 		}
