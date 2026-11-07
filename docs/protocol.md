@@ -170,6 +170,7 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 | --- | --- |
 | WSS 单帧 `data` | 64 KiB（解码后）；超则丢该数据帧并标 truncated |
 | WSS 读上限 | `MaxWSMessageBytes` = 6 × (write 上限 + 路径上限) + 8 KiB 信封；覆盖 JSON `\u00XX` 最坏转义 |
+| Runtime IPC / MCP 单条 JSON | `MaxIPCMessageBytes` = 6 × (write 上限 + 路径上限) + 8 KiB 信封，不含末尾换行；请求/回复同限额，未收到换行也须在超限时关闭连接。输出仍逐块传输，不累计事件副本；GUI 桥另有更小的本机展示预算 |
 | 路径 | 最长 4096 字节；超则 `policy_deny` |
 | 单次 stdout+stderr | **4 MiB** 后丢后续输出，`exit.truncated=true` |
 | Relay 每 inflight 待发缓冲 | **1 MiB**；超则丢数据帧并 truncated，不堵整条 device 连接 |
@@ -180,6 +181,7 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 | Relay 控制字节预留 | 接收/待发队列各从输出可用预算中预留 **128 KiB**；控制消息本身仍服从队列总上限，超载仍会断开 |
 | read 默认 / 上限 | 64 KiB / 1 MiB；少给则 `exit.truncated=true`，按 rune 边界切 |
 | read `offset` | 字节起点，可大于 1 MiB；落在 rune 中间则回退到该 rune 起点 |
+| read `head` / `tail` | 最多 1024 行；每个选中行按窗口预算保留前缀，超出返回 `truncated=true` |
 | **write 上限** | **1 MiB**（解码后）；整包 marshal 超 WSS 读上限则 `too_large`，不落盘 |
 | Relay 每设备在途请求 | **16**，所有非 cancel 操作合计，跨 client 连接共享；cancel 不占新名额。此项是传输预算，不是会员或本机作业额度 |
 | Runtime 本机作业占用 | 前台 exec 与后台 handoff 合计 **4**；其中 handoff 最多 **2**，不确定占用也计入；独立于 Relay inflight |

@@ -200,6 +200,7 @@ jobs:
       - run: python tests/principal_e2e.py
       - run: python -m unittest discover -s tests -p test_ready_url.py
       - run: python tests/client_auth_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
+      - run: python tests/ipc_bounds_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
       - run: python tests/ownership_e2e.py
       - run: python tests/foreground_authorization_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
       - run: python tests/process_lifetime_e2e.py
