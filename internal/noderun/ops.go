@@ -1,8 +1,10 @@
 package noderun
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -40,7 +42,7 @@ func (d *Daemon) runLocalRead(link *wsConn, msg protocol.Message) {
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.TooLarge))
 		return
 	}
-	raw, err := readWorkspaceFile(workspace, p.Path)
+	raw, err := readWorkspaceWindow(workspace, p, st.Size())
 	if err != nil {
 		nackReadErr(link, msg.ExecID, err)
 		return
@@ -162,10 +164,87 @@ func (d *Daemon) runLocalWrite(link *wsConn, msg protocol.Message) {
 }
 
 func readTooLarge(size int64, p protocol.ReadPayload) bool {
+	if p.Offset < 0 || p.Limit < 0 || p.Head < 0 || p.Tail < 0 || p.Offset > protocol.MaxReadOffsetBytes {
+		return true
+	}
 	if p.Head != 0 || p.Tail != 0 || p.Limit != 0 || p.Offset != 0 {
 		return false
 	}
 	return size > int64(protocol.MaxReadBytes)
+}
+
+// readWorkspaceWindow never materializes the whole target for a selected
+// window. Offset reads seek directly; head/tail keep only the requested byte
+// budget. The old readWorkspaceFile path remains for internal non-remote uses.
+func readWorkspaceWindow(workspace string, p protocol.ReadPayload, size int64) ([]byte, error) {
+	rel, err := workspaceRel(workspace, p.Path)
+	if err != nil {
+		return nil, err
+	}
+	root, err := openWorkspace(workspace)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	f, err := root.Open(rel)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	limit := p.Limit
+	if limit <= 0 || limit > protocol.MaxReadBytes {
+		limit = protocol.MaxReadBytes
+	}
+	if p.Offset != 0 || p.Limit != 0 {
+		if _, err := f.Seek(int64(p.Offset), io.SeekStart); err != nil {
+			return nil, err
+		}
+		return io.ReadAll(io.LimitReader(f, int64(limit)+1))
+	}
+	if p.Head > 0 {
+		reader := bufio.NewReader(io.LimitReader(f, int64(protocol.MaxReadBytes)))
+		var out []byte
+		for i := 0; i < p.Head; i++ {
+			line, readErr := reader.ReadBytes('\n')
+			out = append(out, line...)
+			if len(out) >= protocol.MaxReadBytes || readErr == io.EOF {
+				break
+			}
+		}
+		return out, nil
+	}
+	if p.Tail > 0 {
+		reader := bufio.NewReader(io.LimitReader(f, int64(size)))
+		lines := make([][]byte, 0, p.Tail)
+		for {
+			line, readErr := reader.ReadBytes('\n')
+			if readErr == io.EOF && len(line) == 0 {
+				break
+			}
+			if len(line) > protocol.MaxReadBytes {
+				line = line[len(line)-protocol.MaxReadBytes:]
+			}
+			lines = append(lines, line)
+			if len(lines) > p.Tail {
+				lines = lines[1:]
+			}
+			if readErr == io.EOF {
+				break
+			}
+		}
+		var out []byte
+		for _, line := range lines {
+			if len(out)+len(line) > protocol.MaxReadBytes {
+				line = line[len(line)-(protocol.MaxReadBytes-len(out)):]
+			}
+			out = append(out, line...)
+		}
+		return out, nil
+	}
+	if size > int64(protocol.MaxReadBytes) {
+		return nil, os.ErrInvalid
+	}
+	return io.ReadAll(io.LimitReader(f, int64(protocol.MaxReadBytes)+1))
 }
 
 func pathDenied(err error) bool {
