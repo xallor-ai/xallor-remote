@@ -60,6 +60,8 @@ Relay 下发 `handoff.submit` 时附带 `delegation`，客户端自报值被丢�
 
 未来 OIDC/SSO provider token 必须先经过独立 issuer/audience/JWKS/claim 验证，再由管理面把外部 `issuer+subject` 映射到本地 principal/membership；token 自报的 tenant、principal、role 或 device scope 不被接受。当前 Runtime 只实现 provider-neutral 的离线验证原语，不执行 issuer discovery、JWKS 网络获取、浏览器登录或 logout；未完成本地映射和每次成员/设备访问复验时，不得把 OIDC token 当作 `account_token`、grant 或设备授权。
 
+本地映射服务使用版本化 issuer 配置和 `(issuer,subject)` 唯一键。issuer、映射和 membership 必须同时 active、未过期，且 tenant/principal/membership/version 与本地当前成员一致；配置、轮换和撤销只接受严格递增版本，任何缺失、过期、撤销或版本不匹配都 fail-closed。`target info.oidc_mapping_contract` 与 `xallor-remote relay oidc` 只描述该边界；MCP/GUI 仍通过本机 Runtime IPC，未实现真实 IdP discovery、浏览器流程或 JWKS 网络获取。
+
 `access.request` 的 `request_id` 非空且不超过 128 字节，`payload` 不超过 16 KiB；未知 action 或非法参数返回 `agent_error`。payload 为以下之一：
 
 | action | 参数 | 作用 |
