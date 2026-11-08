@@ -24,6 +24,8 @@ SSOT：职责边界、落盘、官方预算、运维。**连接 / inflight / 流
 
 同一 `device_id`：**一条** device 连接（新的踢旧的）。**多条** client 连接，v0 一条 client 只绑一个目标。细节与踢线后果见 [dataplane.md](dataplane.md)。
 
+`relay registry` 与 target `info.relay_registry` 输出单 Relay sticky registry contract：持久 authority 负责 device identity，在线路由以内部 `device_uid` 和 access incarnation 绑定；新 device 连接先排入 hello，再替换旧连接；断线失败旧 inflight、释放 transport lease、保留 durable identity；旧连接/旧 route 的迟到事件不得到达新绑定。`/health` 只证明 Relay 进程/build liveness，不证明任何 device、target runtime 或执行就绪。多地域、多 Relay 归属、failover 和复制由 #70 另行设计，当前不提供。
+
 `device.settings` / `revoke`：**只处理来自对应 device 连接的消息**。client 连接上的同类消息丢弃或 `unauthorized`。
 
 ---

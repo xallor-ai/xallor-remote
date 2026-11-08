@@ -56,6 +56,8 @@ Use `xallor-remote entitlement contract` to inspect feature/value boundaries. It
 
 Use `xallor-remote usage contract` to inspect privacy-minimized usage event and unknown/idempotency rules. Local activity history is not tamper-evident audit and does not directly create billing.
 
+Use `xallor-remote relay registry` to inspect the single-Relay sticky routing contract; it does not claim multi-region HA or failover.
+
 For local development, run a Relay in one terminal:
 
 ```text

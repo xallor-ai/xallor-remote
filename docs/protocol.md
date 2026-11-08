@@ -95,6 +95,8 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 
 `info.usage_event_contract` 返回隐私最小化 usage event 字段、幂等和 unknown 规则。它与本机 `activity.json` 分离：activity 是 bounded 操作元数据历史，不是防篡改审计或账单；usage event 也不等于账单，只有独立管理面在确认终态后才能进一步计量。
 
+`info.relay_registry` 与 Relay `/health.registry` 返回单 Relay sticky routing contract；health 是进程/build liveness，不是 device readiness。Relay 只允许每个 device UID 一条 active device connection，旧连接/旧 route 的迟到事件必须丢弃；多地域 HA 不属于 v0。
+
 ```json
 {"script":{"text":"Get-Location","shell":"powershell"},"timeout_ms":30000}
 {"program":{"executable":"git","args":["status","--short"]},"cwd":"repo"}
