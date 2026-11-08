@@ -29,6 +29,7 @@ def main():
     clean = True
     try:
         npm = shutil.which("npm.cmd" if os.name == "nt" else "npm")
+        env = os.environ.copy()
         subprocess.run([npm, "install", "--prefix", str(root), "--no-audit", "--no-fund", str(archive)],
                        check=True, timeout=180, env=env)
         pkg = root / "node_modules/xallor-remote-mcp"
