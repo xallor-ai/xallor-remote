@@ -31,6 +31,13 @@ try {
   const status = JSON.parse(result.content[0].text);
   if (!/^[0-9]{9}$/.test(status.device_id) || status.version !== expectedVersion) throw Error("incorrect runtime identity");
   if (process.env.XALLOR_TEST_TARGET) {
+    if (process.env.XALLOR_TEST_USAGE_CONTRACT) {
+      const device = await call("tools/call", { name: "remote.device_info", arguments: { device_id: process.env.XALLOR_TEST_TARGET } });
+      if (device.isError) throw Error("MCP target usage contract lookup failed");
+      const info = JSON.parse(device.content[0].text);
+      if (JSON.stringify(info.usage_event_contract) !== JSON.stringify(JSON.parse(process.env.XALLOR_TEST_USAGE_CONTRACT)))
+        throw Error("MCP usage contract diverged from CLI/Runtime");
+    }
     const executed = await call("tools/call", { name: "remote.exec", arguments: { device_id: process.env.XALLOR_TEST_TARGET, script: { text: "echo mcp-e2e" } } });
     if (executed.isError || !executed.content.some(c => c.text?.includes("mcp-e2e") && c.text.includes("exit_code=0")))
       throw Error("MCP remote execution failed");
