@@ -31,6 +31,16 @@ type Owner struct {
 func (o *Owner) ID() string { return o.id }
 
 func (o *Owner) Start(ctx context.Context, cmd *exec.Cmd) (*process.Child, error) {
+	return o.StartWithBackend(ctx, cmd, process.NativeUser)
+}
+
+// Selection is checked before the durable launch boundary. Rejection cannot
+// start a native child or consume an uncertain started occupancy.
+func (o *Owner) StartWithBackend(ctx context.Context, cmd *exec.Cmd, name string) (*process.Child, error) {
+	backend, err := process.Select(name)
+	if err != nil {
+		return nil, err
+	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.closed || o.uncertain {
@@ -53,7 +63,7 @@ func (o *Owner) Start(ctx context.Context, cmd *exec.Cmd) (*process.Child, error
 		return nil, err
 	}
 	defer endStart()
-	child, err := process.Start(ctx, cmd)
+	child, err := backend.Start(ctx, cmd)
 	if err != nil {
 		if cmd.Process != nil || errors.Is(err, process.ErrCleanup) {
 			o.uncertain = true

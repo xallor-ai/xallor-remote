@@ -31,7 +31,7 @@ export function execToolText(
 export function execFrameText(frame: Frame, stdout: string, stderr: string, observedExecID = ""): { text: string; isError: boolean } {
   if (frame.ok !== true || frame.event || frame.code) {
     return {
-      text: [stdout, stderr ? `stderr:\n${stderr}` : "", frame.ok === false ? frame.message || frame.code || "执行失败。" : "执行结果未确认。", observedExecID ? `exec_id=${observedExecID}` : ""].filter(Boolean).join("\n"),
+      text: [stdout, stderr ? `stderr:\n${stderr}` : "", frame.ok === false ? frame.message || frame.code || "执行失败。" : "执行结果未确认。", frame.ok === false && frame.code ? `code=${frame.code}` : "", observedExecID ? `exec_id=${observedExecID}` : ""].filter(Boolean).join("\n"),
       isError: true,
     };
   }

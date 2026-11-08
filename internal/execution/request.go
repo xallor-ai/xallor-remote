@@ -27,6 +27,7 @@ type Program struct {
 }
 
 type Request struct {
+	Backend   string   `json:"backend,omitempty"`
 	Script    *Script  `json:"script,omitempty"`
 	Program   *Program `json:"program,omitempty"`
 	Cwd       string   `json:"cwd,omitempty"`
@@ -46,10 +47,10 @@ func Decode(raw []byte) (Request, error) {
 func validText(s string) bool { return utf8.ValidString(s) && !strings.ContainsRune(s, 0) }
 
 func (r Request) Validate() error {
-	if (r.Script == nil) == (r.Program == nil) || r.TimeoutMS < 0 || r.TimeoutMS > MaxTimeoutMS || !validText(r.Cwd) {
+	if (r.Script == nil) == (r.Program == nil) || r.TimeoutMS < 0 || r.TimeoutMS > MaxTimeoutMS || !validText(r.Cwd) || !validText(r.Backend) || len(r.Backend) > 64 {
 		return ErrInvalid
 	}
-	n := len(r.Cwd)
+	n := len(r.Cwd) + len(r.Backend)
 	if r.Script != nil {
 		if r.Script.Text == "" || !validText(r.Script.Text) {
 			return ErrInvalid
