@@ -165,7 +165,7 @@ jobs:
       - run: python -m unittest discover -s tests -p test_relay_templates.py
       - run: python -m unittest discover -s tests -p test_readme_docs.py
       - run: python scripts/build-release.py
-      - run: python tests/release_install_source_e2e.py --binary dist/release/windows-amd64/xallor-remote.exe
+      - run: python tests/release_install_source_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
       - run: node scripts/pack-mcp-with-runtime.mjs
       - run: python scripts/release_evidence.py
       - run: python tests/packaged_install.py
