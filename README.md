@@ -46,6 +46,8 @@ xallor-remote exec --device <device-id> --request-file ./execution.json --jsonl
 
 目标能力由对方 Runtime 的 `info` 决定；`remote.device_info` 会返回目标 `shell`、`execution_modes` 和 `execution_backend`。当前后端沿用目标当前用户权限，Windows/Linux 分别报告 Job Object/进程组回收，`sandbox` 为 `none`；控制端不能按自己的操作系统猜测目标能力，也不能把回收边界当成低权限沙箱。
 
+执行请求可用 `--backend native_user` 或 JSON 的 `backend` 显式要求目标后端；当前其他后端会在启动前返回 `backend_unavailable`，不会回退执行。低权限、cgroup 和 container 后端尚未实现。
+
 本机开发先在一个终端运行 Relay：
 
 ```text
