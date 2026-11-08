@@ -135,7 +135,12 @@ func TestExecAuthorization_should_preserveStartupUncertainty_evenWhenAuthorityLo
 		{false, process.ErrCleanup, nil},
 		{false, context.Canceled, errors.New("release failed")},
 	} {
-		if m := failedStartMessage(ctx, "id", tc.started, tc.startErr, tc.releaseErr); m.Type != protocol.TypeError || m.Code != protocol.AgentError {
+		m := failedStartMessage(ctx, "id", tc.started, tc.startErr, tc.releaseErr)
+		want := protocol.AgentError
+		if errors.Is(tc.startErr, process.ErrCleanup) {
+			want = protocol.ResourceUncertain
+		}
+		if m.Type != protocol.TypeError || m.Code != want {
 			t.Fatal(m)
 		}
 	}

@@ -142,6 +142,8 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 | `unsupported_shell` | 目标系统不支持配置的解释器名 |
 | `shell_unavailable` | 目标无法安全找到所选解释器；不会换壳重试 |
 | `quota_exceeded` | Relay 或目标 Runtime 的资源上限已满（如分享数、在途请求或本机作业容量） |
+| `resource_uncertain` | 本机作业清理或持久释放未确认；拒绝把重试当成 at-most-once，也不自动重放副作用 |
+| `resource_unavailable` | 本机作业账本不可用；执行未获准，不返回成功终态 |
 | `workspace_missing` | workspace 目录不可用 |
 | `too_large` | write/read、执行输入或目标命令行超过硬上限 |
 

@@ -86,24 +86,36 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 	}
 	owner, err := d.jobs.ReserveExec(*msg.Scope, msg.ExecID)
 	if err != nil {
-		code := protocol.AgentError
-		if errors.Is(err, job.ErrCapacity) {
-			code = protocol.QuotaExceeded
-		}
-		_ = link.send(protocol.Nack(msg.ExecID, code))
+		_ = link.send(protocol.Nack(msg.ExecID, executionAdmissionCode(err)))
 		return
 	}
-	defer owner.Finish()
+	finished := false
+	finishOwner := func() error {
+		if finished {
+			return nil
+		}
+		finished = true
+		return owner.Finish()
+	}
+	defer func() { _ = finishOwner() }()
 	stdout, stdoutWrite, err := os.Pipe()
 	if err != nil {
-		_ = link.send(protocol.Nack(msg.ExecID, protocol.AgentError))
+		if releaseErr := finishOwner(); releaseErr != nil {
+			_ = link.send(protocol.Err(msg.ExecID, executionResourceCode(releaseErr)))
+		} else {
+			_ = link.send(protocol.Nack(msg.ExecID, protocol.AgentError))
+		}
 		return
 	}
 	defer stdout.Close()
 	defer stdoutWrite.Close()
 	stderr, stderrWrite, err := os.Pipe()
 	if err != nil {
-		_ = link.send(protocol.Nack(msg.ExecID, protocol.AgentError))
+		if releaseErr := finishOwner(); releaseErr != nil {
+			_ = link.send(protocol.Err(msg.ExecID, executionResourceCode(releaseErr)))
+		} else {
+			_ = link.send(protocol.Nack(msg.ExecID, protocol.AgentError))
+		}
 		return
 	}
 	defer stderr.Close()
@@ -114,7 +126,7 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 	_ = stdoutWrite.Close()
 	_ = stderrWrite.Close()
 	if err != nil {
-		_ = link.send(failedStartMessage(ctx, msg.ExecID, cmd.Process != nil, err, owner.Finish()))
+		_ = link.send(failedStartMessage(ctx, msg.ExecID, cmd.Process != nil, err, finishOwner()))
 		return
 	}
 	var wg sync.WaitGroup
@@ -161,8 +173,9 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		<-drained
 		trunc = true
 	}
-	if releaseErr := owner.Finish(); releaseErr != nil || errors.Is(err, process.ErrCleanup) {
-		_ = link.send(protocol.Err(msg.ExecID, protocol.AgentError))
+	releaseErr := finishOwner()
+	if releaseErr != nil || errors.Is(err, process.ErrCleanup) {
+		_ = link.send(protocol.Err(msg.ExecID, executionResourceCode(errors.Join(releaseErr, err))))
 		return
 	}
 	code := 0
@@ -192,8 +205,11 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 // A failed start may already have created a process. Cancellation must not
 // downgrade that uncertainty (or a failed durable release) to a pre-start nack.
 func failedStartMessage(ctx context.Context, id string, started bool, startErr, releaseErr error) protocol.Message {
-	if started || releaseErr != nil || errors.Is(startErr, process.ErrCleanup) {
-		return protocol.Err(id, protocol.AgentError)
+	if releaseErr != nil {
+		return protocol.Err(id, executionResourceCode(releaseErr))
+	}
+	if started || errors.Is(startErr, process.ErrCleanup) {
+		return protocol.Err(id, executionResourceCode(startErr))
 	}
 	return protocol.Nack(id, startFailureCode(ctx))
 }
@@ -212,6 +228,30 @@ func executionErrorCode(err error) string {
 		return protocol.ProgramUnavailable
 	case errors.Is(err, execution.ErrUnsupportedProgram):
 		return protocol.UnsupportedProgram
+	default:
+		return protocol.AgentError
+	}
+}
+
+func executionAdmissionCode(err error) string {
+	switch {
+	case errors.Is(err, job.ErrCapacity):
+		return protocol.QuotaExceeded
+	case errors.Is(err, job.ErrUncertain):
+		return protocol.ResourceUncertain
+	case errors.Is(err, job.ErrUnavailable):
+		return protocol.ResourceUnavailable
+	default:
+		return protocol.AgentError
+	}
+}
+
+func executionResourceCode(err error) string {
+	switch {
+	case errors.Is(err, job.ErrUncertain), errors.Is(err, process.ErrCleanup):
+		return protocol.ResourceUncertain
+	case errors.Is(err, job.ErrUnavailable):
+		return protocol.ResourceUnavailable
 	default:
 		return protocol.AgentError
 	}

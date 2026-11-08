@@ -102,6 +102,8 @@ on disconnect: 退避重连；不恢复旧子进程
 
 **processes：** 当前用户可见即可。**info：** os/arch/hostname/version/workspace，并返回目标 Runtime 实际的 `execution_backend`。当前 backend 是 `native_user`：沿用当前用户权限，Windows 以 Job Object、Linux 以进程组监督子树，`sandbox` 明确为 `none`。低权限用户、Windows 令牌降权、Linux cgroup/container 尚未实现，不能从进程树回收推断这些能力；可选探测 docker / nvidia-smi / git（false 即可）。
 
+作业账本的 `reserved` 只表示已持久预留、尚未跨过进程启动边界；Runtime 重启时可以回收它。`occupied` 或 `uncertain` 都不能由父进程消失、断线、取消或可重试错误推断为已清理，重启会保留为 `uncertain` 并拒绝新准入，直到有明确的恢复证据。exec 在清理或账本释放未确认时发送 `resource_uncertain`，CLI/MCP 必须保留失败并停止自动重试；不确定副作用不重放。
+
 ---
 
 ## 7. 策略合同（诚实模型）

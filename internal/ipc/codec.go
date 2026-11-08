@@ -173,6 +173,10 @@ func Human(code string) string {
 		return "workspace 目录不可用。"
 	case "quota_exceeded":
 		return "已达到资源上限，请稍后再试。"
+	case "resource_uncertain":
+		return "本机任务资源释放未确认，拒绝重试；请先恢复或重启 Runtime。"
+	case "resource_unavailable":
+		return "本机任务账本不可用，未启动执行；请检查 Runtime 状态。"
 	case "unsupported_shell":
 		return "目标系统不支持所选 Shell，请在目标设备修改配置。"
 	case "shell_unavailable":
