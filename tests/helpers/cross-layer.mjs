@@ -42,6 +42,13 @@ try {
   assert.equal(targetInfo.relay_failover.version, 1);
   assert.deepEqual(targetInfo.relay_failover.health_states, ["healthy", "degraded", "unavailable", "unknown"]);
   assert.match(targetInfo.relay_failover.replay, /never automatically replay/);
+  assert.equal(targetInfo.plane_contract.version, 1);
+  assert.match(targetInfo.plane_contract.control_entry, /local Runtime IPC/);
+  assert.match(targetInfo.plane_contract.data_transport, /WSS/);
+  assert.match(targetInfo.plane_contract.http_boundary, /no public management API/);
+  assert.equal(targetInfo.oidc_mapping_contract.version, 1);
+  assert.equal(targetInfo.oidc_mapping_contract.key, "issuer + subject");
+  assert.match(targetInfo.oidc_mapping_contract.entry, /local Runtime IPC/);
   const contents = "中文 🌍\nline two\n";
   ok(await call(controller, "write", { device_id: targetID, path: "roundtrip.txt", content: contents }));
   assert.equal(ok(await call(controller, "read", { device_id: targetID, path: "roundtrip.txt" })).content, contents);
