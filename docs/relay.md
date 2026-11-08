@@ -73,7 +73,7 @@ SQLite 使用 `user_version` 管理结构版本。当前版本 6 加入后台委
 
 被控机导入身份凭据并连接 Relay 后，`device claim` 将本机设备认领到当前空间。`device owner` 查看归属和分享；`device share --member <成员关系ID> --allow info,read --ttl 24h` 授予指定操作；`device unshare --share <分享ID>` 撤销；`device transfer --member <接收者成员关系ID>` 转移并作废原分享。这些命令经本机 Runtime 的 device 连接完成，不把设备密钥交给控制方，也没有公开的 HTTP 管理入口。
 
-控制方导入对应成员的账号凭据后可用 `peer add --id <设备ID>` 添加已认领设备，无需共享码。权限、未认领模式和作业边界见 [platform.md](platform.md)；超时或断线不能推断事务是否提交，先核对归属/分享，转移时可由接收者确认，再决定下一步。
+控制方导入对应成员的账号凭据后可用 `peer add --device <设备ID>` 添加已认领设备，无需共享码。权限、未认领模式和作业边界见 [platform.md](platform.md)；超时或断线不能推断事务是否提交，先核对归属/分享，转移时可由接收者确认，再决定下一步。
 
 ## 4. 官方实例保护上限
 

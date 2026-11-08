@@ -26,7 +26,7 @@ try:
     cluster.add("controller")
     cluster.cli("target", "inbound", "on")
     grant = cluster.grant("target")
-    cluster.cli("controller", "peer", "add", "--id", target, "--grant", grant)
+    cluster.cli("controller", "peer", "add", "--device", target, "--grant", grant)
     subprocess.run([args.go, "test", "./internal/tui", "-run", "TestStreamExecE2E", "-count=1", "-timeout=60s"], cwd=root,
                    env=dict(cluster.env("controller"), XR_TUI_RESULT_E2E="1"), check=True, timeout=180)
     results.append("tui_real_stream_preserves_output_and_nonzero_exit")

@@ -30,7 +30,7 @@ try:
         cluster.cli(other_name, "grant", "issue")
         # CLI's human output is not a secret API. Read the owned fixture's grant file.
         grant = cluster.grant(other_name)
-        cluster.cli(name, "peer", "add", "--id", other_id, "--grant", grant)
+        cluster.cli(name, "peer", "add", "--device", other_id, "--grant", grant)
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]

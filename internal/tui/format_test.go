@@ -24,6 +24,9 @@ func TestFormatPeersEmpty(t *testing.T) {
 	if !strings.Contains(formatPeers(nil), "还没有对方设备") {
 		t.Fatal("empty hint")
 	}
+	if strings.Contains(formatPeers(nil), "--id") || !strings.Contains(formatPeers(nil), "--device") {
+		t.Fatal("peer hint uses the wrong target flag")
+	}
 }
 
 func TestFormatGrantEmpty(t *testing.T) {

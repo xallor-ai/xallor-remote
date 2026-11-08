@@ -68,7 +68,7 @@ func cmdGrant() *cobra.Command {
 	c := &cobra.Command{Use: "grant", Short: "本机授权码"}
 	c.AddCommand(&cobra.Command{
 		Use:   "issue",
-		Short: "签发（仅本机）",
+		Short: "签发新授权码并打开入站（仅本机）",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ensureRuntime(); err != nil {
 				return err
@@ -120,37 +120,43 @@ func cmdGrant() *cobra.Command {
 }
 
 func cmdPeer() *cobra.Command {
+	return cmdPeerWith(ensureRuntime, rpc)
+}
+
+type peerRPC func(string, map[string]any) (map[string]any, error)
+
+func cmdPeerWith(ensure func() error, call peerRPC) *cobra.Command {
 	c := &cobra.Command{Use: "peer", Short: "对方设备"}
-	var id, grant string
+	var device, grant string
 	add := &cobra.Command{
 		Use:   "add",
 		Short: "添加可控制的设备",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if id == "" {
-				return fmt.Errorf("需要 --id")
+			if device == "" {
+				return fmt.Errorf("需要 --device")
 			}
-			if err := ensureRuntime(); err != nil {
+			if err := ensure(); err != nil {
 				return err
 			}
-			_, err := rpc("peer.add", map[string]any{"device_id": id, "grant": grant})
+			_, err := call("peer.add", map[string]any{"device_id": device, "grant": grant})
 			if err != nil {
 				return err
 			}
-			fmt.Println("已添加", id)
+			fmt.Println("已添加", device)
 			return nil
 		},
 	}
-	add.Flags().StringVar(&id, "id", "", "对方设备 ID")
+	add.Flags().StringVar(&device, "device", "", "对方设备 ID")
 	add.Flags().StringVar(&grant, "grant", "", "未认领设备的共享授权码；账号授权访问可省略")
 	c.AddCommand(add)
 	c.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "列出 peer",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := ensureRuntime(); err != nil {
+			if err := ensure(); err != nil {
 				return err
 			}
-			res, err := rpc("peer.list", map[string]any{})
+			res, err := call("peer.list", map[string]any{})
 			if err != nil {
 				return err
 			}
@@ -165,27 +171,27 @@ func cmdPeer() *cobra.Command {
 			return nil
 		},
 	})
-	var rid string
+	var removeDevice string
 	rm := &cobra.Command{
 		Use:   "remove",
 		Short: "删除对方设备",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if rid == "" {
-				return fmt.Errorf("需要 --id")
+			if removeDevice == "" {
+				return fmt.Errorf("需要 --device")
 			}
-			if err := ensureRuntime(); err != nil {
+			if err := ensure(); err != nil {
 				return err
 			}
-			if _, err := rpc("peer.remove", map[string]any{"device_id": rid}); err != nil {
+			if _, err := call("peer.remove", map[string]any{"device_id": removeDevice}); err != nil {
 				return err
 			}
-			fmt.Println("已删除", rid)
+			fmt.Println("已删除", removeDevice)
 			return nil
 		},
 	}
-	rm.Flags().StringVar(&rid, "id", "", "对方设备 ID")
+	rm.Flags().StringVar(&removeDevice, "device", "", "对方设备 ID")
 	c.AddCommand(rm)
-	c.AddCommand(cmdPeerRename())
+	c.AddCommand(cmdPeerRenameWith(ensure, call))
 	return c
 }
 
