@@ -2,6 +2,8 @@ package protocol
 
 import "testing"
 
+// Static CLI/target/MCP metadata must expose bounded time, conflict retention
+// and checked aggregation while preserving privacy and unknown-outcome rules.
 func TestUsageEventContract_shouldDefinePrivacyAndUnknownBoundaries(t *testing.T) {
 	c := UsageEventContract()
 	if c.Version != 2 || len(c.Fields) != 9 || len(c.Outcomes) != 3 || c.UnknownPolicy == "" || c.Privacy == "" {
