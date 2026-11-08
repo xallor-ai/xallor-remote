@@ -116,14 +116,15 @@ func TestBackendFailure_shouldPreserveCleanupUncertainty(t *testing.T) {
 	for _, tc := range []struct {
 		started        bool
 		start, release error
+		wantCode       string
 	}{
-		{true, process.ErrBackendUnavailable, nil},
-		{false, errors.Join(process.ErrBackendUnavailable, process.ErrCleanup), nil},
-		{false, process.ErrBackendUnavailable, errors.New("release uncertain")},
+		{true, process.ErrBackendUnavailable, nil, protocol.ResourceUncertain},
+		{false, errors.Join(process.ErrBackendUnavailable, process.ErrCleanup), nil, protocol.ResourceUncertain},
+		{false, process.ErrBackendUnavailable, errors.New("release uncertain"), protocol.AgentError},
 	} {
 		m := failedStartMessage(ctx, "id", tc.started, tc.start, tc.release)
-		if m.Type != protocol.TypeError || m.Code != protocol.AgentError {
-			t.Fatal("backend error concealed uncertainty", m)
+		if m.Type != protocol.TypeError || m.Code != tc.wantCode {
+			t.Fatalf("backend error concealed uncertainty: want %s, got %s", tc.wantCode, m.Code)
 		}
 	}
 }
