@@ -39,7 +39,7 @@ test("missing env path falls through when no vendor", () => {
   }
 });
 
-test("bundled vendor binary is rejected without a provenance proof", () => {
+test("bundled vendor path is found, but selection is rejected without a provenance proof", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xr-mcp-v-"));
   const plat = vendorPlatformKey();
   const name = process.platform === "win32" ? "xallor-remote.exe" : "xallor-remote";
@@ -47,7 +47,7 @@ test("bundled vendor binary is rejected without a provenance proof", () => {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, "");
   try {
-    assert.equal(bundledBinary(root), undefined);
+    assert.equal(bundledBinary(root), target);
     const hit = findBinary(
       {
         ...process.env,

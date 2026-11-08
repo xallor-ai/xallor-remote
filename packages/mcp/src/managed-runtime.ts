@@ -2,10 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { packageBuild } from "./buildinfo.js";
-import { verifySourceSync } from "./source-trust.js";
+import type { SourceVerifier } from "./source-trust.js";
 
 // The Go installer owns this file. The launcher only verifies and selects an artifact.
-export function managedRuntime(dir: string): string | undefined {
+export function managedRuntime(dir: string, sourceVerifier?: SourceVerifier): string | undefined {
   const statePath = path.join(dir, "runtime", "state.json");
   if (!fs.existsSync(statePath)) return undefined;
   const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
@@ -25,7 +25,7 @@ export function managedRuntime(dir: string): string | undefined {
       createHash("sha256").update(fs.readFileSync(bin)).digest("hex") !== m.artifact.sha256) {
     throw new Error("已安装程序校验失败，请回滚或重新安装。");
   }
-  if (!verifySourceSync(bin, path.join(dir, "runtime", "versions", m.artifact.sha256, "manifest.json"), m.build)) {
+  if (!sourceVerifier || !sourceVerifier(bin, path.join(dir, "runtime", "versions", m.artifact.sha256, "manifest.json"), m.build)) {
     throw new Error("已安装程序来源未验证，请使用带 provenance 的发行包重新安装。");
   }
   return bin;

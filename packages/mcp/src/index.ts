@@ -11,6 +11,7 @@ import { MCP_VERSION } from "./version.js";
 import { guardedArgs, checkRuntimeBuild } from "./profile-format.js";
 import { packageBuild } from "./buildinfo.js";
 import { execInputSchema } from "./exec-input.js";
+import { verifySourceSync } from "./source-trust.js";
 
 let session: RuntimeIpc | undefined;
 
@@ -25,7 +26,7 @@ async function ensureRuntime(): Promise<RuntimeIpc> {
     try {
       await ipc.connect(400);
     } catch {
-      const bin = findBinary();
+      const bin = findBinary(process.env, { sourceVerifier: verifySourceSync });
       if (!bin) {
         throw new Error(INSTALL_HINT);
       }
