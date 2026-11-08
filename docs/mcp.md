@@ -49,13 +49,21 @@ Cursor 等 spawn 的短驻 stdio 进程：全局安装后的 `xallor-remote-mcp`
 | Tool | 作用 |
 | --- | --- |
 | `remote.devices` | peers + 在线状态 |
-| `remote.device_info` | 单台；只配一台可省 id；返回目标 `build`、`shell`、`execution_modes` 与 `execution_backend` |
+| `remote.device_info` | 单台；只配一台可省 id；返回目标 `build`、`shell`、`execution_modes`、`execution_backend`、`operation_policy`、`device_lifecycle` 与 `entitlement_contract` |
 | `remote.exec` | **流式**；script / program 二选一，cwd 默认对方 workspace；输入见 [protocol.md](protocol.md) |
 | `remote.exec_cancel` | exec_id，幂等 |
 | `remote.read` / `remote.write` | 路径原样传递 |
 | `remote.processes` | 只读 |
 
 不提供签发 / 轮换 / 吊销 grant、不开入站。`remote.exec_cancel` 只能取消本 MCP 会话经 Runtime 发起的 exec（最终仍受 protocol：按 client 连接隔离）。
+
+MCP 不执行浏览器 OIDC/SSO，也不把 provider token 当作 grant 或 tenant 授权；未来身份登录必须由管理面完成 issuer/audience/JWKS 验证和本地 membership 映射后，再由 Relay 按现有 account/access 规则复验。
+
+MCP 不读取或修改会员额度；`entitlement_contract` 只是 feature/unit/scope 说明。当前 MCP 结果不能把 transport quota、IP 保护或本机 job capacity 解释成订阅权益。
+
+MCP 只连接本机 Runtime IPC；不持有 Relay WSS、不调用公开管理 HTTP、不发送管理凭据到数据面。目标 info 的 `plane_contract` 与 Relay `/health.plane` 可用于核对这一边界。
+
+`usage_event_contract` 只是隐私最小化字段、幂等和 unknown 规则；MCP 不把本机 `activity.json` 当防篡改审计或直接账单，也不暴露命令、路径、输出、凭据或 IP。
 
 `write`：整文件覆盖、≤1 MiB、原子替换，见 [protocol.md](protocol.md) / [runtime.md](runtime.md)。`read` 的 `head`/`tail` 按行，`offset`/`limit` 按字节；默认 64 KiB。截断时 `truncated=true`，MCP 附一句「不是全文」。`exec` 结果含 `status`、`exit_code`、`duration_ms`、`truncated`、`exec_id`。非零退出、取消、超时、结果未确认 → `isError: true`；中断仍保留已接收的输出。确定性规则见 [ipc.md](ipc.md)。
 

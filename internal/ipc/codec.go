@@ -175,6 +175,16 @@ func Human(code string) string {
 		return "workspace 目录不可用。"
 	case "quota_exceeded":
 		return "已达到资源上限，请稍后再试。"
+	case "entitlement_unavailable":
+		return "权益服务不可用，已拒绝本次操作。"
+	case "entitlement_missing":
+		return "当前成员没有所需权益。"
+	case "entitlement_expired":
+		return "当前成员权益已过期。"
+	case "entitlement_inactive":
+		return "当前成员已停用。"
+	case "entitlement_exceeded":
+		return "本次操作超过当前权益额度。"
 	case "resource_uncertain":
 		return "本机任务资源释放未确认，拒绝重试；请先恢复或重启 Runtime。"
 	case "resource_unavailable":

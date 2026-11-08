@@ -46,6 +46,22 @@ xallor-remote exec --device <device-id> --request-file ./execution.json --jsonl
 
 目标能力由对方 Runtime 的 `info` 决定；`remote.device_info` 会返回目标 `shell`、`execution_modes` 和 `execution_backend`。当前后端沿用目标当前用户权限，Windows/Linux 分别报告 Job Object/进程组回收，`sandbox` 为 `none`；控制端不能按自己的操作系统猜测目标能力，也不能把回收边界当成低权限沙箱。
 
+`xallor-remote policy --json` 与目标 `info.operation_policy` 返回同一份操作矩阵，供 CLI、MCP 和 Agent 读取；GUI 后续接入本机 IPC 后复用同一字段。矩阵是静态边界说明；Relay 仍会在每次调用复验设备访问、成员/租户授权、grant、入站和版本状态。
+
+账号凭据与租户边界见 [OIDC/SSO 边界](docs/oidc.md)：当前 CLI 使用 Relay 运维签发的本地 credential，不执行浏览器登录；OIDC provider token 不能直接当作 grant 或 tenant 授权。
+
+设备 enrollment、claim、transfer、revoke、reset 的前置和失联处理可用 `xallor-remote device lifecycle` 查看；它是契约说明，不会从控制端远程修改设备归属。
+
+会员权益 feature/value 说明可用 `xallor-remote entitlement contract` 查看；它不读取余额，且不把 Relay inflight/IP 限额或本机 job 容量当作会员额度。
+
+隐私最小化 usage event 契约可用 `xallor-remote usage contract` 查看；本机 activity 历史不是防篡改审计，也不直接产生账单。
+
+单 Relay sticky registry 契约可用 `xallor-remote relay registry` 查看；它不代表多地域 HA 或 failover。
+
+多地域 failover 的 health/ownership/unknown/no-replay 契约可用 `xallor-remote relay failover` 查看；当前命令只报告规则，不执行自动切换。
+
+Control/data plane 分离契约可用 `xallor-remote relay planes` 查看；管理凭据只在管理入口使用，MCP/GUI 经本机 Runtime IPC，实时 invoke 只走 WSS 数据面。
+
 执行请求可用 `--backend native_user` 或 JSON 的 `backend` 显式要求目标后端；当前其他后端会在启动前返回 `backend_unavailable`，不会回退执行。低权限、cgroup 和 container 后端尚未实现。
 
 本机开发先在一个终端运行 Relay：

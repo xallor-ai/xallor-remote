@@ -5,10 +5,14 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 func cmdDevice() *cobra.Command {
 	root := &cobra.Command{Use: "device", Short: "本机设备归属与分享"}
+	root.AddCommand(&cobra.Command{Use: "lifecycle", Short: "显示设备 enrollment/claim/transfer/revoke/reset 契约", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(protocol.DeviceLifecycle())
+	}})
 	run := func(cmd *cobra.Command, parameters map[string]any) error {
 		if err := ensureRuntime(); err != nil {
 			return err
