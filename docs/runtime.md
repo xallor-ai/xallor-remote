@@ -104,6 +104,8 @@ on disconnect: 退避重连；不恢复旧子进程
 
 作业账本的 `reserved` 只表示已持久预留、尚未跨过进程启动边界；Runtime 重启时可以回收它。`occupied` 或 `uncertain` 都不能由父进程消失、断线、取消或可重试错误推断为已清理，重启会保留为 `uncertain` 并拒绝新准入，直到有明确的恢复证据。exec 在清理或账本释放未确认时发送 `resource_uncertain`，CLI/MCP 必须保留失败并停止自动重试；不确定副作用不重放。
 
+操作矩阵由 `internal/protocol` 定义并通过 `info.operation_policy` 和 CLI `policy --json` 暴露。它只说明静态操作边界；Relay 的动态身份、成员/租户、grant、入站和版本检查仍在每次调用执行，目标 Runtime 不把静态矩阵当成授权凭据。
+
 ---
 
 ## 7. 策略合同（诚实模型）

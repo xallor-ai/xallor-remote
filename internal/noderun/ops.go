@@ -471,6 +471,7 @@ func (d *Daemon) runLocalInfo(link *wsConn, msg protocol.Message) {
 		"shell":             shell.Describe(d.store.ConfigSnapshot().Shell),
 		"execution_modes":   []string{"script", "program"},
 		"execution_backend": process.Describe(),
+		"operation_policy":  protocol.PolicyMatrix(),
 		"docker":            false,
 		"nvidia":            false,
 	})

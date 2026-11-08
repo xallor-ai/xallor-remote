@@ -27,7 +27,10 @@ const sleep = process.platform === "win32" ? "Start-Sleep -Seconds 20" : "sleep 
 try {
   const target = await connect("target"), controller = await connect("controller"), stranger = await connect("controller");
   const call = (client, method, params = {}) => bounded(client.call(method, params));
-  ok(await call(controller, "info", { device_id: targetID }));
+  const targetInfo = JSON.parse(ok(await call(controller, "info", { device_id: targetID })).content);
+  assert.equal(targetInfo.operation_policy.version, 1);
+  assert.equal(targetInfo.operation_policy.sandbox, "none");
+  assert.deepEqual(targetInfo.operation_policy.operations.map(row => row.operation), ["info", "read", "write", "exec", "processes", "cancel", "handoff.submit", "handoff.get"]);
   const contents = "中文 🌍\nline two\n";
   ok(await call(controller, "write", { device_id: targetID, path: "roundtrip.txt", content: contents }));
   assert.equal(ok(await call(controller, "read", { device_id: targetID, path: "roundtrip.txt" })).content, contents);

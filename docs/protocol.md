@@ -87,7 +87,7 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 - `read`：路径 + `head`/`tail`（行）或 offset/limit（字节）
 - `write`：路径 + **完整** `content`。覆盖；无 append、无 patch
 
-`info.execution_modes` 返回 `["script","program"]`，供 Agent 选择输入方式。示例：
+`info.operation_policy` 返回 `{version,sandbox,operations}`，是 CLI `policy --json`、MCP `remote.device_info` 和 GUI 读取的同一静态操作矩阵。每行说明 Relay 动态授权、目标边界、审批、终态和重试规则；它不返回当前调用者的租户/成员授权，也不把 `sandbox:none` 包装成 OS 隔离。`info.execution_modes` 返回 `["script","program"]`，供 Agent 选择输入方式。示例：
 
 ```json
 {"script":{"text":"Get-Location","shell":"powershell"},"timeout_ms":30000}
