@@ -481,7 +481,7 @@ func (d *Daemon) runLocalInfo(link *wsConn, msg protocol.Message) {
 		"plane_contract":        protocol.ControlDataPlane(),
 		"oidc_mapping_contract": protocol.OIDCMapping(),
 		"docker":                false,
-		"nvidia":                false
+		"nvidia":                false,
 	})
 	_ = link.send(protocol.Message{Type: protocol.TypeStdout, ExecID: msg.ExecID, Data: string(body)})
 	d.sendOKExit(link, msg.ExecID, start, false)
