@@ -60,6 +60,8 @@ Relay 下发 `handoff.submit` 时附带 `delegation`，客户端自报值被丢�
 
 未来 OIDC/SSO provider token 必须先经过独立 issuer/audience/JWKS/claim 验证，再由管理面把外部 `issuer+subject` 映射到本地 principal/membership；token 自报的 tenant、principal、role 或 device scope 不被接受。当前 Runtime 只实现 provider-neutral 的离线验证原语，不执行 issuer discovery、JWKS 网络获取、浏览器登录或 logout；未完成本地映射和每次成员/设备访问复验时，不得把 OIDC token 当作 `account_token`、grant 或设备授权。
 
+本地映射服务使用版本化 issuer 配置和 `(issuer,subject)` 唯一键。issuer、映射和 membership 必须同时 active、未过期，且 tenant/principal/membership/version 与本地当前成员一致；配置、轮换和撤销只接受严格递增版本，任何缺失、过期、撤销或版本不匹配都 fail-closed。`target info.oidc_mapping_contract` 与 `xallor-remote relay oidc` 只描述该边界；MCP/GUI 仍通过本机 Runtime IPC，未实现真实 IdP discovery、浏览器流程或 JWKS 网络获取。
+
 `access.request` 的 `request_id` 非空且不超过 128 字节，`payload` 不超过 16 KiB；未知 action 或非法参数返回 `agent_error`。payload 为以下之一：
 
 | action | 参数 | 作用 |
@@ -96,6 +98,10 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 `info.usage_event_contract` 返回隐私最小化 usage event 字段、幂等和 unknown 规则。它与本机 `activity.json` 分离：activity 是 bounded 操作元数据历史，不是防篡改审计或账单；usage event 也不等于账单，只有独立管理面在确认终态后才能进一步计量。
 
 `info.relay_registry` 与 Relay `/health.registry` 返回单 Relay sticky routing contract；health 是进程/build liveness，不是 device readiness。Relay 只允许每个 device UID 一条 active device connection，旧连接/旧 route 的迟到事件必须丢弃；多地域 HA 不属于 v0。
+
+`info.relay_failover` 与 `/health.failover` 只返回 provider-neutral 四态和 no-replay contract。`healthy` 不等于 target ready，`unknown` 不等于 stopped/completed；网络分区、旧 route 或缺少终态时必须保留 unknown，不自动切换 ownership，也不重放有副作用的 invoke/handoff。
+
+`info.plane_contract` 与 `/health.plane` 返回 control/data plane 分离契约。管理凭据、租户/设备管理和持久状态不进入数据面载荷；MCP/GUI 只经本机 Runtime IPC，Relay 不提供管理 HTTP API。数据面仍必须每次通过实时身份/访问复验，缺少管理确认或终态时不得猜测成功。
 
 ```json
 {"script":{"text":"Get-Location","shell":"powershell"},"timeout_ms":30000}

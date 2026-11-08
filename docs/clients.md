@@ -22,6 +22,7 @@ SSOT：人怎么操作。命令前缀 `xallor-remote`。四个头与 Runtime 的
 | 授权 | CLI Must | 多 grant、绑账号 |
 | Peer | CLI Must | 分组 |
 | 会话 | CLI Must | 分屏、文件树 |
+| 文件 | CLI Must；GUI 提供 workspace 读/覆盖写入口 | 文件树、批量同步 |
 | 审批 | CLI/本机提示 Must | 推送 |
 | 审计 | Should | 导出 |
 | 账号 / 订阅 | 不做 | [platform.md](platform.md) |
@@ -57,6 +58,7 @@ xallor-remote device lifecycle
 xallor-remote entitlement contract
 xallor-remote usage contract
 xallor-remote relay registry
+xallor-remote relay failover
 ```
 
 `inbound off` 保留身份；`revoke` 销毁登记。`grant issue` 每次签发新授权码并打开入站；`inbound on` 在没有授权码时也会签发授权码，否则只打开入站。`inbound off` 不吊销已有授权码。`approve`：本机交互确认高危命令；无 TTY 时不要跑。
@@ -72,6 +74,8 @@ xallor-remote relay registry
 `xallor-remote usage contract` 输出隐私最小化 usage event 字段与 unknown/幂等规则；它不读取本机 activity 历史，不是审计导出或账单查询。
 
 `xallor-remote relay registry` 输出单 Relay sticky routing 契约；它不宣称多地域 HA、failover 或跨 Relay device ownership。
+
+`xallor-remote relay failover` 只输出四态 health、ownership、unknown execution 和 no-replay 规则；当前不执行自动切换。
 
 `exec` 文本入口只收一个完整脚本参数，不把多个片段自动拼接。单次 `--shell` 只选择本次任务的目标解释器，不修改配置。程序模式的 `--` 后逐项作为参数，空字符串和特殊字符仍须先正确通过本地 Shell；跨系统复杂输入优先使用 `--script-file` / `--request-file`，避免本地 Shell 提前展开。两种文件均在控制端读取，可带 UTF-8 BOM，`-` 从标准输入读取。JSON 形状及上限见 [protocol.md](protocol.md)，其中不含 device_id，由 `--device` 选择目标。
 

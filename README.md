@@ -58,6 +58,10 @@ xallor-remote exec --device <device-id> --request-file ./execution.json --jsonl
 
 单 Relay sticky registry 契约可用 `xallor-remote relay registry` 查看；它不代表多地域 HA 或 failover。
 
+多地域 failover 的 health/ownership/unknown/no-replay 契约可用 `xallor-remote relay failover` 查看；当前命令只报告规则，不执行自动切换。
+
+Control/data plane 分离契约可用 `xallor-remote relay planes` 查看；管理凭据只在管理入口使用，MCP/GUI 经本机 Runtime IPC，实时 invoke 只走 WSS 数据面。
+
 本机开发先在一个终端运行 Relay：
 
 ```text
