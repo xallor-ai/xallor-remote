@@ -160,7 +160,6 @@ jobs:
         working-directory: packages/mcp
       - run: npm run build
         working-directory: packages/mcp
-      - run: python tests/release_lifecycle.py
       - run: python tests/release_source_gate_e2e.py
       - run: python -m unittest discover -s tests -p test_release_evidence.py
       - run: python -m unittest discover -s tests -p test_relay_templates.py

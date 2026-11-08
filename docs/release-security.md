@@ -19,7 +19,7 @@
 将全部发行附件放入一个目录。使用来自可信源码/已审查版本的验证脚本，独立核对期望标签及完整 commit，再执行：
 
 ```text
-python scripts/verify_release.py --directory <附件目录> --source-ref refs/tags/v0.2.1 --revision <完整40位commit>
+python scripts/verify_release.py --directory <附件目录> --source-ref refs/tags/v0.2.2 --revision <完整40位commit>
 ```
 
 验证器先认证 index，再逐项验证大小、SHA 和来源证明；固定检查 `xallor-ai/xallor-remote/.github/workflows/release.yml`、预期 ref/commit，并拒绝自托管 runner。自托管发行可显式给 `--repo owner/repo`，该身份不能来自不可信制品。任一错误非零退出，不解压、不执行、不安装。脚本是验证入口，**不把验证结果转成可持久安装凭证**。当前在线验证会读取 GitHub attestation 服务；保存的 bundle 可用于人工 `gh attestation verify <artifact> --bundle <bundle> ...` 离线核验，但自动离线信任根更新与吊销未实现。
@@ -27,7 +27,7 @@ python scripts/verify_release.py --directory <附件目录> --source-ref refs/ta
 仅在验证成功后解压 zip 或安装 tgz，安装前再次确认目录未被其他进程修改。对 Windows PowerShell，下一步必须由退出码保护：
 
 ```powershell
-python scripts/verify_release.py --directory <附件目录> --source-ref refs/tags/v0.2.1 --revision <完整40位commit>
+python scripts/verify_release.py --directory <附件目录> --source-ref refs/tags/v0.2.2 --revision <完整40位commit>
 if ($LASTEXITCODE -ne 0) { throw '发行来源验证失败，停止安装' }
 # 此后再解压已验证 zip 或 npm install <已验证tgz>。
 ```

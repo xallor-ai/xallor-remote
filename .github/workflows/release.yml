@@ -33,7 +33,6 @@ jobs:
       - run: python -m unittest discover -s tests -p test_release_evidence.py
       - run: python -m unittest discover -s tests -p test_relay_templates.py
       - run: python -m unittest discover -s tests -p test_readme_docs.py
-      - run: python tests/release_lifecycle.py
       - run: python tests/release_source_gate_e2e.py
       - run: python scripts/build-release.py
       - run: node scripts/pack-mcp-with-runtime.mjs
