@@ -37,6 +37,18 @@ try {
   assert.deepEqual(targetInfo.entitlement_contract.features.map(feature => feature.name), ["exec.concurrent", "terminal.concurrent", "relay.bytes_per_second", "relay.monthly_egress_bytes", "file.max_transfer_bytes"]);
   assert.equal(targetInfo.usage_event_contract.version, 2);
   assert.deepEqual(targetInfo.usage_event_contract.outcomes, ["completed", "failed", "unknown"]);
+  assert.equal(targetInfo.relay_registry.version, 1);
+  assert.match(targetInfo.relay_registry.stale_event, /old connection/);
+  assert.equal(targetInfo.relay_failover.version, 1);
+  assert.deepEqual(targetInfo.relay_failover.health_states, ["healthy", "degraded", "unavailable", "unknown"]);
+  assert.match(targetInfo.relay_failover.replay, /never automatically replay/);
+  assert.equal(targetInfo.plane_contract.version, 1);
+  assert.match(targetInfo.plane_contract.control_entry, /local Runtime IPC/);
+  assert.match(targetInfo.plane_contract.data_transport, /WSS/);
+  assert.match(targetInfo.plane_contract.http_boundary, /no public management API/);
+  assert.equal(targetInfo.oidc_mapping_contract.version, 1);
+  assert.equal(targetInfo.oidc_mapping_contract.key, "issuer + subject");
+  assert.match(targetInfo.oidc_mapping_contract.entry, /local Runtime IPC/);
   assert.equal(targetInfo.usage_event_contract.time.format, "RFC3339Nano");
   assert.equal(targetInfo.usage_event_contract.time.zone, "UTC Z");
   assert.equal(targetInfo.usage_event_contract.time.canonical, true);

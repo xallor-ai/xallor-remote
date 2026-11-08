@@ -61,8 +61,8 @@ def main():
         # Inspect the real Relay database after exec, files, cancellation, and restart.
         # Operation payloads and output must not acquire a persistence collection.
         with closing(sqlite3.connect((cluster.root / "relay/relay.db").as_uri() + "?mode=ro", uri=True)) as db:
-            assert db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall() == [(name,) for name in ("authority", "device_grants", "device_ownership", "device_shares", "devices", "execution_signing_key", "memberships", "principal_credentials", "principals", "tenants")]
-            assert db.execute("PRAGMA user_version").fetchone() == (6,)
+            assert db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall() == [(name,) for name in ("authority", "device_grants", "device_ownership", "device_shares", "devices", "execution_signing_key", "memberships", "oidc_issuers", "oidc_subject_mappings", "principal_credentials", "principals", "tenants")]
+            assert db.execute("PRAGMA user_version").fetchone() == (8,)
             assert db.execute("SELECT singleton,typeof(key),length(key) FROM execution_signing_key").fetchall() == [(1, "blob", 32)]
             assert db.execute("SELECT inbound FROM devices WHERE id=?", (target,)).fetchone() == (1,)
             uid, grant_id, token_hash = db.execute("SELECT d.uid,g.id,g.token_hash FROM devices d JOIN device_grants g ON g.device_uid=d.uid WHERE d.id=?", (target,)).fetchone()

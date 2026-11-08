@@ -34,6 +34,8 @@ SSOT：本机进程关系。人侧命令清单见 [clients.md](clients.md)。MCP
 
 四个头 **对 Runtime 同级**：都是本机 IPC 客户端。谁也不做另一个的父进程。
 
+Control/data plane contract 由 target `info.plane_contract` 和 Relay `/health.plane` 返回：管理操作经本机 IPC 或已认证 device control message；数据面只走 Runtime↔Relay WSS invoke/事件。MCP/GUI 不持有 Relay WSS，Relay 不提供公开管理 HTTP API。
+
 | 头 | 寿命 | 对用户 | 对模型 | 改本机授权 |
 | --- | --- | --- | --- | --- |
 | Runtime | 长驻 | 无 UI | 无 | 执行（被头请求） |

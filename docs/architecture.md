@@ -20,6 +20,8 @@ Agent 或人
 
 两边都只出站。本机打不进目标机。
 
+Control/data plane 分离契约见 target `info.plane_contract` 与 Relay `/health.plane`：管理面提交身份、租户、设备设置和归属；数据面只转发已授权 invoke 与终态。管理凭据不进入数据面载荷，数据面不落盘命令/输出，也不通过 HTTP 绕过本机 Runtime。
+
 | 连接 | 证明 |
 | --- | --- |
 | 目标 Runtime → Relay（device） | 自己的 device_id + secret |
