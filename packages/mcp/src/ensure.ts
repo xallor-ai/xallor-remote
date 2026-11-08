@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { managedRuntime } from "./managed-runtime.js";
+import { verifySourceSync } from "./source-trust.js";
 
 export function dataDir(env: NodeJS.ProcessEnv = process.env): string {
 	if (env.XALLOR_REMOTE_DATA_DIR) {
@@ -63,7 +64,12 @@ export function bundledBinary(root = packageRoot()): string | undefined {
     const p = path.join(dir, n);
     try {
       fs.accessSync(p, fs.constants.F_OK);
-      return p;
+      const manifest = path.join(dir, "manifest.json");
+      if (!fs.existsSync(manifest)) continue;
+      try {
+        const parsed = JSON.parse(fs.readFileSync(manifest, "utf8"));
+        if (verifySourceSync(p, manifest, parsed.build)) return p;
+      } catch { /* reject unverified vendor */ }
     } catch {
       /* next */
     }
@@ -107,7 +113,12 @@ export function findBinary(env = process.env, opts: FindBinaryOpts = {}): string
   for (const c of candidates) {
     try {
       fs.accessSync(c, fs.constants.F_OK);
-      return c;
+      const manifest = path.join(path.dirname(c), "manifest.json");
+      if (!fs.existsSync(manifest)) continue;
+      try {
+        const parsed = JSON.parse(fs.readFileSync(manifest, "utf8"));
+        if (verifySourceSync(c, manifest, parsed.build)) return c;
+      } catch { /* reject unverified candidate */ }
     } catch {
       /* try next */
     }

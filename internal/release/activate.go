@@ -1,9 +1,12 @@
 package release
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/xallor-ai/xallor-remote/internal/buildinfo"
+	"path/filepath"
+	"time"
 )
 
 // Control must bound requests and verify the launched process's digest before success.
@@ -43,6 +46,15 @@ func (s Store) Rollback(c Control) error {
 	}
 	if target == nil {
 		return errors.New("no previous verified version is available")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	verified, err := withSourceSnapshot(ctx, filepath.Dir(s.Path(*target)), "", s.sourceVerifier, nil)
+	if err != nil {
+		return err
+	}
+	if verified != *target {
+		return errors.New("rollback source verification does not match the selected version")
 	}
 	if err = s.Verify(*target); err != nil {
 		return err
