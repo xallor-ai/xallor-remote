@@ -18,6 +18,7 @@ SSOT：资源归属、调用者、设备访问与权益的边界。操作系统�
 | 账号登录与支付集成 | 待实现；当前凭据由 Relay 运维签发，通过 Runtime 导入，不是浏览器登录 |
 
 OIDC/SSO 的 provider-neutral JWT/JWKS 验证契约见 [oidc.md](oidc.md)。它只验证外部 issuer/subject，不把外部 claims 当作 tenant/principal 授权；真实 IdP discovery、登录回调、JWKS 获取和管理面仍待实现。
+验证后的 `issuer+subject` 由本机控制面 `internal/oidc.MappingService` 映射到本地 tenant/principal/membership。issuer、映射和成员版本/有效期每次都复验，撤销或轮换后旧映射 fail-closed；MCP/GUI 不直接接 OIDC。
 
 Entitlement feature/value 与 admission 判定见 [entitlements.md](entitlements.md)。权益不写入 Runtime 本地安全账本；本机容量、Relay inflight 和 IP 保护不构成订阅或计费用量。
 
