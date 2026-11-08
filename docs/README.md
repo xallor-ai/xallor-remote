@@ -75,6 +75,7 @@ CLI：`xallor-remote`。路径与前缀见 [decisions.md](decisions.md)。`platf
 | **安装信任根设计与 #74 边界** | [install-trust-design.md](install-trust-design.md) |
 | #56/#76 治理候选验收与后续依赖 | [governance-acceptance.md](governance-acceptance.md) |
 | #75 受保护发行候选证据 | [attested-candidates.md](attested-candidates.md) |
+| #61 目标 Shell capability 验收 | [shell-capabilities-acceptance.md](shell-capabilities-acceptance.md) |
 | CLI 文档入口 / 参数审查 | [cli.md](cli.md) / [cli-ux-review.md](cli-ux-review.md)（建议未实施） |
 | Windows/Linux | [os.md](os.md) |
 | Account / 订阅 | [platform.md](platform.md) |
