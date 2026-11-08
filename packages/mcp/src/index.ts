@@ -134,7 +134,7 @@ function createServer(): McpServer {
   server.registerTool(
     "remote.device_info",
     {
-      description: "查询一台目标设备的 os/arch/hostname/workspace、shell 能力、执行模式、execution_backend、operation_policy 和 device_lifecycle。授权仍由 Relay 对每次操作复验；只配一台时可省略 device_id。",
+      description: "查询一台目标设备的 os/arch/hostname/workspace、shell 能力、执行模式、execution_backend、operation_policy、device_lifecycle 和 entitlement_contract。当前额度仍由管理面提供，授权仍由 Relay 对每次操作复验；只配一台时可省略 device_id。",
       inputSchema: z.object({
         device_id: z.string().optional().describe("目标设备 ID"),
       }),
