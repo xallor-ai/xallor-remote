@@ -19,6 +19,8 @@ SSOT：资源归属、调用者、设备访问与权益的边界。操作系统�
 
 OIDC/SSO 的 provider-neutral JWT/JWKS 验证契约见 [oidc.md](oidc.md)。它只验证外部 issuer/subject，不把外部 claims 当作 tenant/principal 授权；真实 IdP discovery、登录回调、JWKS 获取和管理面仍待实现。
 
+Entitlement feature/value 与 admission 判定见 [entitlements.md](entitlements.md)。权益不写入 Runtime 本地安全账本；本机容量、Relay inflight 和 IP 保护不构成订阅或计费用量。
+
 基础采用模块化单体。身份、授权、权益与准入有独立职责，可以先与 Relay 同进程部署；按实际负载拆部署。不能在 stdout 转发时访问登录或支付服务。
 
 ## 2. 长期对象关系

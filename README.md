@@ -52,6 +52,8 @@ xallor-remote exec --device <device-id> --request-file ./execution.json --jsonl
 
 设备 enrollment、claim、transfer、revoke、reset 的前置和失联处理可用 `xallor-remote device lifecycle` 查看；它是契约说明，不会从控制端远程修改设备归属。
 
+会员权益 feature/value 说明可用 `xallor-remote entitlement contract` 查看；它不读取余额，且不把 Relay inflight/IP 限额或本机 job 容量当作会员额度。
+
 本机开发先在一个终端运行 Relay：
 
 ```text

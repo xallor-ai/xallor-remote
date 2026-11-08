@@ -24,7 +24,7 @@ func Execute() error {
 		SilenceErrors: true,
 	}
 	addProfileFormatGuard(root)
-	root.AddCommand(cmdRelay(), cmdStart(), cmdEnsure(), cmdStop(), cmdStatus(), cmdDoctor(), cmdPolicy(), cmdGrant(), cmdInbound(), cmdRevoke(), cmdReset(), cmdPeer(), cmdExec(), cmdApprove(), cmdTUI(), cmdMCP(), cmdVersion(), cmdRuntime(), cmdIPCBridge(), cmdHandoff(), cmdAccount())
+	root.AddCommand(cmdRelay(), cmdStart(), cmdEnsure(), cmdStop(), cmdStatus(), cmdDoctor(), cmdPolicy(), cmdEntitlement(), cmdGrant(), cmdInbound(), cmdRevoke(), cmdReset(), cmdPeer(), cmdExec(), cmdApprove(), cmdTUI(), cmdMCP(), cmdVersion(), cmdRuntime(), cmdIPCBridge(), cmdHandoff(), cmdAccount())
 	root.AddCommand(cmdDevice())
 	root.AddCommand(cmdConfig())
 	return executeCLI(root, os.Args[1:])

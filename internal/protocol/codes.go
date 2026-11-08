@@ -22,6 +22,11 @@ const (
 	QuotaExceeded       = "quota_exceeded"
 	ResourceUncertain   = "resource_uncertain"
 	ResourceUnavailable = "resource_unavailable"
+	EntitlementUnavailable = "entitlement_unavailable"
+	EntitlementMissing = "entitlement_missing"
+	EntitlementExpired = "entitlement_expired"
+	EntitlementInactive = "entitlement_inactive"
+	EntitlementExceeded = "entitlement_exceeded"
 	WorkspaceMissing    = "workspace_missing"
 	TooLarge            = "too_large"
 )

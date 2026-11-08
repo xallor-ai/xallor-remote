@@ -91,6 +91,8 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 
 `info.operation_policy` 返回 `{version,sandbox,operations}`，是 CLI `policy --json` 和 MCP `remote.device_info` 当前读取的同一静态操作矩阵；GUI 后续通过本机 IPC 接入后复用该字段。每行说明 Relay 动态授权、目标边界、审批、终态和重试规则；它不返回当前调用者的租户/成员授权，也不把 `sandbox:none` 包装成 OS 隔离。`info.execution_modes` 返回 `["script","program"]`，供 Agent 选择输入方式。示例：
 
+`info.entitlement_contract` 返回稳定的 feature/unit/scope 说明，不返回余额或当前订阅。权益 decision 必须在 Relay/管理面基于当前 tenant、principal、membership version 和 expiry fail-closed 完成；传输硬顶、IP 保护、本机 job ledger 和协议大小上限保持独立。
+
 ```json
 {"script":{"text":"Get-Location","shell":"powershell"},"timeout_ms":30000}
 {"program":{"executable":"git","args":["status","--short"]},"cwd":"repo"}

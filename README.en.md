@@ -52,6 +52,8 @@ Account and tenant boundaries are documented in the [OIDC/SSO boundary](docs/oid
 
 Use `xallor-remote device lifecycle` to inspect enrollment, claim, transfer, revoke, and reset preconditions and uncertainty handling. It is a contract report and does not remotely mutate device ownership.
 
+Use `xallor-remote entitlement contract` to inspect feature/value boundaries. It does not read balances, and Relay inflight/IP limits or local job capacity are not treated as membership entitlements.
+
 For local development, run a Relay in one terminal:
 
 ```text
