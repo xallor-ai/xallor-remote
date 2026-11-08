@@ -23,7 +23,7 @@ func cmdExec() *cobra.Command {
 }
 
 func executionCommand(run func(*cobra.Command, string, execution.Request) error) *cobra.Command {
-	var device, shell, scriptFile, program, requestFile, cwd string
+	var device, shell, scriptFile, program, requestFile, cwd, backend string
 	var timeout int
 	c := &cobra.Command{
 		Use:   "exec [--script-file FILE | --program PROGRAM | --request-file FILE] -- [script or arguments]",
@@ -50,10 +50,10 @@ func executionCommand(run func(*cobra.Command, string, execution.Request) error)
 			if modes > 1 {
 				return fmt.Errorf("请选择一种输入：脚本文件、程序或请求文件。")
 			}
-			r := execution.Request{Cwd: cwd, TimeoutMS: timeout}
+			r := execution.Request{Cwd: cwd, TimeoutMS: timeout, Backend: backend}
 			switch {
 			case cmd.Flags().Changed("request-file"):
-				if len(args) != 0 || cmd.Flags().Changed("shell") || cmd.Flags().Changed("cwd") || cmd.Flags().Changed("timeout-ms") {
+				if len(args) != 0 || cmd.Flags().Changed("shell") || cmd.Flags().Changed("cwd") || cmd.Flags().Changed("timeout-ms") || cmd.Flags().Changed("backend") {
 					return fmt.Errorf("使用请求文件时，请把执行参数写入文件。")
 				}
 				b, err := readExecutionInput(requestFile, execution.MaxJSONBytes, cmd.InOrStdin())
@@ -98,6 +98,7 @@ func executionCommand(run func(*cobra.Command, string, execution.Request) error)
 	c.Flags().StringVar(&requestFile, "request-file", "", "读取本地执行请求 JSON；- 表示标准输入")
 	c.Flags().StringVar(&program, "program", "", "对方程序路径或名称，-- 后逐个传递程序参数")
 	c.Flags().StringVar(&cwd, "cwd", "", "对方工作目录（默认 workspace）")
+	c.Flags().StringVar(&backend, "backend", "", "对方执行后端（省略使用对方配置）；不支持时拒绝执行")
 	c.Flags().IntVar(&timeout, "timeout-ms", 0, "执行超时毫秒，0 不设期限，最长 3600000")
 	return c
 }
