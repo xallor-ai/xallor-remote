@@ -52,6 +52,9 @@ func TestVerify_should_failClosedOnIssuerAudienceAndTimeClaims(t *testing.T) {
 	if err != nil || claims.Subject != "subject-1" || claims.Issuer != testConfig().Issuer {
 		t.Fatalf("valid claims rejected: %+v %v", claims, err)
 	}
+	if claims.SubjectKey() != (Subject{Issuer: testConfig().Issuer, Value: "subject-1"}) {
+		t.Fatalf("unexpected local mapping key: %+v", claims.SubjectKey())
+	}
 	for name, mutate := range map[string]func(map[string]any){
 		"wrong issuer":    func(c map[string]any) { c["iss"] = "https://other.example" },
 		"wrong audience":  func(c map[string]any) { c["aud"] = "other" },

@@ -5,6 +5,7 @@
 package oidc
 
 import (
+	"context"
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -49,6 +50,28 @@ type Claims struct {
 	NotBefore *int64
 	IssuedAt  *int64
 }
+
+// Subject is the only external identity key a management plane may map. It
+// intentionally has no tenant, role or device fields.
+type Subject struct {
+	Issuer string
+	Value  string
+}
+
+type MembershipRef struct {
+	PrincipalID       string
+	TenantID          string
+	MembershipID      string
+	MembershipVersion int64
+}
+
+// SubjectMapper is implemented by a management/account adapter, never by a
+// token parser. A missing or inactive mapping must fail the login flow.
+type SubjectMapper interface {
+	Lookup(context.Context, Subject) (MembershipRef, error)
+}
+
+func (c Claims) SubjectKey() Subject { return Subject{Issuer: c.Issuer, Value: c.Subject} }
 
 type tokenClaims struct {
 	Issuer    string          `json:"iss"`
