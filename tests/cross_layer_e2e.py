@@ -32,6 +32,12 @@ def main():
         cluster.cli("target", "inbound", "on")
         grant = cluster.grant("target")
         cluster.cli("controller", "peer", "add", "--device", target, "--grant", grant)
+        unavailable = cluster.cli("controller", "exec", "--jsonl", "--backend", "container", "--", "echo must-not-fallback", check=False)
+        assert unavailable.returncode != 0, "CLI backend selection silently executed native"
+        backend_events = [json.loads(line) for line in unavailable.stdout.splitlines() if line.strip()]
+        assert any(row.get("type") == "error" and row.get("code") == "backend_unavailable" for row in backend_events), backend_events
+        assert not any(row.get("data") or row.get("type") == "exit" for row in backend_events), backend_events
+        results.append({"name":"cli_backend_selection_returns_structured_refusal", "status":"pass"})
         bad_exit = cluster.cli("controller", "exec", "--device", target, "--", "exit 7", check=False)
         assert bad_exit.returncode != 0, "CLI falsely reported nonzero remote exit as success"
         results.append({"name":"cli_propagates_nonzero_exit", "status":"pass"})

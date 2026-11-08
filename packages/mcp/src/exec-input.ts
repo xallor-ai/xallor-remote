@@ -11,7 +11,7 @@ export const execInputSchema = z.object({
     args: z.array(text).max(256).default([]),
   }).strict().optional().describe("直接启动对方程序，按数组保留参数，不经 Shell 展开"),
   device_id: z.string().optional(),
-  backend: text.max(64).optional().describe("对方执行后端；省略使用目标配置，不支持时拒绝且不回退"),
+  backend: text.refine(s => Buffer.byteLength(s, "utf8") <= 64, "后端名称最多 64 字节").optional().describe("对方执行后端；省略使用目标配置，不支持时拒绝且不回退"),
   cwd: text.optional().describe("对方工作目录，默认 workspace"),
   timeout_ms: z.number().int().min(0).max(3_600_000).optional().describe("超时毫秒，0 不设期限，最长 1 小时"),
 }).strict().refine(p => Boolean(p.script) !== Boolean(p.program), "script 与 program 必须且只能提供一个")
