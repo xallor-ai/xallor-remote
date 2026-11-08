@@ -11,6 +11,7 @@ import (
 
 	"github.com/xallor-ai/xallor-remote/internal/appdata"
 	"github.com/xallor-ai/xallor-remote/internal/atomicfile"
+	"github.com/xallor-ai/xallor-remote/internal/process"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
@@ -21,6 +22,7 @@ type Peer struct {
 }
 
 type Config struct {
+	ExecutionBackend string `json:"execution_backend,omitempty"`
 	RelayURL  string `json:"relay_url"`
 	Workspace string `json:"workspace"`
 	Shell     string `json:"shell,omitempty"`
@@ -91,6 +93,12 @@ func LoadFrom(dir string) (*Store, error) {
 			return nil, fmt.Errorf("invalid %s: %w", name, err)
 		}
 	}
+	// Reject an unsupported persisted backend before creating identity/workspace
+	// or contacting any Relay; corruption must never select native by fallback.
+	if _, err := process.Select(s.Config.ExecutionBackend); err != nil {
+		return nil, err
+	}
+	s.Config.ExecutionBackend = process.BackendName(s.Config.ExecutionBackend)
 	var err error
 	s.device, err = loadDeviceRecord(dir, true)
 	if err != nil {
