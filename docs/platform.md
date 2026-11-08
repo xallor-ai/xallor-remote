@@ -18,6 +18,9 @@ SSOT：资源归属、调用者、设备访问与权益的边界。操作系统�
 | 账号登录与支付集成 | 待实现；当前凭据由 Relay 运维签发，通过 Runtime 导入，不是浏览器登录 |
 
 OIDC/SSO 的 provider-neutral JWT/JWKS 验证契约见 [oidc.md](oidc.md)。它只验证外部 issuer/subject，不把外部 claims 当作 tenant/principal 授权；真实 IdP discovery、登录回调、JWKS 获取和管理面仍待实现。
+验证后的 `issuer+subject` 由本机控制面 `internal/oidc.MappingService` 映射到本地 tenant/principal/membership。issuer、映射和成员版本/有效期每次都复验，撤销或轮换后旧映射 fail-closed；MCP/GUI 不直接接 OIDC。
+
+Entitlement feature/value 与 admission 判定见 [entitlements.md](entitlements.md)。权益不写入 Runtime 本地安全账本；本机容量、Relay inflight 和 IP 保护不构成订阅或计费用量。
 
 基础采用模块化单体。身份、授权、权益与准入有独立职责，可以先与 Relay 同进程部署；按实际负载拆部署。不能在 stdout 转发时访问登录或支付服务。
 
@@ -37,6 +40,8 @@ OIDC/SSO 的 provider-neutral JWT/JWKS 验证契约见 [oidc.md](oidc.md)。它�
 | Usage | 费用归属、实际调用者、指标、数量、时间与去重标识；不含命令、路径、文件或 stdout |
 
 `internal/access` 承担设备实例、归属、操作权限与授权快照；其 Service 决定认领/分享/转移规则及访问权限，Relay 只提供已认证连接的设备证明并在提交后发布路由绑定。`internal/principal` 定义签发方推导的调用身份；`internal/account` 承担账号、成员和凭据管理用例，包括个人空间创建、成员角色选择、凭据生成与有效期。账号存储适配器只提供事务内读写，不生成凭据或隐式创建空间；新建主体/空间/成员/凭据在同一事务提交，提交结果未确认不返回凭据，也不自动重试。设备访问存储提供事务快照和原子写入；访问决策在同一快照中核对当前身份、归属与分享，管理操作在同一事务中重验设备证明和权限。只有已确认回滚的 busy 事务允许重试，提交结果未确认不返回变更结果。CLI 和未来管理入口不得直接编排 SQL，未来公开管理入口还须独立认证并授权管理者。存储迁移保留已有身份与凭据，运行时只使用最终模型，不保留旧字段别名或双写。
+
+设备生命周期的静态 contract 由 `internal/protocol` 定义，实际事务仍由 `identity`、`access`、`principal` 和 Relay 存储分别提交；它不引入第二套状态机。claim/transfer 只接受设备连接证明和有效 membership，revoke/reset 的本地提交与 Relay 注销回执分开处理，未知结果不自动重放，scope 变化必须重新握手。
 
 未认领设备使用共享授权码；已认领设备必须使用有效账号身份，由设备所有者或明确获授权的成员访问。共享码在已认领模式下不授予权限，清除账号不能绕过此边界。当前隔离覆盖 Relay 的设备及操作准入，不等于后台作业、回执和费用归属已经隔离。
 

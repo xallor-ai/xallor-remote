@@ -2,9 +2,10 @@ import { connection, rpc } from "./bridge";
 import { connectPage } from "./connect-page";
 import { tasksPage } from "./tasks-page";
 import { approvalPage, auditPage, settingsPage } from "./history-pages";
+import { filesPage } from "./files-page";
 import { pageError } from "./ui";
 
-const pages = { connect: ["连接", connectPage], tasks: ["任务", tasksPage], approval: ["审批", approvalPage], audit: ["审计", auditPage], settings: ["设置", settingsPage] } as const;
+const pages = { connect: ["连接", connectPage], tasks: ["任务", tasksPage], files: ["文件", filesPage], approval: ["审批", approvalPage], audit: ["审计", auditPage], settings: ["设置", settingsPage] } as const;
 type Page = keyof typeof pages;
 export function mount(root: HTMLElement): void {
   root.innerHTML = `<aside class="nav"><h1>XallorRemote</h1>${Object.entries(pages).map(([key, [label]]) => `<button data-page="${key}">${label}<span class="badge"></span></button>`).join("")}</aside><main><div id="connection" role="status"></div><div id="page"></div></main>`;

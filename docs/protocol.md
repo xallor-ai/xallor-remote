@@ -60,6 +60,8 @@ Relay 下发 `handoff.submit` 时附带 `delegation`，客户端自报值被丢�
 
 未来 OIDC/SSO provider token 必须先经过独立 issuer/audience/JWKS/claim 验证，再由管理面把外部 `issuer+subject` 映射到本地 principal/membership；token 自报的 tenant、principal、role 或 device scope 不被接受。当前 Runtime 只实现 provider-neutral 的离线验证原语，不执行 issuer discovery、JWKS 网络获取、浏览器登录或 logout；未完成本地映射和每次成员/设备访问复验时，不得把 OIDC token 当作 `account_token`、grant 或设备授权。
 
+本地映射服务使用版本化 issuer 配置和 `(issuer,subject)` 唯一键。issuer、映射和 membership 必须同时 active、未过期，且 tenant/principal/membership/version 与本地当前成员一致；配置、轮换和撤销只接受严格递增版本，任何缺失、过期、撤销或版本不匹配都 fail-closed。`target info.oidc_mapping_contract` 与 `xallor-remote relay oidc` 只描述该边界；MCP/GUI 仍通过本机 Runtime IPC，未实现真实 IdP discovery、浏览器流程或 JWKS 网络获取。
+
 `access.request` 的 `request_id` 非空且不超过 128 字节，`payload` 不超过 16 KiB；未知 action 或非法参数返回 `agent_error`。payload 为以下之一：
 
 | action | 参数 | 作用 |
@@ -80,7 +82,7 @@ Relay 在通过准入后重新构造发往 device 的非 cancel `invoke`，保�
 
 scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据续签、成员代次或重新签发同主体分享不改变它；新的设备 UID、归属实例或未认领共享授权实例会改变它。每次新调用仍独立完成现有认证和操作授权。handoff 收到缺失或非法 scope 返回 `unauthorized`，不回退设备级查询。原连接的 cancel 仍按 inflight 归属路由，不需要客户端传 scope。
 
-`info` 的 JSON 结果包含 `build`：version、revision、built_at（可省略）、dirty、protocol（当前为 1）、profile_format（本机持久化格式）、os、arch；用于区分运行制品与代码版本。未知 revision 为 `unknown`，不猜测提交。Relay health 返回同形构建身份。`execution_backend` 是目标 Runtime 当前真正使用的进程边界：`name` 目前为 `native_user`，`privilege` 为 `same_user`，`sandbox` 为 `none`；Windows 的 `process_tree` 为 `job_object`，Linux 为 `process_group`。`available=false` 或 `code=backend_unavailable` 时不得把执行当作可用，也不能把进程树回收边界当成低权限或 OS 沙箱。
+`info` 的 JSON 结果包含 `build`：version、revision、built_at（可省略）、dirty、protocol（当前为 1）、profile_format（本机持久化格式）、os、arch；用于区分运行制品与代码版本。未知 revision 为 `unknown`，不猜测提交。Relay health 返回同形构建身份。`execution_backend` 是目标 Runtime 当前真正使用的进程边界：`name` 目前为 `native_user`，`privilege` 为 `same_user`，`sandbox` 为 `none`；Windows 的 `process_tree` 为 `job_object`，Linux 为 `process_group`。`available=false` 或 `code=backend_unavailable` 时不得把执行当作可用，也不能把进程树回收边界当成低权限或 OS 沙箱。`device_lifecycle` 是 enrollment/claim/transfer/revoke/reset 的静态状态机契约；它不授予 client 管理权限，未知结果必须按契约停止自动重试并重新查询。
 
 `info.shell` 为 `{configured,selected?,available:[],code?}`：configured 为目标配置名或 auto，selected 是当前能找到的解释器名，available 是本系统受支持且可找到的名字；不能解析选择时返回 code，不伪造 selected。只探测可执行文件，不包含路径、版本或远程凭据。可选解释器及执行语义见 [os.md](os.md)。
 
@@ -90,6 +92,19 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 - `write`：路径 + **完整** `content`。覆盖；无 append、无 patch
 
 `info.operation_policy` 返回 `{version,sandbox,operations}`，是 CLI `policy --json` 和 MCP `remote.device_info` 当前读取的同一静态操作矩阵；GUI 后续通过本机 IPC 接入后复用该字段。每行说明 Relay 动态授权、目标边界、审批、终态和重试规则；它不返回当前调用者的租户/成员授权，也不把 `sandbox:none` 包装成 OS 隔离。`info.execution_modes` 返回 `["script","program"]`，供 Agent 选择输入方式。示例：
+
+`info.entitlement_contract` 返回稳定的 feature/unit/scope 说明，不返回余额或当前订阅。权益 decision 必须在 Relay/管理面基于当前 tenant、principal、membership version 和 expiry fail-closed 完成；传输硬顶、IP 保护、本机 job ledger 和协议大小上限保持独立。
+
+`info.usage_event_contract` 返回隐私最小化 usage event 字段、幂等和 unknown 规则。它与本机 `activity.json` 分离：activity 是 bounded 操作元数据历史，不是防篡改审计或账单；usage event 也不等于账单，只有独立管理面在确认终态后才能进一步计量。
+
+`info.relay_registry` 与 Relay `/health.registry` 返回单 Relay sticky routing contract；health 是进程/build liveness，不是 device readiness。Relay 只允许每个 device UID 一条 active device connection，旧连接/旧 route 的迟到事件必须丢弃；多地域 HA 不属于 v0。
+
+`info.relay_failover` 与 `/health.failover` 只返回 provider-neutral 四态和 no-replay contract。`healthy` 不等于 target ready，`unknown` 不等于 stopped/completed；网络分区、旧 route 或缺少终态时必须保留 unknown，不自动切换 ownership，也不重放有副作用的 invoke/handoff。
+
+`info.plane_contract` 与 `/health.plane` 返回 control/data plane 分离契约。管理凭据、租户/设备管理和持久状态不进入数据面载荷；MCP/GUI 只经本机 Runtime IPC，Relay 不提供管理 HTTP API。数据面仍必须每次通过实时身份/访问复验，缺少管理确认或终态时不得猜测成功。
+该契约 version 2 新增 `time`、`retention` 与 `aggregation`。At 为规范 `time.RFC3339Nano` UTC `Z` 字符串，最长 30 字节，范围闭区间 `1970-01-01T00:00:00Z` 至 `9999-12-31T23:59:59.999999999Z`；最多 9 位小数，尾部多余零、省略时区、偏移形式及逗号小数均拒绝。Append 省略 At 时生成 UTC 时间，持久化 At 不能省略。这里是表示/范围校验，不以时间戳证明真实终态或业务可信性。
+
+同一 ledger 最多保留 5000 个事件及 5000 个淘汰键 SHA-256 tombstone，版本化 envelope 总长最多 4 MiB。保留事件相同 key/event 重复为 no-op；淘汰键的任何重用均 `ErrConflict`。tombstone 满后，需要淘汰新键的追加返回 `ErrRetentionFull`；不丢旧键、不自动开启新幂等窗口。completed 汇总仅限保留事件的精确 tenant/membership scope，int64 溢出返回 `0,ErrOverflow`。这些错误属于本地 usage Go API，不引入新的远程 invoke 错误码。
 
 ```json
 {"script":{"text":"Get-Location","shell":"powershell"},"timeout_ms":30000}
@@ -144,6 +159,11 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 | `unsupported_shell` | 目标系统不支持配置的解释器名 |
 | `shell_unavailable` | 目标无法安全找到所选解释器；不会换壳重试 |
 | `quota_exceeded` | Relay 或目标 Runtime 的资源上限已满（如分享数、在途请求或本机作业容量） |
+| `entitlement_unavailable` | 权益提供方不可用；必须 fail closed，不回退为允许 |
+| `entitlement_missing` | 当前 tenant/membership 没有所需 feature |
+| `entitlement_expired` | 当前 membership 权益已过期 |
+| `entitlement_inactive` | 当前 membership 已停用 |
+| `entitlement_exceeded` | 请求的 feature 数值超过权益额度 |
 | `resource_uncertain` | 本机作业清理或持久释放未确认；拒绝把重试当成 at-most-once，也不自动重放副作用 |
 | `resource_unavailable` | 本机作业账本不可用；执行未获准，不返回成功终态 |
 | `workspace_missing` | workspace 目录不可用 |

@@ -35,8 +35,11 @@ def main():
         bad_exit = cluster.cli("controller", "exec", "--device", target, "--", "exit 7", check=False)
         assert bad_exit.returncode != 0, "CLI falsely reported nonzero remote exit as success"
         results.append({"name":"cli_propagates_nonzero_exit", "status":"pass"})
+        usage_contract = json.loads(cluster.cli("controller", "usage", "contract").stdout)
+        assert usage_contract["version"] == 2, usage_contract
         env = dict(cluster.env("controller"), XALLOR_TEST_CLUSTER=str(cluster.root),
-                   XALLOR_TEST_TARGET=target, XALLOR_TEST_RELAY_PID=str(cluster.relay.pid))
+                   XALLOR_TEST_TARGET=target, XALLOR_TEST_RELAY_PID=str(cluster.relay.pid),
+                   XALLOR_TEST_USAGE_CONTRACT=json.dumps(usage_contract))
         subprocess.run(["node", str(ROOT / "tests/helpers/cross-layer.mjs")], env=env, check=True, timeout=210)
         results += json.loads((cluster.root / "cross-layer-results.json").read_text(encoding="utf-8"))
         cluster.restart_relay()
@@ -52,13 +55,14 @@ def main():
         assert json.loads(cluster.cli("target", "status", "--json").stdout)["device_id"] == target
         results.append({"name":"relay_restart_reconnects_without_identity_change", "status":"pass"})
         subprocess.run(["node", str(ROOT / "tests/helpers/mcp-release-smoke.mjs")],
-                       env=dict(cluster.env("controller"), XALLOR_TEST_CLI=str(cluster.binary), XALLOR_TEST_TARGET=target), check=True, timeout=60)
+                       env=dict(cluster.env("controller"), XALLOR_TEST_CLI=str(cluster.binary), XALLOR_TEST_TARGET=target,
+                                XALLOR_TEST_USAGE_CONTRACT=json.dumps(usage_contract)), check=True, timeout=60)
         results.append({"name":"actual_mcp_executes_and_recovers_after_runtime_restart", "status":"pass"})
         # Inspect the real Relay database after exec, files, cancellation, and restart.
         # Operation payloads and output must not acquire a persistence collection.
         with closing(sqlite3.connect((cluster.root / "relay/relay.db").as_uri() + "?mode=ro", uri=True)) as db:
-            assert db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall() == [(name,) for name in ("authority", "device_grants", "device_ownership", "device_shares", "devices", "execution_signing_key", "memberships", "principal_credentials", "principals", "tenants")]
-            assert db.execute("PRAGMA user_version").fetchone() == (6,)
+            assert db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall() == [(name,) for name in ("authority", "device_grants", "device_ownership", "device_shares", "devices", "execution_signing_key", "memberships", "oidc_issuers", "oidc_subject_mappings", "principal_credentials", "principals", "tenants")]
+            assert db.execute("PRAGMA user_version").fetchone() == (8,)
             assert db.execute("SELECT singleton,typeof(key),length(key) FROM execution_signing_key").fetchall() == [(1, "blob", 32)]
             assert db.execute("SELECT inbound FROM devices WHERE id=?", (target,)).fetchone() == (1,)
             uid, grant_id, token_hash = db.execute("SELECT d.uid,g.id,g.token_hash FROM devices d JOIN device_grants g ON g.device_uid=d.uid WHERE d.id=?", (target,)).fetchone()
