@@ -17,6 +17,8 @@ SSOT：资源归属、调用者、设备访问与权益的边界。操作系统�
 | 权益覆盖值、真实资源周期租约、最小用量 | 待实现；固定 inflight 上限和 IP 保护不是会员额度 |
 | 账号登录与支付集成 | 待实现；当前凭据由 Relay 运维签发，通过 Runtime 导入，不是浏览器登录 |
 
+OIDC/SSO 的 provider-neutral JWT/JWKS 验证契约见 [oidc.md](oidc.md)。它只验证外部 issuer/subject，不把外部 claims 当作 tenant/principal 授权；真实 IdP discovery、登录回调、JWKS 获取和管理面仍待实现。
+
 基础采用模块化单体。身份、授权、权益与准入有独立职责，可以先与 Relay 同进程部署；按实际负载拆部署。不能在 stdout 转发时访问登录或支付服务。
 
 ## 2. 长期对象关系

@@ -59,7 +59,7 @@ xallor-remote reset --yes
 
 `config` 修改当前本机 Runtime；要改变对方执行解释器，在对方设备执行。`get` 返回 JSON 配置，`set --shell` 持久保存并用于后续任务，不改变已运行任务。各系统支持项和自动选择规则见 [os.md](os.md)。`auto` 恢复自动选择，空参数不是清除操作。
 
-`xallor-remote policy --json` 输出静态 operation contract；目标设备的 `info.operation_policy` 与 MCP `remote.device_info` 当前使用同一矩阵，GUI 后续通过本机 IPC 接入后复用。它说明操作边界和未知结果的重试规则，不代替 Relay 对当前成员、租户、grant、入站和版本的每次复验。
+`xallor-remote policy --json` 输出静态 operation contract；目标设备的 `info.operation_policy` 与 MCP `remote.device_info` 当前使用同一矩阵，GUI 后续通过本机 IPC 接入后复用。它说明操作边界和未知结果的重试规则，不代替 Relay 对当前成员、租户、grant、入站和版本的每次复验。账号 CLI 目前导入 Relay 运维签发的本地 credential，没有浏览器 OIDC/SSO 登录命令；provider token 必须先映射到本地 membership，不能直接使用其 tenant/principal claims。
 
 `exec` 文本入口只收一个完整脚本参数，不把多个片段自动拼接。单次 `--shell` 只选择本次任务的目标解释器，不修改配置。程序模式的 `--` 后逐项作为参数，空字符串和特殊字符仍须先正确通过本地 Shell；跨系统复杂输入优先使用 `--script-file` / `--request-file`，避免本地 Shell 提前展开。两种文件均在控制端读取，可带 UTF-8 BOM，`-` 从标准输入读取。JSON 形状及上限见 [protocol.md](protocol.md)，其中不含 device_id，由 `--device` 选择目标。
 

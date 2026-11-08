@@ -57,6 +57,8 @@ Cursor 等 spawn 的短驻 stdio 进程：全局安装后的 `xallor-remote-mcp`
 
 不提供签发 / 轮换 / 吊销 grant、不开入站。`remote.exec_cancel` 只能取消本 MCP 会话经 Runtime 发起的 exec（最终仍受 protocol：按 client 连接隔离）。
 
+MCP 不执行浏览器 OIDC/SSO，也不把 provider token 当作 grant 或 tenant 授权；未来身份登录必须由管理面完成 issuer/audience/JWKS 验证和本地 membership 映射后，再由 Relay 按现有 account/access 规则复验。
+
 `write`：整文件覆盖、≤1 MiB、原子替换，见 [protocol.md](protocol.md) / [runtime.md](runtime.md)。`read` 的 `head`/`tail` 按行，`offset`/`limit` 按字节；默认 64 KiB。截断时 `truncated=true`，MCP 附一句「不是全文」。`exec` 结果含 `status`、`exit_code`、`duration_ms`、`truncated`、`exec_id`。非零退出、取消、超时、结果未确认 → `isError: true`；中断仍保留已接收的输出。确定性规则见 [ipc.md](ipc.md)。
 
 ---
