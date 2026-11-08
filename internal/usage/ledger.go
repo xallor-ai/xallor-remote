@@ -6,22 +6,26 @@ package usage
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
-	"os"
+	"math"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/atomicfile"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
-const MaxEvents = 5000
-const maxBytes = 4 * 1024 * 1024
+const MaxEvents = protocol.MaxUsageEvents
+const MaxRetiredKeys = protocol.MaxUsageRetiredKeys
+const maxBytes = protocol.MaxUsageBytes
 
 var (
-	ErrInvalidEvent = errors.New("invalid usage event")
-	ErrConflict     = errors.New("usage idempotency conflict")
+	ErrInvalidEvent  = errors.New("invalid usage event")
+	ErrConflict      = errors.New("usage idempotency conflict")
+	ErrInvalidLedger = errors.New("usage ledger is invalid")
+	ErrRetentionFull = errors.New("usage retention metadata limit reached")
+	ErrOverflow      = errors.New("completed usage total overflows int64")
+	ErrLimit         = errors.New("usage ledger exceeds limit")
 )
 
 type Event struct {
@@ -37,42 +41,23 @@ type Event struct {
 }
 
 type Ledger struct {
-	mu     sync.Mutex
-	path   string
-	events []Event
-	byKey  map[string]Event
-	err    error
+	mu          sync.Mutex
+	path        string
+	events      []Event
+	byKey       map[string]Event
+	retiredKeys []string
+	retired     map[string]struct{}
+	write       func(string, []byte) error
+	err         error
 }
 
 func Open(dir string) *Ledger {
-	l := &Ledger{path: filepath.Join(dir, "usage.json"), events: []Event{}, byKey: map[string]Event{}}
+	l := &Ledger{path: filepath.Join(dir, "usage.json"), events: []Event{}, byKey: map[string]Event{}, retiredKeys: []string{}, retired: map[string]struct{}{}, write: atomicfile.Write}
 	if !filepath.IsAbs(dir) {
 		l.err = ErrInvalidEvent
 		return l
 	}
-	f, err := os.Open(l.path)
-	if os.IsNotExist(err) {
-		return l
-	}
-	if err != nil {
-		l.err = err
-		return l
-	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
-	if err != nil || len(data) > maxBytes || json.Unmarshal(data, &l.events) != nil || len(l.events) > MaxEvents {
-		l.err = fmt.Errorf("usage ledger is invalid")
-		l.events = nil
-		return l
-	}
-	for _, event := range l.events {
-		if err := validate(event); err != nil || l.byKey[event.IdempotencyKey].ID != "" {
-			l.err = fmt.Errorf("usage ledger is invalid")
-			l.events = nil
-			return l
-		}
-		l.byKey[event.IdempotencyKey] = event
-	}
+	l.err = l.load()
 	return l
 }
 
@@ -82,34 +67,48 @@ func (l *Ledger) Append(event Event) (Event, error) {
 	if l.err != nil {
 		return Event{}, l.err
 	}
+	old, exists := l.byKey[event.IdempotencyKey]
+	if event.At == "" {
+		if exists {
+			event.At = old.At
+		} else {
+			event.At = time.Now().UTC().Format(time.RFC3339Nano)
+		}
+	}
 	if err := validate(event); err != nil {
 		return Event{}, err
 	}
-	if old, ok := l.byKey[event.IdempotencyKey]; ok {
-		if event.At == "" {
-			event.At = old.At
-		}
+	if exists {
 		if old == event {
 			return old, nil
 		}
 		return Event{}, ErrConflict
 	}
-	if event.At == "" {
-		event.At = time.Now().UTC().Format(time.RFC3339Nano)
+	if _, exists := l.retired[keyDigest(event.IdempotencyKey)]; exists {
+		return Event{}, ErrConflict
 	}
 	next := append(append([]Event(nil), l.events...), event)
+	nextKeys := l.retiredKeys
 	if len(next) > MaxEvents {
+		if len(nextKeys) >= MaxRetiredKeys {
+			return Event{}, ErrRetentionFull
+		}
+		nextKeys = append(append([]string(nil), nextKeys...), keyDigest(next[0].IdempotencyKey))
 		next = next[len(next)-MaxEvents:]
 	}
-	data, err := json.Marshal(next)
+	data, err := json.Marshal(diskState{Version: 1, Events: next, RetiredKeys: nextKeys})
 	if err != nil || len(data) > maxBytes {
-		return Event{}, fmt.Errorf("usage ledger exceeds limit")
+		return Event{}, ErrLimit
 	}
-	if err := atomicfile.Write(l.path, data); err != nil {
+	if err := l.write(l.path, data); err != nil {
 		l.err = err
 		return Event{}, err
 	}
 	l.events = next
+	l.retiredKeys = nextKeys
+	if len(nextKeys) > len(l.retired) {
+		l.retired[nextKeys[len(nextKeys)-1]] = struct{}{}
+	}
 	l.byKey = make(map[string]Event, len(next))
 	for _, row := range next {
 		l.byKey[row.IdempotencyKey] = row
@@ -136,23 +135,11 @@ func (l *Ledger) CompletedUnits(tenant, membership string) (int64, error) {
 	var total int64
 	for _, row := range rows {
 		if row.TenantID == tenant && row.MembershipID == membership && row.Outcome == "completed" {
+			if row.Units > math.MaxInt64-total {
+				return 0, ErrOverflow
+			}
 			total += row.Units
 		}
 	}
 	return total, nil
 }
-
-func validate(event Event) error {
-	if !bounded(event.ID) || !bounded(event.IdempotencyKey) || !bounded(event.TenantID) || !bounded(event.MembershipID) || !bounded(event.DeviceUID) || !bounded(event.Operation) || event.At != "" && len(event.At) > 64 || event.Units < 0 {
-		return ErrInvalidEvent
-	}
-	if event.Outcome != "completed" && event.Outcome != "failed" && event.Outcome != "unknown" {
-		return ErrInvalidEvent
-	}
-	if event.Outcome == "completed" && (event.TenantID == "" || event.MembershipID == "" || event.DeviceUID == "" || event.Operation == "") {
-		return ErrInvalidEvent
-	}
-	return nil
-}
-
-func bounded(value string) bool { return value != "" && len(value) <= 128 }
