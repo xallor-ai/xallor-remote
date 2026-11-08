@@ -142,7 +142,7 @@ func (j JWK) RSA() (*rsa.PublicKey, error) {
 		return nil, ErrInvalidConfig
 	}
 	n, err := base64.RawURLEncoding.DecodeString(j.N)
-	if err != nil || len(n) == 0 {
+	if err != nil || len(n) == 0 || new(big.Int).SetBytes(n).BitLen() < 2048 {
 		return nil, ErrInvalidConfig
 	}
 	eBytes, err := base64.RawURLEncoding.DecodeString(j.E)

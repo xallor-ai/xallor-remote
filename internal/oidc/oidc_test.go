@@ -124,6 +124,9 @@ func TestConfig_should_requireExplicitHTTPSIssuerAudienceAndJWKS(t *testing.T) {
 	if strings.Contains(string(mustJSON(Claims{Subject: "subject"})), "tenant") {
 		t.Fatal("claims contract grew tenant authority")
 	}
+	if _, err := (JWK{KeyID: "weak", KeyType: "RSA", Use: "sig", Algorithm: "RS256", N: base64.RawURLEncoding.EncodeToString([]byte{1, 2, 3}), E: "AQAB"}).RSA(); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("accepted weak RSA key: %v", err)
+	}
 }
 
 func mustJSON(value any) []byte { raw, _ := json.Marshal(value); return raw }
