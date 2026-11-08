@@ -205,11 +205,11 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 // A failed start may already have created a process. Cancellation must not
 // downgrade that uncertainty (or a failed durable release) to a pre-start nack.
 func failedStartMessage(ctx context.Context, id string, started bool, startErr, releaseErr error) protocol.Message {
-	if releaseErr != nil {
-		return protocol.Err(id, executionResourceCode(releaseErr))
-	}
 	if started || errors.Is(startErr, process.ErrCleanup) {
-		return protocol.Err(id, executionResourceCode(startErr))
+		return protocol.Err(id, protocol.ResourceUncertain)
+	}
+	if releaseErr != nil {
+		return protocol.Err(id, executionResourceCode(errors.Join(startErr, releaseErr)))
 	}
 	return protocol.Nack(id, startFailureCode(ctx))
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/delegation"
 	"github.com/xallor-ai/xallor-remote/internal/identity"
 	"github.com/xallor-ai/xallor-remote/internal/invocation"
+	"github.com/xallor-ai/xallor-remote/internal/job"
 	"github.com/xallor-ai/xallor-remote/internal/process"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -134,10 +135,11 @@ func TestExecAuthorization_should_preserveStartupUncertainty_evenWhenAuthorityLo
 		{true, errors.New("attach failed"), nil},
 		{false, process.ErrCleanup, nil},
 		{false, context.Canceled, errors.New("release failed")},
+		{false, process.ErrCleanup, job.ErrUnavailable},
 	} {
 		m := failedStartMessage(ctx, "id", tc.started, tc.startErr, tc.releaseErr)
 		want := protocol.AgentError
-		if errors.Is(tc.startErr, process.ErrCleanup) {
+		if tc.started || errors.Is(tc.startErr, process.ErrCleanup) {
 			want = protocol.ResourceUncertain
 		}
 		if m.Type != protocol.TypeError || m.Code != want {
