@@ -80,6 +80,10 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 
 `info` 的 JSON 结果包含 `build`：version、revision、built_at（可省略）、dirty、protocol（当前为 1）、profile_format（本机持久化格式）、os、arch；用于区分运行制品与代码版本。未知 revision 为 `unknown`，不猜测提交。Relay health 返回同形构建身份。`execution_backend` 是目标 Runtime 当前真正使用的进程边界：`name` 目前为 `native_user`，`privilege` 为 `same_user`，`sandbox` 为 `none`；Windows 的 `process_tree` 为 `job_object`，Linux 为 `process_group`。`available=false` 或 `code=backend_unavailable` 时不得把执行当作可用，也不能把进程树回收边界当成低权限或 OS 沙箱。
 
+`info.execution_backends` 返回目标注册表的 capability 列表；当前只有 `native_user` 可用，`low_privilege`、`cgroup`、`container` 都是明确 `available:false,code:backend_unavailable` 的预留项。未知 backend 同样拒绝，不按名称猜测能力。目标本机配置字段 `execution_backend` 省略时为 `native_user`；配置 unsupported backend 时整个更新拒绝，持久化配置中的 unsupported backend 阻止 Runtime 启动，不回退默认值。
+
+`exec.backend` 可选，最多 64 字节并计入输入总长；省略或空字符串使用目标本机选择。显式值必须与目标配置匹配且 provider 可用。目标在审批、可执行文件解析、占用预留与 process start 前检查，失败返回唯一 `invoke_nack/backend_unavailable`，不执行 native fallback。控制侧不以自己的 OS 判断对方是否支持 backend。当前 backend 选择范围是 `exec`；read/write/processes/handoff 不因此获得隔离。已启动或 cleanup/release 不确定的情况仍是未知失败终态，不能因为出现 backend 错误而降为“未执行”或成功。
+
 `info.shell` 为 `{configured,selected?,available:[],code?}`：configured 为目标配置名或 auto，selected 是当前能找到的解释器名，available 是本系统受支持且可找到的名字；不能解析选择时返回 code，不伪造 selected。只探测可执行文件，不包含路径、版本或远程凭据。可选解释器及执行语义见 [os.md](os.md)。
 
 - `exec`：`script: {text, shell?}` 或 `program: {executable, args?}` 二选一，另有 `cwd?`、`timeout_ms?`。`text` / `executable` 必须非空；args 为字符串数组，省略时无参数。script.shell 省略时使用目标配置，显式 auto 使用目标自动选择。cwd、程序路径及 PATH 均属于目标设备；文本、参数不得含 NUL 或非法 Unicode，未知字段与非法形状返回 `invalid_execution`。可选字段应省略，不使用 null。CLI、IPC 和 MCP 使用同一输入形状，IPC/MCP 另带路由字段 device_id。脚本不跨语言翻译，程序参数不拼接成脚本。具体目标系统约束见 [os.md](os.md)。
@@ -88,6 +92,8 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 - `write`：路径 + **完整** `content`。覆盖；无 append、无 patch
 
 `info.execution_modes` 返回 `["script","program"]`，供 Agent 选择输入方式。示例：
+
+执行请求的可选 `backend` 由目标 Runtime 解析；当前只有 `native_user` 可用。未知或未实现后端在启动前返回 `backend_unavailable`，不回退为 native_user。该字段不表示 OS 沙箱或权限降级。
 
 ```json
 {"script":{"text":"Get-Location","shell":"powershell"},"timeout_ms":30000}
@@ -138,6 +144,7 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 | `runtime_unavailable` | 执行头无法启动或连接本机 Runtime，本次尚未发送执行请求 |
 | `invalid_execution` | 执行输入形状、文本或参数无效 |
 | `program_unavailable` | 目标无法安全找到指定程序；不回退到 Shell |
+| `backend_unavailable` | 请求与目标本机 backend 不匹配或 provider 不可用；启动前拒绝，不回退 native_user |
 | `unsupported_program` | Windows program 模式选择了批处理文件或 cmd.exe，须改为显式脚本调用 |
 | `unsupported_shell` | 目标系统不支持配置的解释器名 |
 | `shell_unavailable` | 目标无法安全找到所选解释器；不会换壳重试 |

@@ -46,6 +46,8 @@ The program and working directory belong to the target; the request file is loca
 
 Target capabilities come from the target Runtime's `info`; `remote.device_info` returns the target `shell`, `execution_modes`, and `execution_backend`. The current backend keeps the target user's privileges and reports a Job Object/process-group cleanup boundary on Windows/Linux with `sandbox: none`. The controller must use the target capability result instead of guessing from its own OS, and must not treat cleanup supervision as a least-privilege sandbox.
 
+An execution request may explicitly select `--backend native_user` or the JSON `backend` field. Unsupported backends fail before start with `backend_unavailable`; they never silently fall back. Low-privilege, cgroup, and container backends are not implemented yet.
+
 For local development, run a Relay in one terminal:
 
 ```text

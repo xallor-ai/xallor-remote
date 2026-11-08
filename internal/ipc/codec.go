@@ -143,6 +143,8 @@ func Human(code string) string {
 		return "无法连接本机 Runtime，请检查服务状态。"
 	case "invalid_execution":
 		return "执行参数无效，请选择脚本或程序并检查参数。"
+	case "backend_unavailable":
+		return "目标不支持所选执行后端，请检查目标配置与设备信息。"
 	case "program_unavailable":
 		return "目标程序不可用，请检查对方的安装路径和 PATH。"
 	case "unsupported_program":

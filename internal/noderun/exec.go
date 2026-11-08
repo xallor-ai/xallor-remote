@@ -30,6 +30,11 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.InboundDisabled))
 		return
 	}
+	backend, err := process.Resolve(cfg.ExecutionBackend, p.Backend)
+	if err != nil {
+		_ = link.send(protocol.Nack(msg.ExecID, protocol.BackendUnavailable))
+		return
+	}
 	policyText := executionPolicyText(p)
 	if hardDenyCommand(policyText) {
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.PolicyDeny))
@@ -110,7 +115,7 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 	defer stderrWrite.Close()
 	cmd.Stdout, cmd.Stderr = stdoutWrite, stderrWrite
 	start := time.Now()
-	child, err := owner.Start(ctx, cmd)
+	child, err := owner.StartWithBackend(ctx, cmd, backend.Capability().Name)
 	_ = stdoutWrite.Close()
 	_ = stderrWrite.Close()
 	if err != nil {
@@ -195,11 +200,16 @@ func failedStartMessage(ctx context.Context, id string, started bool, startErr, 
 	if started || releaseErr != nil || errors.Is(startErr, process.ErrCleanup) {
 		return protocol.Err(id, protocol.AgentError)
 	}
+	if errors.Is(startErr, process.ErrBackendUnavailable) {
+		return protocol.Nack(id, protocol.BackendUnavailable)
+	}
 	return protocol.Nack(id, startFailureCode(ctx))
 }
 
 func executionErrorCode(err error) string {
 	switch {
+	case errors.Is(err, process.ErrBackendUnavailable):
+		return protocol.BackendUnavailable
 	case errors.Is(err, execution.ErrInvalid):
 		return protocol.InvalidExecution
 	case errors.Is(err, shell.ErrUnsupported):

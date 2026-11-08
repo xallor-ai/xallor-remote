@@ -27,7 +27,37 @@ const sleep = process.platform === "win32" ? "Start-Sleep -Seconds 20" : "sleep 
 try {
   const target = await connect("target"), controller = await connect("controller"), stranger = await connect("controller");
   const call = (client, method, params = {}) => bounded(client.call(method, params));
-  ok(await call(controller, "info", { device_id: targetID }));
+  const targetInfo = JSON.parse(ok(await call(controller, "info", { device_id: targetID })).content);
+  assert.equal(targetInfo.execution_backend.name, "native_user");
+  assert.equal(targetInfo.execution_backend.sandbox, "none");
+  assert.deepEqual(targetInfo.execution_backends.map(b => b.name), ["native_user", "low_privilege", "cgroup", "container"]);
+  for (const b of targetInfo.execution_backends.slice(1)) {
+    assert.equal(b.available, false); assert.equal(b.code, "backend_unavailable");
+  }
+  const initialConfig = ok(await call(target, "config.get"));
+  const initialDiskConfig = fs.readFileSync(path.join(root, "target/config.json"), "utf8");
+  const jobsPath = path.join(root, "target/jobs.json");
+  const initialJobs = fs.existsSync(jobsPath) ? fs.readFileSync(jobsPath, "utf8") : null;
+  assert.equal(initialConfig.execution_backend, "native_user");
+  const backendMarker = path.join(root, "workspaces/target/backend-must-not-start.txt");
+  for (const backend of ["low_privilege", "cgroup", "container", "unknown"]) {
+    const failed = await bounded(controller.stream("exec", { device_id: targetID, backend, script: { text: "echo forbidden > backend-must-not-start.txt" } }, f => {
+      assert(!f.data, "unavailable backend produced output");
+    }));
+    assert.equal(failed.ok, false); assert.equal(failed.code, "backend_unavailable");
+    assert(!fs.existsSync(backendMarker), "unavailable backend silently executed native");
+    const configResult = await call(target, "config.set", { execution_backend: backend, relay_url: "ws://changed.invalid", workspace: path.join(root, "must-not-create") });
+    assert.equal(configResult.ok, false); assert.equal(configResult.code, "backend_unavailable");
+    assert.deepEqual(ok(await call(target, "config.get")), initialConfig);
+    assert.equal(fs.readFileSync(path.join(root, "target/config.json"), "utf8"), initialDiskConfig);
+    assert(!fs.existsSync(path.join(root, "must-not-create")));
+    assert.equal(fs.existsSync(jobsPath) ? fs.readFileSync(jobsPath, "utf8") : null, initialJobs, "backend rejection changed job occupancy");
+  }
+  pass("backend_selection_refuses_unsupported_without_start_or_config_mutation");
+  ok(await call(target, "config.set", { execution_backend: "native_user" }));
+  const native = await bounded(controller.stream("exec", { device_id: targetID, backend: "native_user", script: { text: "echo explicit-native" } }, () => {}));
+  assert.equal(ok(native).exit_code, 0);
+  pass("explicit_native_backend_uses_supervised_execution");
   const contents = "中文 🌍\nline two\n";
   ok(await call(controller, "write", { device_id: targetID, path: "roundtrip.txt", content: contents }));
   assert.equal(ok(await call(controller, "read", { device_id: targetID, path: "roundtrip.txt" })).content, contents);
