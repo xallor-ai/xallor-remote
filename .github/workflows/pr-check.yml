@@ -218,6 +218,7 @@ jobs:
       - run: python tests/execution_results_e2e.py
       - run: python tests/exec_jsonl_e2e.py
       - run: python tests/cli_argument_errors_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
+      - run: python tests/cli_peer_flag_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
       - run: python tests/resource_boundaries_e2e.py
       - run: python tests/device_settings_e2e.py
       - run: python tests/identity_transactions_e2e.py

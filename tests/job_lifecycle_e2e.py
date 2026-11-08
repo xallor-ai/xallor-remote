@@ -81,7 +81,7 @@ try:
     cluster.add("controller")
     cluster.cli("target","inbound","on")
     grant=cluster.grant("target")
-    cluster.cli("controller","peer","add","--id",target,"--grant",grant)
+    cluster.cli("controller","peer","add","--device",target,"--grant",grant)
     cluster.stop("target")
     ready=cluster.root/"reservations-ready.json"
     reserver=subprocess.Popen([str(reservations),str(cluster.root/"target"),str(ready)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)

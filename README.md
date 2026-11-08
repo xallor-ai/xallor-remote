@@ -26,7 +26,7 @@ xallor-remote status --json
 在控制机填入对方实际的 9 位设备 ID 和授权码（替换示例中的尖括号占位符）：
 
 ```text
-xallor-remote peer add --id <device-id> --grant <grant>
+xallor-remote peer add --device <device-id> --grant <grant>
 xallor-remote exec --device <device-id> --program whoami
 ```
 

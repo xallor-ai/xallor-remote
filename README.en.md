@@ -26,7 +26,7 @@ xallor-remote status --json
 On the controller, enter the target's actual 9-digit device ID and grant code, replacing the angle-bracket placeholders:
 
 ```text
-xallor-remote peer add --id <device-id> --grant <grant>
+xallor-remote peer add --device <device-id> --grant <grant>
 xallor-remote exec --device <device-id> --program whoami
 ```
 

@@ -23,7 +23,7 @@ try:
     controller, target = cluster.add("controller"), cluster.add("target")
     cluster.cli("target", "grant", "issue")
     grant = cluster.grant("target")
-    cluster.cli("controller", "peer", "add", "--id", target, "--grant", grant)
+    cluster.cli("controller", "peer", "add", "--device", target, "--grant", grant)
     workspace = cluster.root / "workspaces" / "target"
     def git(*values):
         return subprocess.run(["git", "-C", str(workspace), *values], check=True, capture_output=True,

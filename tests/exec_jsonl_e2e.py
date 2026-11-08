@@ -43,7 +43,7 @@ try:
     cluster.add("controller")
     cluster.cli("target", "inbound", "on")
     grant = cluster.grant("target")
-    cluster.cli("controller", "peer", "add", "--id", target, "--grant", grant)
+    cluster.cli("controller", "peer", "add", "--device", target, "--grant", grant)
     for mode, timeout, status, code in [("success",0,"completed",0),("failure",0,"completed",7),("wait",8000,"timeout",None),("truncated",0,"completed",7)]:
         result = cluster.cli("controller", "exec", "--jsonl", "--device", target, "--timeout-ms", str(timeout), "--program", str(fixture), "--", mode, check=False)
         events, terminal = parse(result.stdout)

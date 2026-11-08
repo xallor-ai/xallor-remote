@@ -31,7 +31,7 @@ def main():
         cluster.add("controller")
         cluster.cli("target", "inbound", "on")
         grant = cluster.grant("target")
-        cluster.cli("controller", "peer", "add", "--id", target, "--grant", grant)
+        cluster.cli("controller", "peer", "add", "--device", target, "--grant", grant)
         bad_exit = cluster.cli("controller", "exec", "--device", target, "--", "exit 7", check=False)
         assert bad_exit.returncode != 0, "CLI falsely reported nonzero remote exit as success"
         results.append({"name":"cli_propagates_nonzero_exit", "status":"pass"})

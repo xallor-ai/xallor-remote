@@ -36,9 +36,9 @@ xallor-remote start | stop | status
 xallor-remote grant issue | show | rotate
 xallor-remote inbound on | off
 xallor-remote revoke
-xallor-remote peer add --id … --grant …
+xallor-remote peer add --device … --grant …
 xallor-remote peer list
-xallor-remote peer rename --id … --name …
+xallor-remote peer rename --device … --name …
 xallor-remote exec --device … [--shell powershell] -- "完整脚本"
 xallor-remote exec --device … --script-file <本地UTF-8文件或-> [--shell powershell]
 xallor-remote exec --device … --program <对方程序> -- <arg1> <arg2>
@@ -55,7 +55,7 @@ xallor-remote relay --reverse-proxy --trusted-proxy 127.0.0.1
 xallor-remote reset --yes
 ```
 
-`inbound off` 保留身份；`revoke` 销毁登记。尚无授权码时 `inbound on` 等同 `grant issue`。`approve`：本机交互确认高危命令；无 TTY 时不要跑。
+`inbound off` 保留身份；`revoke` 销毁登记。`grant issue` 每次签发新授权码并打开入站；`inbound on` 在没有授权码时也会签发授权码，否则只打开入站。`inbound off` 不吊销已有授权码。`approve`：本机交互确认高危命令；无 TTY 时不要跑。
 
 `config` 修改当前本机 Runtime；要改变对方执行解释器，在对方设备执行。`get` 返回 JSON 配置，`set --shell` 持久保存并用于后续任务，不改变已运行任务。各系统支持项和自动选择规则见 [os.md](os.md)。`auto` 恢复自动选择，空参数不是清除操作。
 
