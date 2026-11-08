@@ -46,7 +46,7 @@ The program and working directory belong to the target; the request file is loca
 
 Target capabilities come from the target Runtime's `info`; `remote.device_info` returns the target `shell`, `execution_modes`, and `execution_backend`. The current backend keeps the target user's privileges and reports a Job Object/process-group cleanup boundary on Windows/Linux with `sandbox: none`. The controller must use the target capability result instead of guessing from its own OS, and must not treat cleanup supervision as a least-privilege sandbox.
 
-`xallor-remote policy --json` and the target `info.operation_policy` return the same operation matrix for CLI, MCP, GUI, and Agents. It describes static boundaries; Relay still revalidates device access, member/tenant authorization, grants, inbound state, and versions on every call.
+`xallor-remote policy --json` and the target `info.operation_policy` return the same operation matrix for CLI, MCP, and Agents; the minimal GUI can reuse the same field after its local IPC integration. It describes static boundaries; Relay still revalidates device access, member/tenant authorization, grants, inbound state, and versions on every call.
 
 For local development, run a Relay in one terminal:
 

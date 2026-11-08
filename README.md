@@ -46,7 +46,7 @@ xallor-remote exec --device <device-id> --request-file ./execution.json --jsonl
 
 目标能力由对方 Runtime 的 `info` 决定；`remote.device_info` 会返回目标 `shell`、`execution_modes` 和 `execution_backend`。当前后端沿用目标当前用户权限，Windows/Linux 分别报告 Job Object/进程组回收，`sandbox` 为 `none`；控制端不能按自己的操作系统猜测目标能力，也不能把回收边界当成低权限沙箱。
 
-`xallor-remote policy --json` 与目标 `info.operation_policy` 返回同一份操作矩阵，供 CLI、MCP、GUI 和 Agent 读取。矩阵是静态边界说明；Relay 仍会在每次调用复验设备访问、成员/租户授权、grant、入站和版本状态。
+`xallor-remote policy --json` 与目标 `info.operation_policy` 返回同一份操作矩阵，供 CLI、MCP 和 Agent 读取；GUI 后续接入本机 IPC 后复用同一字段。矩阵是静态边界说明；Relay 仍会在每次调用复验设备访问、成员/租户授权、grant、入站和版本状态。
 
 本机开发先在一个终端运行 Relay：
 
