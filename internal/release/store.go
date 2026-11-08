@@ -9,7 +9,12 @@ import (
 	"path/filepath"
 )
 
-type Store struct{ Dir string }
+type Store struct {
+	Dir string
+	// Production always uses nil (real provenance). Private injection is only
+	// available to package tests for lifecycle mechanics, never through CLI/env.
+	sourceVerifier sourceVerifier
+}
 type State struct {
 	Current  *Manifest `json:"current,omitempty"`
 	Previous *Manifest `json:"previous,omitempty"`

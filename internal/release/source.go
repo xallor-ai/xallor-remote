@@ -17,7 +17,8 @@ import (
 )
 
 // SourceVerification is an observation of one private snapshot, not an install
-// credential. Install/rollback/vendor selection do not yet consume this result.
+// credential. Install/Stage independently authenticate their own snapshots;
+// rollback and vendor selection do not yet enforce source authentication.
 type SourceVerification struct {
 	Verified   bool           `json:"verified"`
 	Repository string         `json:"repository"`

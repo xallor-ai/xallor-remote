@@ -16,7 +16,7 @@ func TestProfileFormat_should_rejectUnknownState_beforeActivation(t *testing.T) 
 			a, ma := bundle(t, "a")
 			b, mb := bundle(t, "b")
 			next, mn := bundle(t, "next")
-			store := Store{Dir: t.TempDir()}
+			store := mechanicsStore(t)
 			control := control(ma, mb, mn)
 			for _, path := range []string{a, b} {
 				if err := store.Install(path, control); err != nil {

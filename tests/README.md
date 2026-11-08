@@ -6,7 +6,7 @@
 
 `python -m unittest discover -s tests -p test_readme_docs.py` checks the Chinese/English onboarding entrypoints, identical executable examples, shared CLI/Relay/MCP/release spec links, current flags, and whitespace. It covers both human setup and Agent JSON/JSONL/request-file documentation; it does not replace native shell execution tests or close #73.
 
-`release_source_gate_e2e.py` exercises only standalone `runtime verify` refusals with a real CLI and isolated Runtime: unavailable system verifier, dirty metadata and rehashed unsigned bytes cannot produce success, execute a candidate, mutate install state or stop the Runtime. `XALLOR_TEST_REAL_GH=1 go test ./internal/releasetrust` additionally uses the installed real gh with a malformed proof; this is a negative check, not a valid product signature or an install/upgrade/rollback/vendor enforcement test. #74 remains incomplete; see `docs/install-trust-design.md`.
+`release_source_gate_e2e.py` exercises standalone `runtime verify` refusals. `release_install_source_e2e.py` uses an isolated profile to prove install refuses before lock/profile/copy/Control.Check/stop, rejects rehashed bytes, and (when passed the real draft bundle) accepts the original verified bundle then preserves the running version on a rehashed retry. `XALLOR_TEST_REAL_GH=1 go test ./internal/releasetrust` uses the installed real gh with a malformed proof; this is a negative check. Rollback and MCP vendor enforcement remain outside #74 completion.
 
 All process tests use owned temporary profiles and a loopback Relay. They never connect to the user's profile or official Relay. Cleanup stops only fixture processes, verifies the owned absolute directory and then removes it; failed cleanup retains evidence.
 

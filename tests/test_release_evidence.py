@@ -29,24 +29,24 @@ class ReleaseEvidenceTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='xr-evidence-')
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
-        self.build = {'version':'0.2.0','revision':'a'*40,'dirty':False,'protocol':1,'profile_format':1}
+        self.build = {'version':'0.2.1','revision':'a'*40,'dirty':False,'protocol':1,'profile_format':1}
 
     def artifacts(self, mismatch=False):
         """Tiny two-platform release; a vendor substitution must fail inspection."""
-        files = {'package/package.json':json.dumps({'version':'0.2.0'}).encode(),
+        files = {'package/package.json':json.dumps({'version':'0.2.1'}).encode(),
                  'package/build.json':json.dumps(self.build).encode()}
         for platform, vendor in [('windows','win32-x64'),('linux','linux-x64')]:
             binary = b'fixture-runtime-'+platform.encode()
             name = 'xallor-remote'+('.exe' if platform == 'windows' else '')
             manifest = {'schema':1,'build':dict(self.build,os=platform,arch='amd64'),
                         'artifact':{'filename':name,'size':len(binary),'sha256':evidence.sha(binary)}}
-            archive = self.root/f'xallor-remote-0.2.0-{platform}-amd64.zip'
+            archive = self.root/f'xallor-remote-0.2.1-{platform}-amd64.zip'
             with zipfile.ZipFile(archive,'w') as z:
                 z.writestr(name,binary); z.writestr('manifest.json',json.dumps(manifest))
             Path(str(archive)+'.sha256').write_text(evidence.sha(archive.read_bytes())+'  '+archive.name+'\n',encoding='utf-8')
             files[f'package/vendor/{vendor}/{name}'] = binary + (b'tamper' if mismatch else b'')
             files[f'package/vendor/{vendor}/manifest.json'] = json.dumps(manifest).encode()
-        with tarfile.open(self.root/'xallor-remote-mcp-0.2.0.tgz','w:gz') as tar:
+        with tarfile.open(self.root/'xallor-remote-mcp-0.2.1.tgz','w:gz') as tar:
             for name,data in files.items():
                 entry = tarfile.TarInfo(name); entry.size = len(data); tar.addfile(entry,io.BytesIO(data))
 
@@ -81,26 +81,26 @@ class ReleaseEvidenceTests(unittest.TestCase):
         def deny(path,*identity):
             calls.append(path); raise subprocess.CalledProcessError(1,['gh'])
         with self.assertRaises(subprocess.CalledProcessError):
-            verify.verify(self.root,'owner/repo','refs/tags/v0.2.0','a'*40,deny)
+            verify.verify(self.root,'owner/repo','refs/tags/v0.2.1','a'*40,deny)
         self.assertEqual(calls,[index]); self.assertEqual(artifact.read_bytes(),b'fixture')
 
     # Even a mocked valid index attestation cannot hide an altered artifact hash.
     def test_should_reject_tampering_before_artifact_verification(self):
         artifact,_,_ = self.index(); artifact.write_bytes(b'changed')
         with self.assertRaises(ValueError):
-            verify.verify(self.root,'owner/repo','refs/tags/v0.2.0','a'*40,lambda *args:None)
+            verify.verify(self.root,'owner/repo','refs/tags/v0.2.1','a'*40,lambda *args:None)
 
     # A signed index cannot name files outside the supplied release directory.
     def test_should_reject_traversal_in_index(self):
         _,index,data = self.index(); data['files'][0]['name'] = '../escape'
         index.write_text(json.dumps(data),encoding='utf-8')
         with self.assertRaises(ValueError):
-            verify.verify(self.root,'owner/repo','refs/tags/v0.2.0','a'*40,lambda *args:None)
+            verify.verify(self.root,'owner/repo','refs/tags/v0.2.1','a'*40,lambda *args:None)
 
     # Expected repository, workflow, ref and commit are enforced by real gh arguments.
     def test_should_bind_verifier_to_expected_signer_and_source(self):
         with patch.object(verify.subprocess,'run') as run:
-            verify.attest(Path('artifact.zip'),'owner/repo','refs/tags/v0.2.0','a'*40)
+            verify.attest(Path('artifact.zip'),'owner/repo','refs/tags/v0.2.1','a'*40)
         args = run.call_args.args[0]
         self.assertIn('owner/repo/.github/workflows/release.yml',args)
         self.assertIn('--source-ref',args); self.assertIn('--source-digest',args)

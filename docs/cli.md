@@ -10,4 +10,4 @@ With JSONL selected, exec argument parsing failures (unknown flags, missing valu
 
 参数易用性审查、真实验证和未实施的长期建议见 [cli-ux-review.md](cli-ux-review.md)。建议稿中的新参数尚不可用。
 
-`runtime verify --bundle <bundle-dir> [--attestation-bundle <proof.json>]` 为已实现的只读来源验证入口：使用固定 GitHub/Sigstore 签发政策与可信系统 gh，成功输出当次验证 JSON，失败非零退出。不会执行候选、安装或改 Runtime 状态；可选证明文件不是信任根。install/upgrade/rollback/MCP 强制认证仍未接入，不能将输出当作它们的安装许可。见 [install-trust-design.md](install-trust-design.md)；#74 未完成。本次 #73 仅修复上述参数错误通道，其它收敛另行验收。
+`runtime verify --bundle <bundle-dir> [--attestation-bundle <proof.json>]` 为已实现的只读来源验证入口：使用固定 GitHub/Sigstore 签发政策与可信系统 gh，成功输出当次验证 JSON，失败非零退出。`runtime install` 复用同一验证器并在写安装目录、执行候选或停止旧 Runtime 前拒绝未认证快照；可选证明文件不是信任根。rollback/MCP 强制认证仍未接入，不能将 `verify` 输出当作它们的安装许可。见 [install-trust-design.md](install-trust-design.md)；#74 未完成。本次 #73 仅修复上述参数错误通道，其它收敛另行验收。

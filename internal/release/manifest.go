@@ -1,8 +1,9 @@
-// Package release manages checksum-verified local Runtime artifacts.
-// Manifests provide integrity, not publisher authentication; callers choose trusted bundles.
+// Package release authenticates newly supplied Runtime bundles before staging.
+// Existing selection/rollback integrity checks alone are not source authentication.
 package release
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"time"
 )
 
 const maxBinaryBytes = 256 * 1024 * 1024
@@ -69,36 +71,9 @@ func readJSON(path string, v any) error {
 	return nil
 }
 func (s Store) Stage(bundle string) (Manifest, error) {
-	var m Manifest
-	root, err := os.OpenRoot(bundle)
-	if err != nil {
-		return m, err
-	}
-	defer root.Close()
-	f, err := root.Open("manifest.json")
-	if err != nil {
-		return m, err
-	}
-	d := json.NewDecoder(io.LimitReader(f, 65537))
-	d.DisallowUnknownFields()
-	err = d.Decode(&m)
-	var extra any
-	if err == nil && d.Decode(&extra) != io.EOF {
-		err = errors.New("trailing manifest data")
-	}
-	f.Close()
-	if err != nil {
-		return m, err
-	}
-	if err = m.validate(); err != nil {
-		return m, err
-	}
-	source, err := root.Open(m.Artifact.Filename)
-	if err != nil {
-		return m, err
-	}
-	defer source.Close()
-	return m, s.copyArtifact(source, m)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	return withSourceSnapshot(ctx, bundle, "", s.sourceVerifier, s.copyAuthenticatedSnapshot)
 }
 func (s Store) copyArtifact(source *os.File, m Manifest) error {
 	dest := s.Path(m)
