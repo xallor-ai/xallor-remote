@@ -59,7 +59,7 @@ Windows 先创建带 `KILL_ON_JOB_CLOSE` 的 Job，通过 `PROC_THREAD_ATTRIBUTE
 
 Linux 创建独立进程组，先用 `waitid(WNOWAIT)` 观察父进程退出但不回收，保留组 ID；终止进程组并检查 `/proc` 中不再有该组的活进程，再回收父进程。僵尸不再执行，由其 OS 父进程回收。`/proc` 无法读取或组未在期限内清空均视为回收未确认。此机制不能约束主动 `setsid/setpgid` 脱组、通过外部服务创建进程或 Runtime 崩溃后的任意进程；严格隔离需 cgroup/独立执行环境。macOS 执行监督尚未实现。
 
-前台回收未确认返回执行错误；后台交接标记 `unknown`，不报告完成。该进程组/Job 边界不是 OS 沙箱，尚不构成持久作业租约或会员额度释放凭证。OS 文档：[Windows Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)。
+前台回收未确认返回执行错误；后台交接标记 `unknown`，不报告完成。`info.execution_backend` 只报告当前可用的 `native_user` 后端及其 `job_object` / `process_group` 清理边界；低权限用户、Windows 令牌降权和 Linux cgroup/container 仍是未实现的后端，不能把它们写进请求或自行假定启用。该进程组/Job 边界不是 OS 沙箱，尚不构成持久作业租约或会员额度释放凭证。OS 文档：[Windows Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)。
 
 ---
 

@@ -134,7 +134,7 @@ function createServer(): McpServer {
   server.registerTool(
     "remote.device_info",
     {
-      description: "查询一台设备的 os/arch/hostname/workspace。只配一台时可省略 device_id。",
+      description: "查询一台目标设备的 os/arch/hostname/workspace、shell 能力、执行模式和 execution_backend。解释器与进程边界均由目标 Runtime 决定；只配一台时可省略 device_id。",
       inputSchema: z.object({
         device_id: z.string().optional().describe("目标设备 ID"),
       }),

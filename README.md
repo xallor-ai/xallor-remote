@@ -44,6 +44,8 @@ xallor-remote exec --device <device-id> --request-file ./execution.json --jsonl
 
 程序和工作目录属于对方，request-file 属于本机；请求文件模式不叠加 `--shell`、`--cwd`、`--timeout-ms`。`exec --jsonl` 的未知 flag、缺值或类型错误也在 stdout 返回唯一的 `invalid_execution` error，退出 1，并保留 stderr 诊断，不启动 Runtime；JSONL 可在错误 flag 前后，`--` 后的字面参数不启用格式，`--jsonl=false` 关闭。`--help` 仍显示普通帮助。Agent 不能把缺少终态当作成功。PowerShell 5 的默认 `>` 生成 UTF-16，不应用它生成 UTF-8 请求文件。MCP 的工具、配置与流式行为见 [docs/mcp.md](docs/mcp.md)，CLI 当前用法见 [docs/cli.md](docs/cli.md)，机器字段见 [docs/protocol.md](docs/protocol.md)。
 
+目标能力由对方 Runtime 的 `info` 决定；`remote.device_info` 会返回目标 `shell`、`execution_modes` 和 `execution_backend`。当前后端沿用目标当前用户权限，Windows/Linux 分别报告 Job Object/进程组回收，`sandbox` 为 `none`；控制端不能按自己的操作系统猜测目标能力，也不能把回收边界当成低权限沙箱。
+
 本机开发先在一个终端运行 Relay：
 
 ```text

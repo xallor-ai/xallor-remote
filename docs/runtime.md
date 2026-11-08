@@ -100,7 +100,7 @@ on disconnect: 退避重连；不恢复旧子进程
 - 上限 1 MiB，超则 `too_large`，磁盘上不留半份新内容
 - 并发写同一路径：后完成的替换胜出，不提供锁
 
-**processes：** 当前用户可见即可。**info：** os/arch/hostname/version/workspace；可选探测 docker / nvidia-smi / git（false 即可）。
+**processes：** 当前用户可见即可。**info：** os/arch/hostname/version/workspace，并返回目标 Runtime 实际的 `execution_backend`。当前 backend 是 `native_user`：沿用当前用户权限，Windows 以 Job Object、Linux 以进程组监督子树，`sandbox` 明确为 `none`。低权限用户、Windows 令牌降权、Linux cgroup/container 尚未实现，不能从进程树回收推断这些能力；可选探测 docker / nvidia-smi / git（false 即可）。
 
 ---
 

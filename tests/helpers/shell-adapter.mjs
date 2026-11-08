@@ -20,6 +20,11 @@ try {
   const initial=await info();
   assert.equal(initial.shell.selected,process.env.XALLOR_TEST_SHELL);
   assert.equal(initial.shell.configured,process.env.XALLOR_TEST_SHELL);
+  assert.equal(initial.execution_backend.name,"native_user");
+  assert.equal(initial.execution_backend.available,true);
+  assert.equal(initial.execution_backend.privilege,"same_user");
+  assert.equal(initial.execution_backend.sandbox,"none");
+  assert.equal(initial.execution_backend.process_tree,initial.os === "windows" ? "job_object" : "process_group");
   const literal="中文 🌍 $HOME ` \"double\" 'single'";
   const filename="space ' 中文.txt";
   for(const name of initial.shell.available){

@@ -44,6 +44,8 @@ xallor-remote exec --device <device-id> --request-file ./execution.json --jsonl
 
 The program and working directory belong to the target; the request file is local. Request-file mode cannot be combined with `--shell`, `--cwd`, or `--timeout-ms`. With `exec --jsonl`, unknown flags, missing values, and invalid value types also produce exactly one `invalid_execution` error on stdout, exit 1, and retain stderr diagnostics without starting Runtime. JSONL can appear before or after the bad flag; literal arguments after `--` do not enable it, and `--jsonl=false` disables it. `--help` remains plain help. An Agent must not treat a missing terminal event as success. PowerShell 5's default `>` produces UTF-16, so do not use it to create UTF-8 request files. See [docs/mcp.md](docs/mcp.md) for MCP tools, configuration, and streaming, [docs/cli.md](docs/cli.md) for current CLI usage, and [docs/protocol.md](docs/protocol.md) for machine-readable fields.
 
+Target capabilities come from the target Runtime's `info`; `remote.device_info` returns the target `shell`, `execution_modes`, and `execution_backend`. The current backend keeps the target user's privileges and reports a Job Object/process-group cleanup boundary on Windows/Linux with `sandbox: none`. The controller must use the target capability result instead of guessing from its own OS, and must not treat cleanup supervision as a least-privilege sandbox.
+
 For local development, run a Relay in one terminal:
 
 ```text
