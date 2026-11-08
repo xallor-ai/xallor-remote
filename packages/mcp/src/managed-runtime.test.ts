@@ -23,7 +23,7 @@ test("managed selection rejects corruption, traversal and pending activation", (
     const statePath = path.join(dir, "runtime", "state.json");
     const save = (state: object) => fs.writeFileSync(statePath, JSON.stringify(state));
     save({ current });
-    assert.equal(managedRuntime(dir), bin);
+    assert.throws(() => managedRuntime(dir), /来源未验证/);
     for (const profile_format of [undefined, 0, current.build.profile_format + 1]) {
       save({ current: { ...current, build: { ...current.build, profile_format } } });
       assert.throws(() => managedRuntime(dir), /无效/);

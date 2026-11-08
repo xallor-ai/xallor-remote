@@ -13,6 +13,7 @@ import (
 
 	"github.com/xallor-ai/xallor-remote/internal/buildinfo"
 	"github.com/xallor-ai/xallor-remote/internal/identity"
+	"github.com/xallor-ai/xallor-remote/internal/process"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 	"github.com/xallor-ai/xallor-remote/internal/shell"
 )
@@ -460,17 +461,19 @@ func (d *Daemon) runLocalInfo(link *wsConn, msg protocol.Message) {
 	}
 	goos, arch := identity.OSArch()
 	body, _ := json.Marshal(map[string]any{
-		"device_id":       id,
-		"os":              goos,
-		"arch":            arch,
-		"hostname":        identity.Hostname(),
-		"version":         buildinfo.Version(),
-		"build":           buildinfo.Current(),
-		"workspace":       workspace,
-		"shell":           shell.Describe(d.store.ConfigSnapshot().Shell),
-		"execution_modes": []string{"script", "program"},
-		"docker":          false,
-		"nvidia":          false,
+		"device_id":         id,
+		"os":                goos,
+		"arch":              arch,
+		"hostname":          identity.Hostname(),
+		"version":           buildinfo.Version(),
+		"build":             buildinfo.Current(),
+		"workspace":         workspace,
+		"shell":             shell.Describe(d.store.ConfigSnapshot().Shell),
+		"execution_modes":   []string{"script", "program"},
+		"execution_backend": process.DescribeBackend(d.store.ConfigSnapshot().ExecutionBackend),
+		"execution_backends": process.Backends(),
+		"docker":            false,
+		"nvidia":            false,
 	})
 	_ = link.send(protocol.Message{Type: protocol.TypeStdout, ExecID: msg.ExecID, Data: string(body)})
 	d.sendOKExit(link, msg.ExecID, start, false)

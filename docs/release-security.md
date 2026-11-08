@@ -1,6 +1,6 @@
 # 发行来源验证（第一阶段最小切片，#60 未完成）
 
-#74 当前交付为 [安装信任根设计](install-trust-design.md)、只读 `runtime verify --bundle <bundle-dir>`，以及 `runtime install` 在复制/Control.Check/停止旧 Runtime 前对同一私有快照执行来源验证。固定 repository/workflow/issuer/tag/commit 政策和独立信任的系统 gh 验证失败默认拒绝。rollback 和 MCP vendor 强制认证仍未接入；#74 未完成，不推进 #73。
+#74 当前交付为 [安装信任根设计](install-trust-design.md)、只读 `runtime verify --bundle <bundle-dir>`，以及 install/upgrade/rollback/MCP vendor selection 对同一 raw binary/manifest 快照执行固定来源验证。固定 repository/workflow/issuer/tag/commit 政策和独立信任的系统 gh 验证失败默认拒绝。真实 signed-vendor 正向链路与离线信任根轮换/撤销仍未完成；#74 未完成，不推进 #73。
 
 发行 CI 在 Windows/Linux zip 与含两平台 Runtime 的 MCP tgz 构建后，先校验 zip checksum、内嵌 manifest、npm vendor 字节和 npm/Runtime 构建身份一致性，再用 `scripts/release_evidence.py` 生成：
 
@@ -34,7 +34,7 @@ if ($LASTEXITCODE -ne 0) { throw '发行来源验证失败，停止安装' }
 
 ## 尚未完成的安装安全边界
 
-**#60/#74 仍不是完整端到端来源认证。** `runtime install --bundle` 和升级候选现在在复制、Control.Check、停止旧 Runtime 前强制验证同一 raw-file provenance 快照；攻击者替换二进制并重算 manifest 会被拒绝。rollback 仍只做安装记录/文件完整性校验，MCP managed/vendor/PATH 选择和手工 `npm install` 仍未接入同一强制验证器；这些路径仍可能绕过来源认证。
+**#60/#74 仍不是完整端到端来源认证。** `runtime install --bundle`、升级和 rollback 在复制、Control.Check、停止旧 Runtime 或激活旧版本前强制验证同一 raw-file provenance 快照；攻击者替换二进制并重算 manifest 会被拒绝。MCP managed/vendor/PATH 选择也拒绝未认证候选；手工 `npm install` 的包获取与离线信任根轮换/撤销仍需独立完成，真实 signed-vendor 正向路径尚未由 release CI 确认。
 
 后续 P1：把同一来源验证接入 rollback、MCP vendor 选择和 npm 安装/启动入口；补真实签发方错误、撤销、篡改后重算 hash、升级失败恢复、历史已签版本回滚测试。明确开发构建与正式发行的可信策略，不能静默跳过。新增安装器的真实 OIDC 正向验证须由 release CI 运行确认，不以本地 mock 代替。
 

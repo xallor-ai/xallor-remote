@@ -51,7 +51,7 @@ def main():
         cli("ensure")
         runtime_ref = ProcessRef(json.loads(cli("runtime", "status").stdout)["running"]["pid"])
         assert runtime_ref.alive()
-        cli("peer", "add", "--id", "123456789", "--grant", "test-grant")
+        cli("peer", "add", "--device", "123456789", "--grant", "test-grant")
         for mode in ("shared", "account"):
             if mode == "account":
                 credential = root / "account.json"

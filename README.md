@@ -26,7 +26,7 @@ xallor-remote status --json
 在控制机填入对方实际的 9 位设备 ID 和授权码（替换示例中的尖括号占位符）：
 
 ```text
-xallor-remote peer add --id <device-id> --grant <grant>
+xallor-remote peer add --device <device-id> --grant <grant>
 xallor-remote exec --device <device-id> --program whoami
 ```
 
@@ -43,6 +43,10 @@ xallor-remote exec --device <device-id> --request-file ./execution.json --jsonl
 ```
 
 程序和工作目录属于对方，request-file 属于本机；请求文件模式不叠加 `--shell`、`--cwd`、`--timeout-ms`。`exec --jsonl` 的未知 flag、缺值或类型错误也在 stdout 返回唯一的 `invalid_execution` error，退出 1，并保留 stderr 诊断，不启动 Runtime；JSONL 可在错误 flag 前后，`--` 后的字面参数不启用格式，`--jsonl=false` 关闭。`--help` 仍显示普通帮助。Agent 不能把缺少终态当作成功。PowerShell 5 的默认 `>` 生成 UTF-16，不应用它生成 UTF-8 请求文件。MCP 的工具、配置与流式行为见 [docs/mcp.md](docs/mcp.md)，CLI 当前用法见 [docs/cli.md](docs/cli.md)，机器字段见 [docs/protocol.md](docs/protocol.md)。
+
+目标能力由对方 Runtime 的 `info` 决定；`remote.device_info` 会返回目标 `shell`、`execution_modes` 和 `execution_backend`。当前后端沿用目标当前用户权限，Windows/Linux 分别报告 Job Object/进程组回收，`sandbox` 为 `none`；控制端不能按自己的操作系统猜测目标能力，也不能把回收边界当成低权限沙箱。
+
+执行请求可用 `--backend native_user` 或 JSON 的 `backend` 显式要求目标后端；当前其他后端会在启动前返回 `backend_unavailable`，不会回退执行。低权限、cgroup 和 container 后端尚未实现。
 
 本机开发先在一个终端运行 Relay：
 
@@ -67,9 +71,9 @@ XALLOR_REMOTE_RELAY_URL="ws://127.0.0.1:8443" go run ./cmd/xallor-remote start
 
 上述明文入口仅供本机开发。公网自托管使用 `relay --listen :8443 --tls-cert <PEM> --tls-key <PEM>` 和 `wss://`，或配置可信 HTTPS 反代；非 loopback 无保护监听会启动失败。代理信任、浏览器 Origin allowlist（含 IPv6）与健康检查配置见 [docs/relay.md](docs/relay.md#5-运维)。
 
-版本与本机升级：先按 [发行来源验证](docs/release-security.md) 核对下载附件与预期标签/commit，成功后再解压和安装。`runtime install` 会在复制、执行候选检查或停止旧 Runtime 前重复验证 raw binary/manifest provenance；rollback 和 MCP vendor 强制来源验证仍未接入，#74 仍在完成中。
+版本与本机升级：先按 [发行来源验证](docs/release-security.md) 核对下载附件与预期标签/commit，成功后再解压和安装。`runtime install`、upgrade 和 rollback 会在使用已安装版本前复验 raw binary/manifest provenance；MCP vendor/PATH 选择也会对候选执行同一固定策略，真实 signed vendor 正向链路仍需 release CI 验证，#74 仍在完成中。
 
-另有只读来源验证入口，使用独立信任的系统 GitHub CLI 和固定签发政策；它不会执行候选或安装，未签名/开发构建默认拒绝。安装复用同一验证器，成功输出不是安装凭证，后续目录变更或绕过入口仍不受保护。rollback 和 MCP vendor 的强制认证尚未接入，#74 未完成；方案与信任根/恢复边界见 [安装信任根设计](docs/install-trust-design.md)。
+另有只读来源验证入口，使用独立信任的系统 GitHub CLI 和固定签发政策；它不会执行候选或安装，未签名/开发构建默认拒绝。安装、rollback 和 MCP vendor 选择复用同一验证器，成功输出不是安装凭证，后续目录变更或绕过入口仍不受保护。离线信任根轮换/撤销和真实 signed vendor 正向链路仍未完成，#74 未完成；方案与信任根/恢复边界见 [安装信任根设计](docs/install-trust-design.md)。
 
 ```text
 xallor-remote runtime verify --bundle <bundle-dir>

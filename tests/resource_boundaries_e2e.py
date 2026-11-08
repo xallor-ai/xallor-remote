@@ -25,7 +25,7 @@ try:
     cluster.add("controller")
     cluster.cli("target","inbound","on")
     grant = cluster.grant("target")
-    cluster.cli("controller","peer","add","--id",target,"--grant",grant)
+    cluster.cli("controller","peer","add","--device",target,"--grant",grant)
     env = dict(cluster.env("controller"),XALLOR_TEST_CLUSTER=str(cluster.root),XALLOR_TEST_TARGET=target,XALLOR_TEST_PROGRAM=str(fixture))
     subprocess.run(["node",str(root/"tests/helpers/resource-boundaries.mjs")],env=env,check=True,timeout=90)
 finally:

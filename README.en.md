@@ -26,7 +26,7 @@ xallor-remote status --json
 On the controller, enter the target's actual 9-digit device ID and grant code, replacing the angle-bracket placeholders:
 
 ```text
-xallor-remote peer add --id <device-id> --grant <grant>
+xallor-remote peer add --device <device-id> --grant <grant>
 xallor-remote exec --device <device-id> --program whoami
 ```
 
@@ -43,6 +43,10 @@ xallor-remote exec --device <device-id> --request-file ./execution.json --jsonl
 ```
 
 The program and working directory belong to the target; the request file is local. Request-file mode cannot be combined with `--shell`, `--cwd`, or `--timeout-ms`. With `exec --jsonl`, unknown flags, missing values, and invalid value types also produce exactly one `invalid_execution` error on stdout, exit 1, and retain stderr diagnostics without starting Runtime. JSONL can appear before or after the bad flag; literal arguments after `--` do not enable it, and `--jsonl=false` disables it. `--help` remains plain help. An Agent must not treat a missing terminal event as success. PowerShell 5's default `>` produces UTF-16, so do not use it to create UTF-8 request files. See [docs/mcp.md](docs/mcp.md) for MCP tools, configuration, and streaming, [docs/cli.md](docs/cli.md) for current CLI usage, and [docs/protocol.md](docs/protocol.md) for machine-readable fields.
+
+Target capabilities come from the target Runtime's `info`; `remote.device_info` returns the target `shell`, `execution_modes`, and `execution_backend`. The current backend keeps the target user's privileges and reports a Job Object/process-group cleanup boundary on Windows/Linux with `sandbox: none`. The controller must use the target capability result instead of guessing from its own OS, and must not treat cleanup supervision as a least-privilege sandbox.
+
+An execution request may explicitly select `--backend native_user` or the JSON `backend` field. Unsupported backends fail before start with `backend_unavailable`; they never silently fall back. Low-privilege, cgroup, and container backends are not implemented yet.
 
 For local development, run a Relay in one terminal:
 
@@ -67,9 +71,9 @@ A second Runtime on the same computer needs a different `XALLOR_REMOTE_DATA_DIR`
 
 The cleartext endpoint above is for local development only. For public self-hosting, use `relay --listen :8443 --tls-cert <PEM> --tls-key <PEM>` with `wss://`, or configure a trusted HTTPS reverse proxy. An unprotected non-loopback listener will fail to start. Proxy trust, the browser Origin allowlist (including IPv6), and health checks are documented in [docs/relay.md](docs/relay.md#5-运维).
 
-For version checks and local upgrades, first follow [release source verification](docs/release-security.md) to verify the downloaded attachments against the expected tag and commit. `runtime install` repeats raw binary/manifest provenance verification before copying, probing, or stopping the old Runtime. Rollback and MCP vendor source enforcement are still incomplete, so #74 remains in progress.
+For version checks and local upgrades, first follow [release source verification](docs/release-security.md) to verify the downloaded attachments against the expected tag and commit. `runtime install`, upgrades, and rollback reverify raw binary/manifest provenance before using an installed version; MCP vendor/PATH selection applies the same fixed policy to candidates. A real signed-vendor positive path still needs release-CI confirmation, so #74 remains in progress.
 
-A separate read-only source verification command uses an independently trusted system GitHub CLI and a fixed signer policy. It does not execute candidates or install them, and rejects unsigned/development builds by default. Install reuses the same verifier, but its successful output is not an installation credential; later directory changes or bypassing the command remain unprotected. Mandatory source enforcement for rollback and MCP vendor selection is not integrated; #74 remains incomplete. See the [installation trust design](docs/install-trust-design.md) for trust anchors and recovery limits.
+A separate read-only source verification command uses an independently trusted system GitHub CLI and a fixed signer policy. It does not execute candidates or install them, and rejects unsigned/development builds by default. Install, rollback, and MCP vendor selection reuse the same verifier, but its successful output is not an installation credential; later directory changes or bypassing the command remain unprotected. Offline trust-root rotation/revocation and a real signed-vendor positive path remain incomplete; #74 remains incomplete. See the [installation trust design](docs/install-trust-design.md) for trust anchors and recovery limits.
 
 ```text
 xallor-remote runtime verify --bundle <bundle-dir>

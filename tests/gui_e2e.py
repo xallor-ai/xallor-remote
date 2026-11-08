@@ -30,11 +30,11 @@ try:
         cluster.cli(other_name, "grant", "issue")
         # CLI's human output is not a secret API. Read the owned fixture's grant file.
         grant = cluster.grant(other_name)
-        cluster.cli(name, "peer", "add", "--id", other_id, "--grant", grant)
+        cluster.cli(name, "peer", "add", "--device", other_id, "--grant", grant)
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
-    env = dict(cluster.env("controller"), XALLOR_REMOTE_BIN=str(cluster.binary), XR_GUI_CLI=str(cluster.binary),
+    env = dict(cluster.env("controller"), XALLOR_REMOTE_BIN=str(cluster.binary), XR_GUI_TEST_FIXTURE="1", XR_GUI_CLI=str(cluster.binary),
                XR_GUI_URL=f"http://127.0.0.1:{port}", XR_GUI_TARGET=target,
                XR_GUI_CONTROLLER=controller, XR_GUI_ROOT=str(cluster.root), XR_GUI_EVIDENCE=str(evidence))
     gui = repo / "apps" / "gui"

@@ -64,7 +64,7 @@ try:
     assert current["grant"] == original_grant and current["inbound"] == 1
     assert not any((profile / name).exists() for name in ("identity.json", "device_secret", "grant"))
     cluster.add("controller")
-    cluster.cli("controller", "peer", "add", "--id", target, "--grant", original_grant)
+    cluster.cli("controller", "peer", "add", "--device", target, "--grant", original_grant)
     execute("migration-keeps-access")
     passed("one_time_migration_preserves_identity_and_real_remote_access")
 
@@ -92,7 +92,7 @@ try:
     cluster.cli("target", "grant", "rotate")
     replacement = cluster.grant("target")
     assert replacement != original_grant
-    cluster.cli("controller", "peer", "add", "--id", target, "--grant", replacement)
+    cluster.cli("controller", "peer", "add", "--device", target, "--grant", replacement)
     execute("committed-rotation")
     cluster.cli("target", "inbound", "off")
     saved = cluster.device_state("target")

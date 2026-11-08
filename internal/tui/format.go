@@ -30,7 +30,7 @@ func formatHome(st map[string]any) string {
 
 func formatPeers(ids []string) string {
 	if len(ids) == 0 {
-		return "还没有对方设备。用 CLI：xallor-remote peer add --id … --grant …"
+		return "还没有对方设备。用 CLI：xallor-remote peer add --device … --grant …"
 	}
 	return strings.Join(ids, "\n")
 }

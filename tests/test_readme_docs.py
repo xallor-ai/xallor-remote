@@ -38,7 +38,7 @@ class ReadmeDocsTests(unittest.TestCase):
     def test_should_detect_command_drift_in_an_english_example(self):
         chinese = (ROOT/'README.md').read_text(encoding='utf-8')
         english = (ROOT/'README.en.md').read_text(encoding='utf-8')
-        changed = english.replace('peer add --id <device-id>', 'peer add --device <device-id>')
+        changed = english.replace('peer add --device <device-id>', 'peer add --id <device-id>')
         self.assertNotEqual(code_examples(chinese), code_examples(changed))
 
     # Onboarding must link to the same owning specs, not separate drifting contracts.
@@ -60,12 +60,12 @@ class ReadmeDocsTests(unittest.TestCase):
     def test_should_document_agent_and_user_paths_without_proposed_flags(self):
         for name in ('README.md', 'README.en.md'):
             text = (ROOT/name).read_text(encoding='utf-8')
-            for required in ('grant issue', 'grant show', 'peer add --id', 'exec --device',
+            for required in ('grant issue', 'grant show', 'peer add --device', 'exec --device',
                              '--request-file ./execution.json --jsonl', 'status --json',
                              '--tls-cert <PEM> --tls-key <PEM>', '127.0.0.1:8443',
                              'XALLOR_REMOTE_DATA_DIR', '#60', '#73', 'UTF-16'):
                 self.assertIn(required, text, name)
-            for proposed in ('--enable-inbound', 'peer add --device', '--timeout 30s', 'TLS_INSECURE'):
+            for proposed in ('--enable-inbound', 'peer add --id', '--timeout 30s', 'TLS_INSECURE'):
                 self.assertNotIn(proposed, text, name)
 
     # Documentation must not reintroduce trailing spaces/tabs on either OS.

@@ -10,7 +10,7 @@ class Session {
   error?: string;
   touched = Date.now();
   constructor() {
-    const binary = findBinary();
+    const binary = findBinary(process.env, { allowUnverified: process.env.XR_GUI_TEST_FIXTURE === "1" });
     if (!binary) throw new Error(INSTALL_HINT);
     this.child = spawn(binary, ["ipc-bridge"], { windowsHide: true, stdio: "pipe" });
     let buffer = "";

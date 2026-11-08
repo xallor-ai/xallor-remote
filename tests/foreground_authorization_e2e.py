@@ -40,7 +40,7 @@ def main():
         target = cluster.add("target")
         cluster.add("controller")
         cluster.cli("target", "inbound", "on")
-        cluster.cli("controller", "peer", "add", "--id", target, "--grant", cluster.grant("target"))
+        cluster.cli("controller", "peer", "add", "--device", target, "--grant", cluster.grant("target"))
         profile, workspace = cluster.root / "target", cluster.root / "workspaces/target"
         admin = ["relay", "--data", str(cluster.root / "relay"), "principal"]
 

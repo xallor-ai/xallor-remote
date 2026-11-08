@@ -101,8 +101,8 @@ def main():
         identity = device_state(target)
         cli(target, "grant", "issue")
         grant = device_state(target)["grant"]
-        cli(target, "peer", "add", "--id", "901234569", "--grant", "xr_grant_test_only")
-        cli(controller, "peer", "add", "--id", identity["device_id"], "--grant", grant)
+        cli(target, "peer", "add", "--device", "901234569", "--grant", "xr_grant_test_only")
+        cli(controller, "peer", "add", "--device", identity["device_id"], "--grant", grant)
         cli(target, "inbound", "off")
         before = snapshot(target)
         old_pid = state(target)["running"]["pid"]

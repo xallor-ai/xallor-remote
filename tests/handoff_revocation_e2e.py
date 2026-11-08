@@ -44,7 +44,7 @@ def main():
         profile = cluster.root / "target"
         workspace = cluster.root / "workspaces/target"
         def pair():
-            cluster.cli("controller", "peer", "add", "--id", target, "--grant", cluster.grant("target"))
+            cluster.cli("controller", "peer", "add", "--device", target, "--grant", cluster.grant("target"))
         pair()
         def git(*args):
             return subprocess.check_output(["git", "-C", str(workspace), *args], encoding="utf-8").strip()

@@ -5,12 +5,12 @@ import path from "node:path";
 import test from "node:test";
 import { bundledBinary, findBinary, vendorPlatformKey } from "./ensure.js";
 
-test("XALLOR_REMOTE_BIN wins when the file exists", () => {
+test("XALLOR_REMOTE_BIN is rejected without a provenance sidecar", () => {
   const fake = path.join(os.tmpdir(), `xallor-bin-${process.pid}`);
   fs.writeFileSync(fake, "");
   try {
     const hit = findBinary({ ...process.env, XALLOR_REMOTE_BIN: fake, PATH: "" }, { packageRoot: path.join(os.tmpdir(), "empty-pkg") });
-    assert.equal(hit, fake);
+    assert.equal(hit, undefined);
   } finally {
     fs.unlinkSync(fake);
   }
@@ -39,7 +39,7 @@ test("missing env path falls through when no vendor", () => {
   }
 });
 
-test("bundled vendor binary is found", () => {
+test("bundled vendor path is found, but selection is rejected without a provenance proof", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xr-mcp-v-"));
   const plat = vendorPlatformKey();
   const name = process.platform === "win32" ? "xallor-remote.exe" : "xallor-remote";
@@ -57,7 +57,7 @@ test("bundled vendor binary is found", () => {
       },
       { packageRoot: root },
     );
-    assert.equal(hit, target);
+    assert.equal(hit, undefined);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
