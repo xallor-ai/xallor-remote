@@ -18,6 +18,7 @@ const (
 	ShellUnavailable   = "shell_unavailable"
 	InvalidExecution   = "invalid_execution"
 	ProgramUnavailable = "program_unavailable"
+	BackendUnavailable = "backend_unavailable"
 	UnsupportedProgram = "unsupported_program"
 	QuotaExceeded      = "quota_exceeded"
 	WorkspaceMissing   = "workspace_missing"
