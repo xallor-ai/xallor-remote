@@ -73,6 +73,8 @@ Workspace: C:\Users\<you>\XallorRemote\workspace
 
 `rotate` ≠ `revoke`：前者作废旧 grant；后者注销这台设备在 Relay 上的身份。
 
+完整的 enrollment/claim/transfer/revoke/reset 前置、scope 变化和未知结果处理见 `xallor-remote device lifecycle` 与 `info.device_lifecycle`。撤销或重置的 Relay 回执未确认时，不能把本地持久化成功当作远端注销成功；新身份不得在 reset 清理完成前生成。
+
 ---
 
 ## 5. 其它规则

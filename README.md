@@ -50,6 +50,8 @@ xallor-remote exec --device <device-id> --request-file ./execution.json --jsonl
 
 账号凭据与租户边界见 [OIDC/SSO 边界](docs/oidc.md)：当前 CLI 使用 Relay 运维签发的本地 credential，不执行浏览器登录；OIDC provider token 不能直接当作 grant 或 tenant 授权。
 
+设备 enrollment、claim、transfer、revoke、reset 的前置和失联处理可用 `xallor-remote device lifecycle` 查看；它是契约说明，不会从控制端远程修改设备归属。
+
 本机开发先在一个终端运行 Relay：
 
 ```text

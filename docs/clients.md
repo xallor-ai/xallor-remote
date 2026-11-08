@@ -53,6 +53,7 @@ xallor-remote relay [--listen 127.0.0.1:8443 --data <dir>]
 xallor-remote relay --listen :8443 --tls-cert <PEM> --tls-key <PEM>
 xallor-remote relay --reverse-proxy --trusted-proxy 127.0.0.1
 xallor-remote reset --yes
+xallor-remote device lifecycle
 ```
 
 `inbound off` 保留身份；`revoke` 销毁登记。`grant issue` 每次签发新授权码并打开入站；`inbound on` 在没有授权码时也会签发授权码，否则只打开入站。`inbound off` 不吊销已有授权码。`approve`：本机交互确认高危命令；无 TTY 时不要跑。
@@ -60,6 +61,8 @@ xallor-remote reset --yes
 `config` 修改当前本机 Runtime；要改变对方执行解释器，在对方设备执行。`get` 返回 JSON 配置，`set --shell` 持久保存并用于后续任务，不改变已运行任务。各系统支持项和自动选择规则见 [os.md](os.md)。`auto` 恢复自动选择，空参数不是清除操作。
 
 `xallor-remote policy --json` 输出静态 operation contract；目标设备的 `info.operation_policy` 与 MCP `remote.device_info` 当前使用同一矩阵，GUI 后续通过本机 IPC 接入后复用。它说明操作边界和未知结果的重试规则，不代替 Relay 对当前成员、租户、grant、入站和版本的每次复验。账号 CLI 目前导入 Relay 运维签发的本地 credential，没有浏览器 OIDC/SSO 登录命令；provider token 必须先映射到本地 membership，不能直接使用其 tenant/principal claims。
+
+`xallor-remote device lifecycle` 输出设备 enrollment/claim/transfer/revoke/reset 契约；这是状态和失联处理说明，不是远程管理 API。实际 claim/transfer 仍必须从被控机本机通过已认证 device 连接提交。
 
 `exec` 文本入口只收一个完整脚本参数，不把多个片段自动拼接。单次 `--shell` 只选择本次任务的目标解释器，不修改配置。程序模式的 `--` 后逐项作为参数，空字符串和特殊字符仍须先正确通过本地 Shell；跨系统复杂输入优先使用 `--script-file` / `--request-file`，避免本地 Shell 提前展开。两种文件均在控制端读取，可带 UTF-8 BOM，`-` 从标准输入读取。JSON 形状及上限见 [protocol.md](protocol.md)，其中不含 device_id，由 `--device` 选择目标。
 

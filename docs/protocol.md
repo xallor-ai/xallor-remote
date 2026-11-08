@@ -80,7 +80,7 @@ Relay 在通过准入后重新构造发往 device 的非 cancel `invoke`，保�
 
 scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据续签、成员代次或重新签发同主体分享不改变它；新的设备 UID、归属实例或未认领共享授权实例会改变它。每次新调用仍独立完成现有认证和操作授权。handoff 收到缺失或非法 scope 返回 `unauthorized`，不回退设备级查询。原连接的 cancel 仍按 inflight 归属路由，不需要客户端传 scope。
 
-`info` 的 JSON 结果包含 `build`：version、revision、built_at（可省略）、dirty、protocol（当前为 1）、profile_format（本机持久化格式）、os、arch；用于区分运行制品与代码版本。未知 revision 为 `unknown`，不猜测提交。Relay health 返回同形构建身份。`execution_backend` 是目标 Runtime 当前真正使用的进程边界：`name` 目前为 `native_user`，`privilege` 为 `same_user`，`sandbox` 为 `none`；Windows 的 `process_tree` 为 `job_object`，Linux 为 `process_group`。`available=false` 或 `code=backend_unavailable` 时不得把执行当作可用，也不能把进程树回收边界当成低权限或 OS 沙箱。
+`info` 的 JSON 结果包含 `build`：version、revision、built_at（可省略）、dirty、protocol（当前为 1）、profile_format（本机持久化格式）、os、arch；用于区分运行制品与代码版本。未知 revision 为 `unknown`，不猜测提交。Relay health 返回同形构建身份。`execution_backend` 是目标 Runtime 当前真正使用的进程边界：`name` 目前为 `native_user`，`privilege` 为 `same_user`，`sandbox` 为 `none`；Windows 的 `process_tree` 为 `job_object`，Linux 为 `process_group`。`available=false` 或 `code=backend_unavailable` 时不得把执行当作可用，也不能把进程树回收边界当成低权限或 OS 沙箱。`device_lifecycle` 是 enrollment/claim/transfer/revoke/reset 的静态状态机契约；它不授予 client 管理权限，未知结果必须按契约停止自动重试并重新查询。
 
 `info.shell` 为 `{configured,selected?,available:[],code?}`：configured 为目标配置名或 auto，selected 是当前能找到的解释器名，available 是本系统受支持且可找到的名字；不能解析选择时返回 code，不伪造 selected。只探测可执行文件，不包含路径、版本或远程凭据。可选解释器及执行语义见 [os.md](os.md)。
 

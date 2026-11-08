@@ -50,6 +50,8 @@ Target capabilities come from the target Runtime's `info`; `remote.device_info` 
 
 Account and tenant boundaries are documented in the [OIDC/SSO boundary](docs/oidc.md). The CLI currently uses Relay-operator-issued local credentials and does not run browser login; an OIDC provider token cannot be used directly as a grant or tenant authorization.
 
+Use `xallor-remote device lifecycle` to inspect enrollment, claim, transfer, revoke, and reset preconditions and uncertainty handling. It is a contract report and does not remotely mutate device ownership.
+
 For local development, run a Relay in one terminal:
 
 ```text

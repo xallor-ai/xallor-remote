@@ -472,6 +472,7 @@ func (d *Daemon) runLocalInfo(link *wsConn, msg protocol.Message) {
 		"execution_modes":   []string{"script", "program"},
 		"execution_backend": process.Describe(),
 		"operation_policy":  protocol.PolicyMatrix(),
+		"device_lifecycle":  protocol.DeviceLifecycle(),
 		"docker":            false,
 		"nvidia":            false,
 	})
