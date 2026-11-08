@@ -25,6 +25,16 @@ function ctxWith(partial: NonNullable<ToolCtx["mcpReq"]>): ToolCtx {
   return { mcpReq: partial };
 }
 
+// Human error text must not hide the target's structured refusal code, and a
+// backend nack must never acquire successful exit metadata during formatting.
+test("backend refusal retains code alongside human text without a success result", () => {
+  const got = execFrameText({ ok: false, code: "backend_unavailable", message: "目标不支持所选执行后端。" }, "", "", "route");
+  assert.equal(got.isError, true);
+  assert.match(got.text, /code=backend_unavailable/);
+  assert.match(got.text, /目标不支持/);
+  assert.doesNotMatch(got.text, /status=completed|exit_code=0/);
+});
+
 test("nonzero exit or cancelled/timeout is error", () => {
   assert.equal(execToolIsError("completed", 0), false);
   assert.equal(execToolIsError("completed", 7), true);

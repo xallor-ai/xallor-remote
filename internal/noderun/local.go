@@ -6,6 +6,8 @@ import (
 	"errors"
 
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
+	"github.com/xallor-ai/xallor-remote/internal/identity"
+	"github.com/xallor-ai/xallor-remote/internal/process"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 	"github.com/xallor-ai/xallor-remote/internal/shell"
 )
@@ -96,6 +98,7 @@ func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
 		if cfg.Shell == "" {
 			cfg.Shell = "auto"
 		}
+		cfg.ExecutionBackend = process.BackendName(cfg.ExecutionBackend)
 		_ = c.WriteFrame(ipc.OK(req.ID, cfg))
 	case "config.set":
 		ctx, cancel := context.WithTimeout(d.ctx, protocol.RelayIdentityTimeout)
@@ -106,20 +109,19 @@ func (d *Daemon) handleLocal(c *ipc.Conn, req ipc.Request) bool {
 			return true
 		}
 		defer release()
-		var p struct {
-			RelayURL  string `json:"relay_url"`
-			Workspace string `json:"workspace"`
-			Shell     string `json:"shell"`
-		}
+		var p identity.Config
 		if json.Unmarshal(req.Params, &p) != nil {
 			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "配置格式无效。"))
 			return true
 		}
 		oldConfig := d.store.ConfigSnapshot()
-		if err := d.store.SetConfig(p.RelayURL, p.Workspace, p.Shell); err != nil {
+		if err := d.store.SetRuntimeConfig(p); err != nil {
 			code := protocol.AgentError
 			if errors.Is(err, shell.ErrUnsupported) {
 				code = protocol.UnsupportedShell
+			}
+			if errors.Is(err, process.ErrBackendUnavailable) {
+				code = protocol.BackendUnavailable
 			}
 			_ = c.WriteFrame(ipc.Fail(req.ID, code, ipc.Human(code)))
 			return true
