@@ -97,6 +97,8 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 
 `info.relay_registry` 与 Relay `/health.registry` 返回单 Relay sticky routing contract；health 是进程/build liveness，不是 device readiness。Relay 只允许每个 device UID 一条 active device connection，旧连接/旧 route 的迟到事件必须丢弃；多地域 HA 不属于 v0。
 
+`info.relay_failover` 与 `/health.failover` 只返回 provider-neutral 四态和 no-replay contract。`healthy` 不等于 target ready，`unknown` 不等于 stopped/completed；网络分区、旧 route 或缺少终态时必须保留 unknown，不自动切换 ownership，也不重放有副作用的 invoke/handoff。
+
 ```json
 {"script":{"text":"Get-Location","shell":"powershell"},"timeout_ms":30000}
 {"program":{"executable":"git","args":["status","--short"]},"cwd":"repo"}

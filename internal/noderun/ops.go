@@ -476,6 +476,7 @@ func (d *Daemon) runLocalInfo(link *wsConn, msg protocol.Message) {
 		"entitlement_contract": protocol.EntitlementContract(),
 		"usage_event_contract": protocol.UsageEventContract(),
 		"relay_registry":       protocol.RelayRegistry(),
+		"relay_failover":       protocol.RelayFailover(),
 		"docker":               false,
 		"nvidia":               false,
 	})

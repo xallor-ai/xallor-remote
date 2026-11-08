@@ -58,6 +58,8 @@ Use `xallor-remote usage contract` to inspect privacy-minimized usage event and 
 
 Use `xallor-remote relay registry` to inspect the single-Relay sticky routing contract; it does not claim multi-region HA or failover.
 
+Use `xallor-remote relay failover` to inspect the multi-region health, ownership, unknown-result, and no-replay contract; it reports rules only and does not perform automatic failover.
+
 For local development, run a Relay in one terminal:
 
 ```text
