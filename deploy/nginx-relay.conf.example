@@ -1,0 +1,23 @@
+# Self-hosted example. Replace hostname and certificate paths before use.
+# Relay: --listen 127.0.0.1:8443 --reverse-proxy --trusted-proxy 127.0.0.1
+server {
+    listen 443 ssl;
+    server_name relay.example.com;
+    ssl_certificate /etc/ssl/relay/fullchain.pem;
+    ssl_certificate_key /etc/ssl/relay/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    location /remote {
+        proxy_pass http://127.0.0.1:8443;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        # Overwrite client-provided forwarding headers at the public boundary.
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Origin $http_origin;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_buffering off;
+    }
+}

@@ -21,7 +21,7 @@ func bundle(t *testing.T, label string) (string, Manifest) {
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	m := Manifest{Schema: 1, Build: buildinfo.Info{Version: "0.2.0", Revision: label, Protocol: buildinfo.Protocol, ProfileFormat: buildinfo.ProfileFormat(), OS: runtime.GOOS, Arch: runtime.GOARCH}, Artifact: Artifact{Filename: name, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(content))}}
+	m := Manifest{Schema: 1, Build: buildinfo.Info{Version: "0.2.2", Revision: hex.EncodeToString(sum[:])[:40], Protocol: buildinfo.Protocol, ProfileFormat: buildinfo.ProfileFormat(), OS: runtime.GOOS, Arch: runtime.GOARCH}, Artifact: Artifact{Filename: name, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(content))}}
 	os.WriteFile(filepath.Join(dir, name), content, 0700)
 	writeManifest(t, dir, m)
 	return dir, m
@@ -35,16 +35,19 @@ func writeManifest(t *testing.T, dir string, m Manifest) {
 }
 
 type fakeControl struct {
-	builds      map[string]buildinfo.Info
-	live        *buildinfo.Executable
-	fail        string
-	badMetadata bool
-	stops       int
+	builds        map[string]buildinfo.Info
+	live          *buildinfo.Executable
+	fail          string
+	badMetadata   bool
+	stops         int
+	checks        int
+	runningChecks int
 }
 
-func (f *fakeControl) Running() (*buildinfo.Executable, error) { return f.live, nil }
+func (f *fakeControl) Running() (*buildinfo.Executable, error) { f.runningChecks++; return f.live, nil }
 func (f *fakeControl) Stop() error                             { f.stops++; f.live = nil; return nil }
 func (f *fakeControl) Check(path string) (buildinfo.Executable, error) {
+	f.checks++
 	sum, err := buildinfo.HashFile(path)
 	if err != nil {
 		return buildinfo.Executable{}, err
@@ -77,7 +80,7 @@ func control(manifests ...Manifest) *fakeControl {
 func TestInstall_should_upgradeAndRollback(t *testing.T) {
 	a, ma := bundle(t, "a")
 	b, mb := bundle(t, "b")
-	s := Store{Dir: t.TempDir()}
+	s := mechanicsStore(t)
 	c := control(ma, mb)
 	sentinel := filepath.Join(s.Dir, "identity-sentinel")
 	os.WriteFile(sentinel, []byte("unchanged"), 0600)
@@ -124,7 +127,7 @@ func TestInstall_should_rejectInvalidBundleBeforeStop(t *testing.T) {
 				c.badMetadata = true
 			}
 			writeManifest(t, dir, m)
-			if err := (Store{Dir: t.TempDir()}).Install(dir, c); err == nil {
+			if err := (mechanicsStore(t)).Install(dir, c); err == nil {
 				t.Fatal("invalid release accepted")
 			}
 			if c.stops != 0 {
@@ -138,7 +141,7 @@ func TestInstall_should_rejectInvalidBundleBeforeStop(t *testing.T) {
 func TestInstall_should_restorePrevious_whenCandidateFails(t *testing.T) {
 	a, ma := bundle(t, "a")
 	b, mb := bundle(t, "b")
-	s := Store{Dir: t.TempDir()}
+	s := mechanicsStore(t)
 	c := control(ma, mb)
 	if err := s.Install(a, c); err != nil {
 		t.Fatal(err)
@@ -156,7 +159,7 @@ func TestInstall_should_restorePrevious_whenCandidateFails(t *testing.T) {
 // Corruption of installed bytes must never fall back silently to another executable.
 func TestActivePath_should_failClosed_whenArtifactIsChanged(t *testing.T) {
 	a, m := bundle(t, "a")
-	s := Store{Dir: t.TempDir()}
+	s := mechanicsStore(t)
 	c := control(m)
 	if err := s.Install(a, c); err != nil {
 		t.Fatal(err)
@@ -171,7 +174,7 @@ func TestActivePath_should_failClosed_whenArtifactIsChanged(t *testing.T) {
 func TestRollback_should_recoverPendingActivation(t *testing.T) {
 	a, ma := bundle(t, "a")
 	_, mb := bundle(t, "b")
-	s := Store{Dir: t.TempDir()}
+	s := mechanicsStore(t)
 	c := control(ma, mb)
 	if err := s.Install(a, c); err != nil {
 		t.Fatal(err)
@@ -191,7 +194,7 @@ func TestRollback_should_recoverPendingActivation(t *testing.T) {
 // Live installer locks must reject concurrent mutations.
 func TestInstall_should_rejectConcurrentInstaller(t *testing.T) {
 	a, m := bundle(t, "a")
-	s := Store{Dir: t.TempDir()}
+	s := mechanicsStore(t)
 	unlock, err := s.Lock()
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +208,7 @@ func TestInstall_should_rejectConcurrentInstaller(t *testing.T) {
 // Even an interrupted first install has a recovery path without fabricating a previous version.
 func TestRollback_should_clearInterruptedFirstInstall(t *testing.T) {
 	_, m := bundle(t, "initial")
-	s := Store{Dir: t.TempDir()}
+	s := mechanicsStore(t)
 	if err := s.save(State{Pending: &m}); err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +225,7 @@ func TestRollback_should_clearInterruptedFirstInstall(t *testing.T) {
 func TestInstall_should_rejectCorruptInput_evenWhenArtifactIsCached(t *testing.T) {
 	a, ma := bundle(t, "a")
 	b, mb := bundle(t, "b")
-	s := Store{Dir: t.TempDir()}
+	s := mechanicsStore(t)
 	c := control(ma, mb)
 	for _, dir := range []string{a, b} {
 		if err := s.Install(dir, c); err != nil {

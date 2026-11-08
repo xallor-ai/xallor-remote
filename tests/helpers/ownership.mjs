@@ -40,7 +40,7 @@ try {
   await info("unauthorized");
   pass("claim_revokes_existing_bearer_and_other_tenant_connection");
   await account("controller", "alice");
-  await cli("controller", "peer", "add", "--id", target);
+  await cli("controller", "peer", "add", "--device", target);
   await info("ok");
   const share = await manage("share", "--member", bob.membership_id, "--allow", "info,read", "--ttl", "1h");
   await account("controller", "bob");
@@ -80,7 +80,7 @@ try {
   const shown = await cli("target", "grant", "show");
   const grant = shown.stdout.match(/授权码:\s*(\S+)/)?.[1];
   assert(grant, "target grant show did not return an authorization code");
-  await cli("controller", "peer", "add", "--id", target, "--grant", grant);
+  await cli("controller", "peer", "add", "--device", target, "--grant", grant);
   await info("unauthorized");
   pass("clearing_account_cannot_bypass_claimed_device_access");
   await account("controller", "bob");
@@ -90,7 +90,7 @@ try {
   await info("unauthorized");
   await account("target", "alice");
   await account("controller", "alice");
-  await cli("controller", "peer", "add", "--id", target);
+  await cli("controller", "peer", "add", "--device", target);
   await info("ok");
   pass("transfer_back_creates_a_new_ownership_instance");
   fs.writeFileSync(path.join(root, "ownership-results.json"), JSON.stringify(results));

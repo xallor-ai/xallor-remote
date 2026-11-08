@@ -73,7 +73,7 @@ SQLite 使用 `user_version` 管理结构版本。当前版本 6 加入后台委
 
 被控机导入身份凭据并连接 Relay 后，`device claim` 将本机设备认领到当前空间。`device owner` 查看归属和分享；`device share --member <成员关系ID> --allow info,read --ttl 24h` 授予指定操作；`device unshare --share <分享ID>` 撤销；`device transfer --member <接收者成员关系ID>` 转移并作废原分享。这些命令经本机 Runtime 的 device 连接完成，不把设备密钥交给控制方，也没有公开的 HTTP 管理入口。
 
-控制方导入对应成员的账号凭据后可用 `peer add --id <设备ID>` 添加已认领设备，无需共享码。权限、未认领模式和作业边界见 [platform.md](platform.md)；超时或断线不能推断事务是否提交，先核对归属/分享，转移时可由接收者确认，再决定下一步。
+控制方导入对应成员的账号凭据后可用 `peer add --device <设备ID>` 添加已认领设备，无需共享码。权限、未认领模式和作业边界见 [platform.md](platform.md)；超时或断线不能推断事务是否提交，先核对归属/分享，转移时可由接收者确认，再决定下一步。
 
 ## 4. 官方实例保护上限
 
@@ -88,10 +88,32 @@ SQLite 使用 `user_version` 管理结构版本。当前版本 6 加入后台委
 
 ## 5. 运维
 
-公网只开 WSS。限制消息体。管理口 v0 用本机 loopback CLI，不要无鉴权的 0.0.0.0 HTTP。
+默认监听 `127.0.0.1:8443`，仅供本机 `ws://` 开发。明文模式只接受数值 loopback 监听地址（`127.0.0.1` / `[::1]`）；主机名即使当前解析到 loopback 也不作为安全依据。非 loopback 监听必须配置内置 TLS 或显式 HTTPS 反代模式，否则启动失败，且 CLI 在打开数据目录前校验。
+
+直接提供 WSS（TLS 最低 1.2，证书/私钥为 PEM，需同时提供）：
 
 ```text
-xallor-remote relay --listen 0.0.0.0:8443 --data ./var/xallor-remote
+xallor-remote relay --listen 0.0.0.0:8443 --tls-cert ./cert.pem --tls-key ./key.pem --data ./var/xallor-remote
 ```
 
-官方实例：`wss://api.xallor.com/remote`（探活 `GET https://api.xallor.com/remote/health`）。与 Tab API 同证书、同主机，靠路径分流。不要为 invoke 另开 HTTP。
+客户端设 `XALLOR_REMOTE_RELAY_URL=wss://<证书域名>:8443/remote`，健康检查同端口 `/health`、`/remote/health` 或 `/xr/health`，均走 HTTPS。证书须受客户端系统信任；不要关闭校验。换证后需重启 Relay。
+
+反向代理终止 TLS：
+
+```text
+xallor-remote relay --listen 127.0.0.1:8443 --reverse-proxy --trusted-proxy 127.0.0.1 --data ./var/xallor-remote
+```
+
+示例 [nginx-relay.conf.example](../deploy/nginx-relay.conf.example)。公网反代必须覆盖 `X-Forwarded-Proto` 为 `https`，覆盖 `X-Forwarded-For` 为实际客户端 IP；后端仅对反代开放。跨主机后端必须使用受保护的私网/隧道，不能把明文代理链路暴露公网。`--reverse-proxy` 与内置 TLS 互斥，必须有 `--trusted-proxy`。所有请求（含健康检查）均须来自可信 socket peer 且携带唯一 `X-Forwarded-Proto: https`，否则 HTTP 403。本机反代模式探活也要带该头。
+
+`--trusted-proxy <IP或CIDR>` 可重复，默认不信任任何代理，拒绝全网 `/0`。仅对可信 socket peer 读取 XFF，从右向左剥离可信代理，遇到第一个非可信 IP 停止；不会采用它左边的伪造地址。链中任一值无效则回退 socket IP；IPv4-mapped IPv6 归一化为 IPv4。该有效来源同时用于 hello、连接、字节限额与拒绝日志；非可信直连的转发头不影响判断。不要把普通客户端网络配成可信代理。
+
+默认拒绝所有携带 Origin 的 WebSocket；原生 Runtime/CLI 不发送 Origin，可照常连接。浏览器须显式配置 `--allowed-origin https://console.example`（可重复），按 scheme/host/port 精确匹配，不支持通配符或路径；显式 `:443` 与省略端口是两个配置值。IPv6 示例 `--allowed-origin https://[::1]:3000` 也按地址和端口精确匹配。空、`null`、多个或未知 Origin 返回 HTTP 403；Host/X-Forwarded-Host 不能绕过 allowlist。Origin 不是身份凭据，设备/授权校验仍必须通过。
+
+以上仅为自托管配置说明，不代表官方实例已部署；本轮不修改官方环境。
+
+仓库旧 ECS 部署脚本现在要求显式 `--trusted-proxy <已核对的网关源IP/CIDR>`，生成安全反代模式的 systemd 单元；不自动猜测 Docker 子网。本机探活额外信任 `127.0.0.1` 并带 HTTPS 转发标记。脚本须另行取得生产部署授权；运行前备份并 diff 现有单元、反代和防火墙，后端仅对已配置代理开放。模板回归检查只读本地文本，不导入或执行 ECS 连接脚本。
+
+代理配置接受 IPv4、IPv6 地址/CIDR。IPv4-mapped IPv6 CIDR 同步转换为 IPv4，例如 `::ffff:127.0.0.1/128` 等价于 `127.0.0.1/32`，`::ffff:127.0.0.0/120` 等价于 `127.0.0.0/24`；mapped 前缀短于 `/96` 拒绝，转换后的 `/0` 也拒绝。无需把相同代理按两种表示法重复配置。
+
+部署单元生成器只接受不含 zone（`%接口名`）、空白或控制字符的 IP/CIDR。它先检查原始 mapped IPv6 地址再转换和归并网段，以结构化参数生成唯一 ExecStart，非法输入在连接 ECS 前拒绝。

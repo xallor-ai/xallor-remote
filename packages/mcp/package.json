@@ -1,6 +1,6 @@
 {
   "name": "xallor-remote-mcp",
-  "version": "0.2.0",
+  "version": "0.2.6",
   "description": "XallorRemote：MCP 头 + 本机 Runtime（安装一个包即可 ensure / 被控）",
   "type": "module",
   "bin": {
@@ -17,12 +17,12 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "tsc && node --test dist/version.test.js dist/ensure.test.js dist/managed-runtime.test.js dist/profile-format.test.js dist/exec-result.test.js dist/exec-input.test.js dist/read-result.test.js dist/ipc.test.js",
+    "test": "tsc && node --test dist/version.test.js dist/ensure.test.js dist/managed-runtime.test.js dist/profile-format.test.js dist/exec-result.test.js dist/exec-input.test.js dist/read-result.test.js dist/ipc.test.js dist/source-trust.test.js",
     "pack:release": "node ../../scripts/pack-mcp-with-runtime.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/server": "^2.0.0",
-    "zod": "^4.0.0"
+    "@modelcontextprotocol/server": "2.4.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

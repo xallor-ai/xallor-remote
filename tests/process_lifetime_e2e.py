@@ -56,7 +56,7 @@ try:
     cluster.add("controller")
     cluster.cli("target", "inbound", "on")
     grant = cluster.grant("target")
-    cluster.cli("controller", "peer", "add", "--id", target, "--grant", grant)
+    cluster.cli("controller", "peer", "add", "--device", target, "--grant", grant)
     workspace = cluster.root / "workspaces/target"
     normal = workspace / "normal"
     normal.mkdir()

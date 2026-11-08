@@ -6,8 +6,9 @@
 import { spawn } from "node:child_process";
 import { findBinary, INSTALL_HINT } from "./ensure.js";
 import { guardedArgs } from "./profile-format.js";
+import { verifySourceSync } from "./source-trust.js";
 
-const bin = findBinary(process.env, { managed: process.argv[2] !== "runtime" });
+const bin = findBinary(process.env, { managed: process.argv[2] !== "runtime", sourceVerifier: verifySourceSync });
 if (!bin) {
   console.error(INSTALL_HINT);
   process.exit(1);

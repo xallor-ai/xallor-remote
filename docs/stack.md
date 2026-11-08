@@ -1,5 +1,9 @@
 # 技术栈与复用
 
+发行签名、SBOM、provenance、下载后验证及尚未完成的安装器强制验签边界见 [release-security.md](release-security.md)。本地 manifest 校验不等于来源认证。
+
+#74 的长期 bootstrap/安装/回滚/MCP 信任根方案见 [install-trust-design.md](install-trust-design.md)。`runtime verify`、install/rollback 与 MCP vendor 自动选择复用可信系统 GitHub CLI 验证原始 binary/manifest provenance；真实 signed-vendor 正向路径和离线信任根轮换/撤销仍待确认。
+
 SSOT：语言、库、仓库形态、发行。语言级选型结论在 [decisions.md](decisions.md) §4。头关系见 [heads.md](heads.md)。IPC 见 [ipc.md](ipc.md)。
 
 原则：**协议与产品行为是我们的；传输、MCP 语法、TUI 框架、打包不是。** 能依赖稳定社区实现就不要自写。
@@ -31,7 +35,7 @@ SSOT：语言、库、仓库形态、发行。语言级选型结论在 [decision
 | ID | `github.com/google/uuid` | 自写随机串当 UUID |
 | Windows Job Object / Unix 进程组 | `golang.org/x/sys` | 只 `kill` 父进程留孤儿 |
 | Windows named pipe | **`github.com/Microsoft/go-winio`** | localhost TCP 冒充管道 |
-| TLS | `crypto/tls` + 系统根证书 | 自签当默认；`TLS_INSECURE` 仅本机调试 |
+| TLS | `crypto/tls` + 系统根证书 | 自签当默认；跳过证书校验 |
 | grant / secret 哈希 | **SHA-256**（高熵，不必 bcrypt） | 自创哈希；明文落 Relay |
 | Relay 落盘 | v0：**SQLite**，纯 Go 驱动 **`modernc.org/sqlite`**（devices / grants / audit） | v0 上 Postgres；自写 wal；stdout 进库 |
 | JSON | 标准库 `encoding/json` / `JSON.stringify` | 新 IDL（protobuf/connect）——v0 不值得 |
@@ -75,7 +79,7 @@ docs/
 
 构建入口：`python scripts/build-release.py`，默认拒绝未提交源码；本地验证可显式 `--allow-dirty`，制品的 dirty 标志会保留。版本源为 `internal/buildinfo/version.txt`，构建会检查 npm 元数据一致；Git SHA、构建时间和 dirty 标志写入 Runtime。每个平台目录包含二进制和 `manifest.json`，zip 另附 SHA-256。manifest 证明内容完整性，不代替发行来源认证。打包脚本校验 manifest 后才复制进 vendor。GitHub 工作流生成可下载制品；版本标签另外生成待确认的 draft release，不部署 Relay 或自动发布 npm。
 
-本机安装：`xallor-remote runtime install --bundle <解压目录>`。先校验平台、协议、大小、hash 与制品自报构建信息，再复制到数据目录下独立版本目录；保存 pending 状态后停止旧 Runtime、验证新进程的 PID/hash，最后原子切换版本记录。启动失败时恢复已验证的旧版本。设备身份、授权码、peers、workspace 和入站选择不属于升级文件。
+本机安装：`xallor-remote runtime install --bundle <解压目录>`。先在私有快照验证原始 binary/manifest provenance，再复制到数据目录下独立版本目录、检查候选身份并停止旧 Runtime；保存 pending 状态后验证新进程的 PID/hash，最后原子切换版本记录。rollback 在激活旧版本前复验来源；MCP vendor 选择拒绝未认证候选。真实 signed-vendor 正向路径和离线轮换/撤销仍待完成。设备身份、授权码、peers、workspace 和入站选择不属于升级文件。
 
 `runtime rollback` 恢复前一版本；`runtime status` 同时返回安装记录与实际运行制品。`version --json` 查看所调用程序，`ensure` 优先启动已选版本。升级中断后执行 rollback，不自动重试候选版本。历史 0.1.x Runtime 没有可验证的运行制品信息：首次迁移须先停止旧服务，再从新包安装，数据目录保持原样；此首次迁移没有自动保存旧二进制的保证。已纳管版本支持验证后升级和回滚。
 

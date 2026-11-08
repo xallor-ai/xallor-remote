@@ -31,7 +31,7 @@
 - 客户端 **默认** `XALLOR_REMOTE_RELAY_URL=wss://api.xallor.com/remote`。
 - 和 Tab 同属 Xallor、同一台 `api.xallor.com`：`/api` 是账号/壁纸 API；`/remote` 是 Remote 中转（WSS）。不要为 invoke 另开 HTTP。
 - 身份与设备授权基础可与 Relay 同进程运行，当前实现边界以 [platform.md](platform.md) 为准；托管注册/登录、订阅与组织管理界面另行产品化。连接数与流量硬顶是传输保护，超限 `quota_exceeded`，不是会员资源额度。
-- **自托管一等公民**：`xallor-remote relay --listen :8443 --data <dir>`，改 URL 即切走。数据不锁死在云上。
+- **自托管一等公民**：本机 `xallor-remote relay --listen 127.0.0.1:8443 --data <dir>`；公网配置内置 TLS 或可信 HTTPS 反代（见 [relay.md](relay.md) §5），改 URL 即切走。数据不锁死在云上。
 - Relay 行为契约（连接、inflight、流、cancel、断线、背压）只在 [dataplane.md](dataplane.md)，本文不重复。
 - 官方域名未上线前，dogfood 用自托管 URL；**产品默认仍按官方 hosted 写**，不要改回「v0 只能自托管」。
 - 后续在现有身份授权基础上增加 hosted 登录入口、设备清单与订阅。未认领设备保留共享码入口；认领后不能用共享码绕过账号访问权，见 [credentials.md](credentials.md)。

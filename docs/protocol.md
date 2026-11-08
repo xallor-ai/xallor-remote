@@ -8,6 +8,8 @@ JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本
 
 ## 1. 两条连接
 
+TLS 证书校验失败时不会建立 WebSocket。反代传输策略或浏览器 Origin 不符合入口策略时，在 Upgrade 前返回 HTTP 403，不发送 `hello_ok` 或协议 `error`；这不是新增协议错误码。客户端不得据此推断设备或 grant 状态。入口配置见 [relay.md](relay.md) §5。
+
 | role | 谁发起 | 证明 | 用途 |
 | --- | --- | --- | --- |
 | `device` | 被控 Runtime | `device_id` + `device_secret` | 上线、收 invoke、回事件、**改授权** |
@@ -76,7 +78,11 @@ Relay 在通过准入后重新构造发往 device 的非 cancel `invoke`，保�
 
 scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据续签、成员代次或重新签发同主体分享不改变它；新的设备 UID、归属实例或未认领共享授权实例会改变它。每次新调用仍独立完成现有认证和操作授权。handoff 收到缺失或非法 scope 返回 `unauthorized`，不回退设备级查询。原连接的 cancel 仍按 inflight 归属路由，不需要客户端传 scope。
 
-`info` 的 JSON 结果包含 `build`：version、revision、built_at（可省略）、dirty、protocol（当前为 1）、profile_format（本机持久化格式）、os、arch；用于区分运行制品与代码版本。未知 revision 为 `unknown`，不猜测提交。Relay health 返回同形构建身份。
+`info` 的 JSON 结果包含 `build`：version、revision、built_at（可省略）、dirty、protocol（当前为 1）、profile_format（本机持久化格式）、os、arch；用于区分运行制品与代码版本。未知 revision 为 `unknown`，不猜测提交。Relay health 返回同形构建身份。`execution_backend` 是目标 Runtime 当前真正使用的进程边界：`name` 目前为 `native_user`，`privilege` 为 `same_user`，`sandbox` 为 `none`；Windows 的 `process_tree` 为 `job_object`，Linux 为 `process_group`。`available=false` 或 `code=backend_unavailable` 时不得把执行当作可用，也不能把进程树回收边界当成低权限或 OS 沙箱。
+
+`info.execution_backends` 返回目标注册表的 capability 列表；当前只有 `native_user` 可用，`low_privilege`、`cgroup`、`container` 都是明确 `available:false,code:backend_unavailable` 的预留项。未知 backend 同样拒绝，不按名称猜测能力。目标本机配置字段 `execution_backend` 省略时为 `native_user`；配置 unsupported backend 时整个更新拒绝，持久化配置中的 unsupported backend 阻止 Runtime 启动，不回退默认值。
+
+`exec.backend` 可选，最多 64 字节并计入输入总长；省略或空字符串使用目标本机选择。显式值必须与目标配置匹配且 provider 可用。目标在审批、可执行文件解析、占用预留与 process start 前检查，失败返回唯一 `invoke_nack/backend_unavailable`，不执行 native fallback。控制侧不以自己的 OS 判断对方是否支持 backend。当前 backend 选择范围是 `exec`；read/write/processes/handoff 不因此获得隔离。已启动或 cleanup/release 不确定的情况仍是未知失败终态，不能因为出现 backend 错误而降为“未执行”或成功。
 
 `info.shell` 为 `{configured,selected?,available:[],code?}`：configured 为目标配置名或 auto，selected 是当前能找到的解释器名，available 是本系统受支持且可找到的名字；不能解析选择时返回 code，不伪造 selected。只探测可执行文件，不包含路径、版本或远程凭据。可选解释器及执行语义见 [os.md](os.md)。
 
@@ -86,6 +92,8 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 - `write`：路径 + **完整** `content`。覆盖；无 append、无 patch
 
 `info.execution_modes` 返回 `["script","program"]`，供 Agent 选择输入方式。示例：
+
+执行请求的可选 `backend` 由目标 Runtime 解析；当前只有 `native_user` 可用。未知或未实现后端在启动前返回 `backend_unavailable`，不回退为 native_user。该字段不表示 OS 沙箱或权限降级。
 
 ```json
 {"script":{"text":"Get-Location","shell":"powershell"},"timeout_ms":30000}
@@ -136,10 +144,13 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 | `runtime_unavailable` | 执行头无法启动或连接本机 Runtime，本次尚未发送执行请求 |
 | `invalid_execution` | 执行输入形状、文本或参数无效 |
 | `program_unavailable` | 目标无法安全找到指定程序；不回退到 Shell |
+| `backend_unavailable` | 请求与目标本机 backend 不匹配或 provider 不可用；启动前拒绝，不回退 native_user |
 | `unsupported_program` | Windows program 模式选择了批处理文件或 cmd.exe，须改为显式脚本调用 |
 | `unsupported_shell` | 目标系统不支持配置的解释器名 |
 | `shell_unavailable` | 目标无法安全找到所选解释器；不会换壳重试 |
 | `quota_exceeded` | Relay 或目标 Runtime 的资源上限已满（如分享数、在途请求或本机作业容量） |
+| `resource_uncertain` | 本机作业清理或持久释放未确认；拒绝把重试当成 at-most-once，也不自动重放副作用 |
+| `resource_unavailable` | 本机作业账本不可用；执行未获准，不返回成功终态 |
 | `workspace_missing` | workspace 目录不可用 |
 | `too_large` | write/read、执行输入或目标命令行超过硬上限 |
 
@@ -156,11 +167,13 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 {"type":"error","exec_id":"ex_…","code":"relay_error","message":"目标连接已断开。"}
 ```
 
-`exit` 和 `error` 是互斥终态，示例最后两行属于不同调用。可写输出通道上恰有一个终态且位于最后；管道关闭、CLI 被终止或参数语法解析失败时可能没有完整终态，调用者必须视为结果未确认。不得把 EOF 当成功。命令产生的 JSON/换行只放入 data，不作为事件解析；输出边界是块，不承诺一帧一行命令输出或 stdout/stderr 之间的真实时间顺序。
+`exit` 和 `error` 是互斥终态，示例最后两行属于不同调用。可写输出通道上，执行或本地拒绝恰有一个终态且位于最后；管道关闭或 CLI 被终止时可能没有完整终态，调用者必须视为结果未确认。不得把 EOF 当成功。命令产生的 JSON/换行只放入 data，不作为事件解析；输出边界是块，不承诺一帧一行命令输出或 stdout/stderr 之间的真实时间顺序。
 
 `exec_id` 仅在已观测时出现，可能随空 stdout 事件先到达；这不是目标进程已启动的证明。exit 字段沿用本协议终态语义，缺失的可选元数据省略，不伪造 0/false；completed 缺少有效整数退出码时转为 result_unknown。错误保留已知协议 code，不根据一般传输错误推断命令是否开跑。发送失败也可能已部分发送，所以返回 result_unknown。
 
-本地语义输入校验失败为 invalid_execution/too_large；Runtime 启动或连接失败为 runtime_unavailable。非法选项、help 等 Cobra 语法/帮助流程不属于执行事件流，仍走普通诊断/帮助输出。进程退出状态仅在 completed 且 exit_code=0 时为 0，其余为非零；它不是远端原始退出码透传，远端值读取 exit_code。诊断可写入 CLI stderr，但远端 stderr 在 JSONL 中只作为标准输出上的 stderr 事件。输出写入失败立即停止并关闭 IPC，不补写成功或重试执行。
+本地语义输入校验失败为 invalid_execution/too_large；Runtime 启动或连接失败为 runtime_unavailable。当命令已定位到 exec 且选择 JSONL 时，未知 flag、缺少选项值、值类型错误等参数解析失败也返回唯一的 `{"type":"error","code":"invalid_execution","message":"…"}`，进程退出 1；不带 exec_id/exit_code/duration_ms，不启动 Runtime 或发送执行请求。stderr 保留人话诊断。`--help` 仍成功显示普通帮助，不产生 error 事件；尚未定位到 exec 的根命令路由错误及其它命令保留普通错误通道。
+
+JSONL 选择在 `--` 前识别，允许出现在错误选项之前或之后；作为其它选项值或 `--` 后参数的字面 `--jsonl` 不选择格式。重复设置时最后一个显式布尔值生效，`--jsonl=false` 关闭格式；非法的显式布尔值本身也作为 JSONL 参数错误返回。进程退出状态仅在 completed 且 exit_code=0 时为 0，其余为非零；它不是远端原始退出码透传，远端值读取 exit_code。远端 stderr 在 JSONL 中只作为标准输出上的 stderr 事件。输出写入失败立即停止并关闭 IPC，不补写成功或重试执行。此修复不改变 Request、IPC、MCP 或 WSS 消息。
 
 ---
 

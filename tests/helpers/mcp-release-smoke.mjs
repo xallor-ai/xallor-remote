@@ -31,6 +31,9 @@ try {
   const status = JSON.parse(result.content[0].text);
   if (!/^[0-9]{9}$/.test(status.device_id) || status.version !== expectedVersion) throw Error("incorrect runtime identity");
   if (process.env.XALLOR_TEST_TARGET) {
+    const unavailable = await call("tools/call", { name: "remote.exec", arguments: { device_id: process.env.XALLOR_TEST_TARGET, backend: "container", script: { text: "echo must-not-fallback" } } });
+    if (!unavailable.isError || !unavailable.content.some(c => c.text?.includes("backend_unavailable")))
+      throw Error("MCP dropped backend selection or failed open");
     const executed = await call("tools/call", { name: "remote.exec", arguments: { device_id: process.env.XALLOR_TEST_TARGET, script: { text: "echo mcp-e2e" } } });
     if (executed.isError || !executed.content.some(c => c.text?.includes("mcp-e2e") && c.text.includes("exit_code=0")))
       throw Error("MCP remote execution failed");

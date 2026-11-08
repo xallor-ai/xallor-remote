@@ -32,7 +32,7 @@ Relay **永远不执行命令。** B Runtime 才 Popen。
 
 ## 2. 连接模型
 
-两条出站长连接，都是 **WSS 文本帧，一帧一条 JSON**。公网 TLS；localhost 可用 `ws://`。
+两条出站长连接，都是 **WSS 文本帧，一帧一条 JSON**。公网 TLS；数值 loopback 监听可用 `ws://`。Relay 通过内置 TLS 或显式可信 HTTPS 反代模式提供公网入口；在 HTTP Upgrade 前校验代理传输与浏览器 Origin，拒绝不建立协议连接。配置与来源 IP 归属见 [relay.md](relay.md) §5。
 
 | 连接 | 谁发起 | hello | 绑定 |
 | --- | --- | --- | --- |

@@ -11,6 +11,7 @@ import { MCP_VERSION } from "./version.js";
 import { guardedArgs, checkRuntimeBuild } from "./profile-format.js";
 import { packageBuild } from "./buildinfo.js";
 import { execInputSchema } from "./exec-input.js";
+import { verifySourceSync } from "./source-trust.js";
 
 let session: RuntimeIpc | undefined;
 
@@ -25,7 +26,7 @@ async function ensureRuntime(): Promise<RuntimeIpc> {
     try {
       await ipc.connect(400);
     } catch {
-      const bin = findBinary();
+      const bin = findBinary(process.env, { sourceVerifier: verifySourceSync });
       if (!bin) {
         throw new Error(INSTALL_HINT);
       }
@@ -133,7 +134,7 @@ function createServer(): McpServer {
   server.registerTool(
     "remote.device_info",
     {
-      description: "查询一台设备的 os/arch/hostname/workspace。只配一台时可省略 device_id。",
+      description: "查询目标设备的 os/arch/hostname/workspace、shell、执行模式、execution_backend 与 execution_backends。后端由目标配置决定；available=false 时不能选择；只配一台时可省略 device_id。",
       inputSchema: z.object({
         device_id: z.string().optional().describe("目标设备 ID"),
       }),
@@ -151,7 +152,7 @@ function createServer(): McpServer {
       description: "在对方执行脚本或程序，script 与 program 二选一，流式回收 stdout/stderr。解释器和路径均属于对方。",
       inputSchema: execInputSchema,
     },
-    async ({ script, program, device_id, cwd, timeout_ms }, ctx) => {
+    async ({ script, program, device_id, cwd, timeout_ms, backend }, ctx) => {
       if (!process.env.XALLOR_REMOTE_DEVICE_GRANT && !process.env.XALLOR_REMOTE_DEVICE_ID) {
         const ipc = await ensureRuntime();
         const st = await ipc.call("status");
@@ -175,6 +176,7 @@ function createServer(): McpServer {
           ...(script ? { script } : { program }),
           ...(device_id ? { device_id } : {}),
           ...(cwd ? { cwd } : {}),
+          ...(backend !== undefined ? { backend } : {}),
           ...(timeout_ms ? { timeout_ms } : {}),
         },
         (ev) => {

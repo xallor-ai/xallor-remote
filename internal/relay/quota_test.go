@@ -42,9 +42,10 @@ func TestLimiterDeviceConnsPerIP(t *testing.T) {
 	}
 }
 
-func TestClientIPPrefersXForwardedFor(t *testing.T) {
+// Direct callers must not alter their quota identity with a forwarding header.
+func TestClientIP_should_ignoreForwardedFor_whenNoProxyIsTrusted(t *testing.T) {
 	r := &http.Request{RemoteAddr: "127.0.0.1:9", Header: http.Header{"X-Forwarded-For": []string{"8.8.8.8, 1.1.1.1"}}}
-	if got := ClientIP(r); got != "8.8.8.8" {
+	if got := ClientIP(r); got != "127.0.0.1" {
 		t.Fatalf("got %s", got)
 	}
 }

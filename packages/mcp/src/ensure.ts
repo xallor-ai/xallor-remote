@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { managedRuntime } from "./managed-runtime.js";
+import type { SourceVerifier } from "./source-trust.js";
 
 export function dataDir(env: NodeJS.ProcessEnv = process.env): string {
 	if (env.XALLOR_REMOTE_DATA_DIR) {
@@ -74,6 +75,8 @@ export function bundledBinary(root = packageRoot()): string | undefined {
 export type FindBinaryOpts = {
   packageRoot?: string;
   managed?: boolean;
+  sourceVerifier?: SourceVerifier;
+  allowUnverified?: boolean;
 };
 
 export function findBinary(env = process.env, opts: FindBinaryOpts = {}): string | undefined {
@@ -83,7 +86,7 @@ export function findBinary(env = process.env, opts: FindBinaryOpts = {}): string
     candidates.push(env.XALLOR_REMOTE_BIN);
   }
   if (!env.XALLOR_REMOTE_BIN && opts.managed !== false) {
-    const managed = managedRuntime(dataDir(env));
+    const managed = managedRuntime(dataDir(env), opts.sourceVerifier);
     if (managed) return managed;
   }
   const bundled = bundledBinary(opts.packageRoot ?? packageRoot());
@@ -107,7 +110,14 @@ export function findBinary(env = process.env, opts: FindBinaryOpts = {}): string
   for (const c of candidates) {
     try {
       fs.accessSync(c, fs.constants.F_OK);
-      return c;
+      if (opts.allowUnverified) return c;
+      if (!opts.sourceVerifier) continue;
+      const manifest = path.join(path.dirname(c), "manifest.json");
+      if (!fs.existsSync(manifest)) continue;
+      try {
+        const parsed = JSON.parse(fs.readFileSync(manifest, "utf8"));
+        if (opts.sourceVerifier(c, manifest, parsed.build)) return c;
+      } catch { /* reject unverified candidate */ }
     } catch {
       /* try next */
     }

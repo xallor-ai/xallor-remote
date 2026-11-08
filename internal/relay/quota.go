@@ -1,9 +1,6 @@
 package relay
 
 import (
-	"net"
-	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -45,17 +42,6 @@ type Limiter struct {
 
 func NewLimiter(q Quota) *Limiter {
 	return &Limiter{cfg: q.withDefaults(), ips: map[string]*ipStat{}}
-}
-
-func ClientIP(r *http.Request) string {
-	if x := r.Header.Get("X-Forwarded-For"); x != "" {
-		return strings.TrimSpace(strings.Split(x, ",")[0])
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }
 
 func (l *Limiter) AllowDeviceHello(ip string) string {

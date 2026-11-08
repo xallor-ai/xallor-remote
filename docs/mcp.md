@@ -1,5 +1,7 @@
 # MCP 头
 
+依赖门禁：MCP SDK 固定为 `@modelcontextprotocol/server@2.4.0`，Zod 固定为 `4.6.7`，提交配套 lockfile。CI 使用 `npm ci`、`npm test`、`npm run build` 和 `npm audit --omit=dev --audit-level=high`；生产依赖出现 high/critical 漏洞时阻止合并和发行。升级不改变工具参数、结果或 Runtime IPC 语义。
+
 SSOT：mcp 配置与 tools。ensure 见 [ipc.md](ipc.md) / [model.md](model.md)。环境变量名见 [decisions.md](decisions.md)。官方 SDK 见 [stack.md](stack.md)。
 
 ---
@@ -36,7 +38,7 @@ Cursor 等 spawn 的短驻 stdio 进程：全局安装后的 `xallor-remote-mcp`
 
 自托管时再加 `XALLOR_REMOTE_RELAY_URL`。多台用 `xallor-remote peer add`。不要写 IP / SSH。覆盖内置二进制时设 `XALLOR_REMOTE_BIN`。
 
-可选：`XALLOR_REMOTE_TLS_INSECURE`（仅本机调试）、`XALLOR_REMOTE_LOG_LEVEL`。
+可选：`XALLOR_REMOTE_LOG_LEVEL`。Runtime 对 `wss://` 使用系统根证书验证服务端；私有 CA 须先配置系统信任。没有跳过 TLS 校验的环境变量；本机明文开发使用 loopback `ws://`。
 
 缺 grant 要在第一条 tool call 报错。不要把 mcp.json 提交进 git。启动时不要往 stderr 打版本横幅（Cursor 会当成 error）。
 
@@ -47,7 +49,7 @@ Cursor 等 spawn 的短驻 stdio 进程：全局安装后的 `xallor-remote-mcp`
 | Tool | 作用 |
 | --- | --- |
 | `remote.devices` | peers + 在线状态 |
-| `remote.device_info` | 单台；只配一台可省 id |
+| `remote.device_info` | 单台；只配一台可省 id；返回目标 `build`、`shell`、`execution_modes` 与 `execution_backend` |
 | `remote.exec` | **流式**；script / program 二选一，cwd 默认对方 workspace；输入见 [protocol.md](protocol.md) |
 | `remote.exec_cancel` | exec_id，幂等 |
 | `remote.read` / `remote.write` | 路径原样传递 |

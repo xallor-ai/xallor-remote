@@ -13,7 +13,7 @@ gw=xallor-api_gateway_1
 echo '=== full default.conf ==='
 docker exec "$gw" cat /etc/nginx/conf.d/default.conf
 echo '=== from gateway to relay ==='
-docker exec "$gw" wget -qO- http://host.docker.internal:8443/health || docker exec "$gw" wget -qO- http://172.17.0.1:8443/health || true
+docker exec "$gw" wget --header='X-Forwarded-Proto: https' -qO- http://host.docker.internal:8443/health || docker exec "$gw" wget --header='X-Forwarded-Proto: https' -qO- http://172.17.0.1:8443/health || true
 echo
 echo '=== curl Host api /remote via localhost ==='
 curl -sSk -H 'Host: api.xallor.com' https://127.0.0.1/remote/health || true

@@ -43,7 +43,7 @@ try:
     cluster.add("controller")
     cluster.cli("target", "inbound", "on")
     grant = cluster.grant("target")
-    cluster.cli("controller", "peer", "add", "--id", target, "--grant", grant)
+    cluster.cli("controller", "peer", "add", "--device", target, "--grant", grant)
     db = sqlite3.connect(cluster.root / "relay/relay.db", timeout=3)
     db.execute("BEGIN IMMEDIATE")
     pending = subprocess.Popen([str(cluster.binary), "inbound", "off"], env=cluster.env("target"),
@@ -78,7 +78,7 @@ try:
     assert replacement != grant
     denied = cluster.cli("controller", "exec", "--device", target, "--", "echo old-grant", check=False)
     assert denied.returncode != 0
-    cluster.cli("controller", "peer", "add", "--id", target, "--grant", replacement)
+    cluster.cli("controller", "peer", "add", "--device", target, "--grant", replacement)
     assert "new-grant" in cluster.cli("controller", "exec", "--device", target, "--", "echo new-grant").stdout
     passed("confirmed_rotation_rejects_old_grant_and_accepts_new_grant")
 

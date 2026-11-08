@@ -12,37 +12,46 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
-func Serve(addr string, hub *Hub, log *slog.Logger, quota Quota) error {
-	var lim *Limiter
-	if quota.Enabled {
-		lim = NewLimiter(quota)
-		log.Info("relay quota on")
-	}
-	log.Info("relay listen", "addr", addr)
-	srv := &http.Server{Addr: addr, Handler: HandlerQuota(hub, log, lim), ReadHeaderTimeout: 10 * time.Second}
-	return srv.ListenAndServe()
-}
-
 func Handler(hub *Hub, log *slog.Logger) http.Handler {
 	return HandlerQuota(hub, log, nil)
 }
 
 func HandlerQuota(hub *Hub, log *slog.Logger, lim *Limiter) http.Handler {
+	return handlerPolicy(hub, log, lim, requestPolicy{})
+}
+
+func handlerPolicy(hub *Hub, log *slog.Logger, lim *Limiter, policy requestPolicy) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", writeHealth)
 	mux.HandleFunc("/remote/health", writeHealth)
 	mux.HandleFunc("/xr/health", writeHealth)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if !policy.allowOrigin(r) {
+			if log != nil {
+				log.Warn("relay request denied", "client_ip", policy.clientIP(r), "reason", "origin")
+			}
+			http.Error(w, "Origin is not allowed", http.StatusForbidden)
+			return
+		}
+		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: originPatterns(policy)})
 		if err != nil {
 			if log != nil {
 				log.Warn("accept", "err", err)
 			}
 			return
 		}
-		go serveConn(context.Background(), hub, c, log, lim, ClientIP(r))
+		go serveConn(context.Background(), hub, c, log, lim, policy.clientIP(r))
 	})
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !policy.allowTransport(r) {
+			if log != nil {
+				log.Warn("relay request denied", "client_ip", policy.clientIP(r), "reason", "transport")
+			}
+			http.Error(w, "A trusted HTTPS proxy is required", http.StatusForbidden)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
 }
 
 func serveConn(parent context.Context, hub *Hub, c *websocket.Conn, log *slog.Logger, lim *Limiter, ip string) {
