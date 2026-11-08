@@ -17,5 +17,6 @@ func writeHealth(w http.ResponseWriter, _ *http.Request) {
 		"build":    buildinfo.Current(),
 		"registry": protocol.RelayRegistry(),
 		"failover": protocol.RelayFailover(),
+		"plane":    protocol.ControlDataPlane(),
 	})
 }

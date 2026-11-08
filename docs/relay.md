@@ -28,6 +28,8 @@ SSOT：职责边界、落盘、官方预算、运维。**连接 / inflight / 流
 
 `relay failover` 与 target `info.relay_failover` 输出 provider-neutral contract：`healthy/degraded/unavailable/unknown` 四态，分别描述进程、registry、device readiness 和 execution route；它不把本地 `/health` 当 device readiness，不在断线后把执行视为停止/完成，也不自动切换或重放有副作用的 in-flight command/handoff。当前实现仍是单 Relay authority；多地域 ownership、复制、故障转移和 split-brain 解决方案尚未实现。
 
+`relay planes`/target `info.plane_contract`/`/health.plane` 固定 control/data plane 边界：Relay 的管理状态使用已认证 device control message 和本机管理入口，实时 invoke 只在 WSS 数据面转发；没有公开管理 HTTP API，管理凭据不进入数据面持久化，MCP/GUI 不绕过 Runtime。
+
 `device.settings` / `revoke`：**只处理来自对应 device 连接的消息**。client 连接上的同类消息丢弃或 `unauthorized`。
 
 ---

@@ -99,6 +99,8 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 
 `info.relay_failover` 与 `/health.failover` 只返回 provider-neutral 四态和 no-replay contract。`healthy` 不等于 target ready，`unknown` 不等于 stopped/completed；网络分区、旧 route 或缺少终态时必须保留 unknown，不自动切换 ownership，也不重放有副作用的 invoke/handoff。
 
+`info.plane_contract` 与 `/health.plane` 返回 control/data plane 分离契约。管理凭据、租户/设备管理和持久状态不进入数据面载荷；MCP/GUI 只经本机 Runtime IPC，Relay 不提供管理 HTTP API。数据面仍必须每次通过实时身份/访问复验，缺少管理确认或终态时不得猜测成功。
+
 ```json
 {"script":{"text":"Get-Location","shell":"powershell"},"timeout_ms":30000}
 {"program":{"executable":"git","args":["status","--short"]},"cwd":"repo"}

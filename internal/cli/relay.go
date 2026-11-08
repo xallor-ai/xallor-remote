@@ -66,6 +66,9 @@ func cmdRelay() *cobra.Command {
 	c.AddCommand(&cobra.Command{Use: "failover", Short: "显示多地域 failover 契约（当前仅说明）", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(protocol.RelayFailover())
 	}})
+	c.AddCommand(&cobra.Command{Use: "planes", Short: "显示 control/data plane 分离契约", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(protocol.ControlDataPlane())
+	}})
 	c.Flags().BoolVar(&quota, "quota", false, "启用源 IP 限额")
 	return c
 }

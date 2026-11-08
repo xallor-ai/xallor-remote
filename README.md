@@ -60,6 +60,8 @@ xallor-remote exec --device <device-id> --request-file ./execution.json --jsonl
 
 多地域 failover 的 health/ownership/unknown/no-replay 契约可用 `xallor-remote relay failover` 查看；当前命令只报告规则，不执行自动切换。
 
+Control/data plane 分离契约可用 `xallor-remote relay planes` 查看；管理凭据只在管理入口使用，MCP/GUI 经本机 Runtime IPC，实时 invoke 只走 WSS 数据面。
+
 本机开发先在一个终端运行 Relay：
 
 ```text
