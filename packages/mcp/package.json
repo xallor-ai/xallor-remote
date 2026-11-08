@@ -1,6 +1,6 @@
 {
   "name": "xallor-remote-mcp",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "XallorRemote：MCP 头 + 本机 Runtime（安装一个包即可 ensure / 被控）",
   "type": "module",
   "bin": {
