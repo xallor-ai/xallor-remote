@@ -58,7 +58,7 @@ PRAGMA user_version=1;`)
 			if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 				t.Fatal(err)
 			}
-			if indexes != 0 || seen != 1234 || version != 7 {
+			if indexes != 0 || seen != 1234 || version != 8 {
 				t.Fatalf("unexpected schema/state: indexes=%d last_seen=%d version=%d", indexes, seen, version)
 			}
 		}()

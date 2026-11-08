@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/oidc"
 )
@@ -13,8 +14,12 @@ func migrateOIDC(tx *sql.Tx) error {
 	if err := tx.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		return err
 	}
-	if version >= 7 {
+	if version >= 8 {
 		return nil
+	}
+	if version == 7 {
+		_, err := tx.Exec(`ALTER TABLE oidc_subject_mappings ADD COLUMN issuer_version INTEGER NOT NULL DEFAULT 0; PRAGMA user_version=8;`)
+		return err
 	}
 	_, err := tx.Exec(`
 CREATE TABLE IF NOT EXISTS oidc_issuers (
@@ -32,12 +37,14 @@ CREATE TABLE IF NOT EXISTS oidc_subject_mappings (
  principal_id TEXT NOT NULL REFERENCES principals(id),
  membership_id TEXT NOT NULL REFERENCES memberships(id),
  membership_version INTEGER NOT NULL,
+	 issuer_version INTEGER NOT NULL,
  version INTEGER NOT NULL,
  active INTEGER NOT NULL DEFAULT 1,
  expires_at INTEGER NOT NULL,
  PRIMARY KEY(issuer,subject)
 );
-PRAGMA user_version=7;`)
+
+PRAGMA user_version=8;`)
 	return err
 }
 
@@ -105,6 +112,12 @@ func (s *SQLStore) PutMapping(ctx context.Context, mapping oidc.Mapping) error {
 	var tenant, principal string
 	var active bool
 	var membershipVersion int64
+	var issuerVersion int64
+	var issuerActive bool
+	var issuerExpires int64
+	if err = tx.QueryRowContext(ctx, `SELECT version,active,expires_at FROM oidc_issuers WHERE issuer=?`, mapping.Issuer).Scan(&issuerVersion, &issuerActive, &issuerExpires); err != nil || !issuerActive || issuerExpires <= time.Now().Unix() || mapping.IssuerVersion != issuerVersion {
+		return oidc.ErrMappingNotFound
+	}
 	err = tx.QueryRowContext(ctx, `SELECT tenant_id,principal_id,active,version FROM memberships WHERE id=?`, mapping.MembershipID).Scan(&tenant, &principal, &active, &membershipVersion)
 	if errors.Is(err, sql.ErrNoRows) || !active || tenant != mapping.TenantID || principal != mapping.PrincipalID || membershipVersion != mapping.MembershipVersion {
 		return oidc.ErrMappingNotFound
@@ -113,13 +126,13 @@ func (s *SQLStore) PutMapping(ctx context.Context, mapping oidc.Mapping) error {
 	err = tx.QueryRowContext(ctx, `SELECT version FROM oidc_subject_mappings WHERE issuer=? AND subject=?`, mapping.Issuer, mapping.Value).Scan(&previous)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		_, err = tx.ExecContext(ctx, `INSERT INTO oidc_subject_mappings(issuer,subject,tenant_id,principal_id,membership_id,membership_version,version,active,expires_at) VALUES (?,?,?,?,?,?,?,?,?)`, mapping.Issuer, mapping.Value, mapping.TenantID, mapping.PrincipalID, mapping.MembershipID, mapping.MembershipVersion, mapping.Version, mapping.Active, mapping.ExpiresAt)
+		_, err = tx.ExecContext(ctx, `INSERT INTO oidc_subject_mappings(issuer,subject,tenant_id,principal_id,membership_id,membership_version,issuer_version,version,active,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)`, mapping.Issuer, mapping.Value, mapping.TenantID, mapping.PrincipalID, mapping.MembershipID, mapping.MembershipVersion, mapping.IssuerVersion, mapping.Version, mapping.Active, mapping.ExpiresAt)
 	case err != nil:
 		return err
 	case mapping.Version <= previous:
 		return oidc.ErrMappingConflict
 	default:
-		_, err = tx.ExecContext(ctx, `UPDATE oidc_subject_mappings SET tenant_id=?,principal_id=?,membership_id=?,membership_version=?,version=?,active=?,expires_at=? WHERE issuer=? AND subject=?`, mapping.TenantID, mapping.PrincipalID, mapping.MembershipID, mapping.MembershipVersion, mapping.Version, mapping.Active, mapping.ExpiresAt, mapping.Issuer, mapping.Value)
+		_, err = tx.ExecContext(ctx, `UPDATE oidc_subject_mappings SET tenant_id=?,principal_id=?,membership_id=?,membership_version=?,issuer_version=?,version=?,active=?,expires_at=? WHERE issuer=? AND subject=?`, mapping.TenantID, mapping.PrincipalID, mapping.MembershipID, mapping.MembershipVersion, mapping.IssuerVersion, mapping.Version, mapping.Active, mapping.ExpiresAt, mapping.Issuer, mapping.Value)
 	}
 	if err != nil {
 		return err
@@ -151,11 +164,12 @@ func (s *SQLStore) LookupMapping(ctx context.Context, subject oidc.Subject) (oid
 	var mapping oidc.Mapping
 	var active bool
 	err := s.db.QueryRowContext(ctx, `
-SELECT x.issuer,x.subject,x.tenant_id,x.principal_id,x.membership_id,x.membership_version,x.version,x.active,x.expires_at
+SELECT x.issuer,x.subject,x.tenant_id,x.principal_id,x.membership_id,x.membership_version,x.issuer_version,x.version,x.active,x.expires_at
 FROM oidc_subject_mappings x
 JOIN memberships m ON m.id=x.membership_id
-WHERE x.issuer=? AND x.subject=? AND x.tenant_id=m.tenant_id AND x.principal_id=m.principal_id AND x.membership_version=m.version`, subject.Issuer, subject.Value).
-		Scan(&mapping.Issuer, &mapping.Value, &mapping.TenantID, &mapping.PrincipalID, &mapping.MembershipID, &mapping.MembershipVersion, &mapping.Version, &active, &mapping.ExpiresAt)
+JOIN oidc_issuers i ON i.issuer=x.issuer
+WHERE x.issuer=? AND x.subject=? AND x.tenant_id=m.tenant_id AND x.principal_id=m.principal_id AND x.membership_version=m.version AND x.issuer_version=i.version AND i.active=1 AND i.expires_at>?`, subject.Issuer, subject.Value, time.Now().Unix()).
+		Scan(&mapping.Issuer, &mapping.Value, &mapping.TenantID, &mapping.PrincipalID, &mapping.MembershipID, &mapping.MembershipVersion, &mapping.IssuerVersion, &mapping.Version, &active, &mapping.ExpiresAt)
 	mapping.Active = active
 	if errors.Is(err, sql.ErrNoRows) {
 		return oidc.Mapping{}, oidc.ErrMappingNotFound

@@ -35,9 +35,10 @@ func (c IssuerConfig) Verifier() Config {
 type Mapping struct {
 	Subject
 	MembershipRef
-	Version   int64 `json:"version"`
-	Active    bool  `json:"active"`
-	ExpiresAt int64 `json:"expires_at"`
+	IssuerVersion int64 `json:"issuer_version"`
+	Version       int64 `json:"version"`
+	Active        bool  `json:"active"`
+	ExpiresAt     int64 `json:"expires_at"`
 }
 
 type MappingStore interface {
@@ -89,12 +90,13 @@ func (s *MappingService) Map(ctx context.Context, mapping Mapping) error {
 	if err != nil {
 		return err
 	}
-	if err := validateIssuerConfig(cfg, s.now()); err != nil {
+	if err := validateIssuerConfig(cfg, s.now()); err != nil || cfg.Issuer != mapping.Issuer {
 		return ErrMappingNotFound
 	}
 	if mapping.ExpiresAt <= s.now().Unix() {
 		return ErrMappingInvalid
 	}
+	mapping.IssuerVersion = cfg.Version
 	return s.store.PutMapping(ctx, mapping)
 }
 
@@ -113,11 +115,11 @@ func (s *MappingService) Lookup(ctx context.Context, subject Subject) (Membershi
 		return MembershipRef{}, ErrMappingNotFound
 	}
 	cfg, err := s.store.LoadIssuer(ctx, subject.Issuer)
-	if err != nil || validateIssuerConfig(cfg, s.now()) != nil {
+	if err != nil || cfg.Issuer != subject.Issuer || validateIssuerConfig(cfg, s.now()) != nil {
 		return MembershipRef{}, ErrMappingNotFound
 	}
 	mapping, err := s.store.LookupMapping(ctx, subject)
-	if err != nil || !mapping.Active || mapping.Version <= 0 || mapping.ExpiresAt <= s.now().Unix() {
+	if err != nil || mapping.Subject != subject || !validMapping(mapping) || mapping.IssuerVersion != cfg.Version || mapping.ExpiresAt <= s.now().Unix() {
 		return MembershipRef{}, ErrMappingNotFound
 	}
 	return mapping.MembershipRef, nil

@@ -38,7 +38,7 @@ INSERT INTO grants VALUES ('device','stale-mirror',0);`)
 		if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 			t.Fatal(err)
 		}
-		if count != 0 || version != 7 {
+		if count != 0 || version != 8 {
 			t.Fatalf("schema count=%d version=%d", count, version)
 		}
 		if err := s.Close(); err != nil {
