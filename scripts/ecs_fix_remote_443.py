@@ -40,7 +40,8 @@ server {
     # XallorRemote 中转（宿主机 :8443）。与 /api 分流，不另开 HTTP 执行面。
     location = /remote/health {
         proxy_pass http://host.docker.internal:8443/health;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Real-IP $remote_addr;
     }
 
@@ -51,7 +52,7 @@ server {
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;

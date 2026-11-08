@@ -49,7 +49,9 @@ xallor-remote config set --shell auto|powershell|pwsh|bash|sh
 xallor-remote approve
 xallor-remote mcp print-config
 xallor-remote mcp merge-config
-xallor-remote relay [--listen :8443 --data <dir>]
+xallor-remote relay [--listen 127.0.0.1:8443 --data <dir>]
+xallor-remote relay --listen :8443 --tls-cert <PEM> --tls-key <PEM>
+xallor-remote relay --reverse-proxy --trusted-proxy 127.0.0.1
 xallor-remote reset --yes
 ```
 
@@ -62,6 +64,8 @@ xallor-remote reset --yes
 `--cwd` 是对方 workspace 内的目录，`--timeout-ms` 设置本次执行期限。请求文件模式将这两项及 shell 写在 JSON 内，不再叠加同名 CLI 选项；程序模式不接受 `--shell`。脚本文件按内容发送，不会在目标落地，也不绕过目标命令行长度限制。CLI 文本输出和退出状态保持现有语义；此入口不是交互终端。
 
 Agent 或脚本调用时加 `--jsonl`，逐行读取 stdout 上的 JSON 事件，并检查最后的 exit/error；不要解析 stderr 人话或把命令输出中的 JSON 当回执。已知退出码、超时、截断和错误均有独立字段，格式见 [protocol.md](protocol.md)。人直接操作可继续使用默认文本展示，两种方式执行同一请求。
+
+`exec --jsonl` 的参数解析错误（未知 flag、缺值、类型错误）也返回唯一的 `invalid_execution` JSON error，退出 1，保留 stderr 诊断，不启动 Runtime。JSONL 可放在错误 flag 前后；其它选项的值或 `--` 后的字面 `--jsonl` 不启用格式，`--jsonl=false` 关闭。`--help` 仍显示普通帮助。完整边界见协议中的 CLI 执行事件输出。
 
 ---
 

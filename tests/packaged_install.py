@@ -1,5 +1,6 @@
 """Install the actual npm tarball in a disposable prefix and exercise its entrypoints."""
 import json
+import argparse
 import os
 from pathlib import Path
 import shutil
@@ -13,6 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--allow-dirty',action='store_true',help='Allow explicitly marked local test artifacts; CI remains clean-only')
+    args = parser.parse_args()
     version = json.loads((ROOT / "packages/mcp/package.json").read_text(encoding="utf-8"))["version"]
     archive = ROOT / f"dist/release/xallor-remote-mcp-{version}.tgz"
     assert archive.is_file(), archive
@@ -41,7 +45,8 @@ def main():
         actual = json.loads(cli("version", "--json"))
         manifest = json.loads((vendor / "manifest.json").read_text(encoding="utf-8"))
         assert actual["version"] == version and actual["revision"] == manifest["build"]["revision"]
-        assert actual["dirty"] is False
+        assert actual["dirty"] == manifest["build"]["dirty"]
+        assert not actual["dirty"] or args.allow_dirty, 'Use --allow-dirty only for local verification of uncommitted artifacts'
         cli("runtime", "install", "--bundle", str(vendor))
         status = json.loads(cli("runtime", "status"))
         assert status["running"]["sha256"] == manifest["artifact"]["sha256"]
@@ -51,7 +56,8 @@ def main():
         output = ROOT / "dist/verification/packaged-install.json"
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps({"status": "pass", "version": version,
-                                      "revision": actual["revision"], "platform": sys.platform}), encoding="utf-8")
+                                      "revision": actual["revision"], "platform": sys.platform,
+                                      "dirty": actual["dirty"]}), encoding="utf-8")
         print("Packaged CLI, verified install and MCP reconnect passed", flush=True)
     finally:
         if binary is not None and binary.exists():

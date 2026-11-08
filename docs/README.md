@@ -2,6 +2,8 @@
 
 本目录是 **XallorRemote** 的产品定义。从这份文件进；每件事只在一个文件里写全。
 
+首次使用：[中文 README](../README.md) / [English README](../README.en.md)。两者展示当前已实现命令；CLI 建议稿不属于已实现参数。
+
 代理铁律正文在 [`.cursor/rules/`](../.cursor/rules/)；索引 [../AGENTS.md](../AGENTS.md)。不要把同一铁律再抄进本目录。
 
 **实现 Relay / Runtime 流式：从 [dataplane.md](dataplane.md) 进，不要从 architecture 推断状态机。**
@@ -69,6 +71,9 @@ CLI：`xallor-remote`。路径与前缀见 [decisions.md](decisions.md)。`platf
 | CLI/GUI/TUI | [clients.md](clients.md) |
 | Cursor CLI 交接试点、操作与恢复 | [handoff.md](handoff.md) |
 | **栈与复用** | [stack.md](stack.md) |
+| **发行来源验证与剩余安全边界** | [release-security.md](release-security.md) |
+| **安装信任根设计与 #74 边界** | [install-trust-design.md](install-trust-design.md) |
+| CLI 文档入口 / 参数审查 | [cli.md](cli.md) / [cli-ux-review.md](cli-ux-review.md)（建议未实施） |
 | Windows/Linux | [os.md](os.md) |
 | Account / 订阅 | [platform.md](platform.md) |
 

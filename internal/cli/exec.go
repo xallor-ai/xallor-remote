@@ -28,6 +28,7 @@ func executionCommand(run func(*cobra.Command, string, execution.Request) error)
 	c := &cobra.Command{
 		Use:   "exec [--script-file FILE | --program PROGRAM | --request-file FILE] -- [script or arguments]",
 		Short: "在对方执行脚本或程序",
+		Long:  "在对方执行脚本或程序。使用 --jsonl 时，参数解析错误也在 stdout 返回一条 invalid_execution JSON 事件，退出码非零；stderr 保留诊断。--help 仍显示普通帮助。\n\nExecute a script or program on the target. With --jsonl, argument parsing errors emit one invalid_execution JSON event on stdout and exit nonzero; stderr retains diagnostics. --help remains plain help.",
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 			dispatched := false
 			defer func() {
@@ -91,7 +92,7 @@ func executionCommand(run func(*cobra.Command, string, execution.Request) error)
 		},
 	}
 	c.Flags().StringVar(&device, "device", "", "对方设备 ID（仅一台时可省）")
-	c.Flags().Bool("jsonl", false, "逐行输出 JSON 事件，供 Agent 或程序读取")
+	c.Flags().Bool("jsonl", false, "逐行 JSON 事件（含参数错误） / JSONL events, including argument errors")
 	c.Flags().StringVar(&shell, "shell", "", "对方解释器：auto/powershell/pwsh/bash/sh（省略时使用对方配置）")
 	c.Flags().StringVar(&scriptFile, "script-file", "", "读取本地 UTF-8 脚本；- 表示标准输入")
 	c.Flags().StringVar(&requestFile, "request-file", "", "读取本地执行请求 JSON；- 表示标准输入")

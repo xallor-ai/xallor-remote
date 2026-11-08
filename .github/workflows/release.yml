@@ -9,6 +9,10 @@ jobs:
   bundles:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -22,9 +26,48 @@ jobs:
         working-directory: packages/mcp
       - run: npm run build
         working-directory: packages/mcp
+      - run: npm test
+        working-directory: packages/mcp
+      - run: npm audit --omit=dev --audit-level=high
+        working-directory: packages/mcp
+      - run: python -m unittest discover -s tests -p test_release_evidence.py
+      - run: python -m unittest discover -s tests -p test_relay_templates.py
+      - run: python -m unittest discover -s tests -p test_readme_docs.py
       - run: python tests/release_lifecycle.py
+      - run: python tests/release_source_gate_e2e.py
       - run: python scripts/build-release.py
       - run: node scripts/pack-mcp-with-runtime.mjs
+      - run: python scripts/release_evidence.py
+      - name: Sign artifact and SBOM provenance
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: |
+            dist/release/*.zip
+            dist/release/*.tgz
+            dist/release/*.sha256
+            dist/release/*.cdx.json
+            dist/release/release-index.json
+            dist/release/windows-amd64/xallor-remote.exe
+            dist/release/windows-amd64/manifest.json
+            dist/release/linux-amd64/xallor-remote
+            dist/release/linux-amd64/manifest.json
+      - name: Verify signed release and reject substitutions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/verify_release.py --directory dist/release --repo "$GITHUB_REPOSITORY" --source-ref "$GITHUB_REF" --revision "$GITHUB_SHA"
+          python tests/release_attestation_ci.py
+      - name: Preserve offline signature bundle
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: cp "$ATTESTATION_BUNDLE" dist/release/provenance.sigstore.json
+      - name: Verify raw Runtime provenance
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dist/release/linux-amd64/xallor-remote runtime verify --bundle dist/release/linux-amd64
       - uses: actions/upload-artifact@v4
         with:
           name: verified-release-bundles
@@ -32,6 +75,7 @@ jobs:
             dist/release/*.zip
             dist/release/*.sha256
             dist/release/*.tgz
+            dist/release/*.json
   draft:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: bundles

@@ -70,6 +70,9 @@ jobs:
       - run: npm ci
       - run: npm test
 
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
+
   gui:
     name: GUI build and unit tests
     runs-on: ubuntu-latest
@@ -158,8 +161,13 @@ jobs:
       - run: npm run build
         working-directory: packages/mcp
       - run: python tests/release_lifecycle.py
+      - run: python tests/release_source_gate_e2e.py
+      - run: python -m unittest discover -s tests -p test_release_evidence.py
+      - run: python -m unittest discover -s tests -p test_relay_templates.py
+      - run: python -m unittest discover -s tests -p test_readme_docs.py
       - run: python scripts/build-release.py
       - run: node scripts/pack-mcp-with-runtime.mjs
+      - run: python scripts/release_evidence.py
       - run: python tests/packaged_install.py
       - run: python tests/diagnostics_e2e.py
       - uses: actions/upload-artifact@v4
@@ -209,6 +217,7 @@ jobs:
       - run: python tests/execution_input_e2e.py
       - run: python tests/execution_results_e2e.py
       - run: python tests/exec_jsonl_e2e.py
+      - run: python tests/cli_argument_errors_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
       - run: python tests/resource_boundaries_e2e.py
       - run: python tests/device_settings_e2e.py
       - run: python tests/identity_transactions_e2e.py
@@ -228,6 +237,8 @@ jobs:
             dist/verification/execution-input.json
             dist/verification/execution-results.json
             dist/verification/exec-jsonl.json
+            dist/verification/cli-argument-errors.json
+            dist/verification/cli-literal-arguments.json
             dist/verification/resource-boundaries.json
             dist/verification/device-settings.json
             dist/verification/identity-transactions.json

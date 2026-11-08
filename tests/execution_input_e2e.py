@@ -29,11 +29,24 @@ try:
     workspace = cluster.root/"workspaces/target"
     cwd = workspace/"space ' 中文"
     cwd.mkdir()
-    literals = ["", "a b", 'a"b', "a'b", "$HOME", "`", "a&b|c;d", "中文🌍", "C:\\space path\\", "--flag=value"]
+    literals = ["", "a b", 'a"b', "a'b", "$HOME", "`", "a&b|c;d", "中文🌍", "C:\\space path\\", "--flag=value",
+                "--jsonl", "--jsonl=false", "--unknown-option"]
     direct = cluster.cli("controller", "exec", "--device", target, "--cwd", str(cwd), "--program", str(fixture), "--", *literals)
     data = json.loads(direct.stdout)
     assert data["args"] == literals and os.path.samefile(data["cwd"], cwd), data
     results.append("cli_program_preserves_native_argv_and_target_cwd")
+    # Actual remote process argv, not just a parser callback: payload flags must
+    # neither enable text-mode JSONL nor disable an explicitly selected JSONL stream.
+    structured = cluster.cli("controller", "exec", "--jsonl", "--device", target, "--cwd", str(cwd), "--program", str(fixture), "--", *literals)
+    events = [json.loads(line) for line in structured.stdout.splitlines()]
+    terminals = [event for event in events if event['type'] in ('exit','error')]
+    assert len(terminals) == 1 and events[-1] == terminals[0] and terminals[0]['type'] == 'exit' and terminals[0]['exit_code'] == 0, events
+    structured_data = json.loads(''.join(event.get('data','') for event in events if event['type'] == 'stdout'))
+    assert structured_data['args'] == literals and os.path.samefile(structured_data['cwd'],cwd), structured_data
+    results.append("literal_jsonl_flags_after_separator_reach_real_program_in_text_and_jsonl_modes")
+    literal_evidence = {'platform':sys.platform,'status':'pass','expected_args':literals,
+                        'text_mode_observed_args':data['args'],'jsonl_mode_observed_args':structured_data['args'],
+                        'terminal_type':terminals[0]['type'],'exit_code':terminals[0]['exit_code']}
     request = cluster.root/"execution.json"
     request.write_text(json.dumps({"program":{"executable":str(fixture), "args":literals}, "cwd":str(cwd)}, ensure_ascii=False), encoding="utf-8")
     assert json.loads(cluster.cli("controller", "exec", "--device", target, "--request-file", str(request)).stdout)["args"] == literals
@@ -64,4 +77,5 @@ finally:
 output = root/"dist/verification/execution-input.json"
 output.parent.mkdir(parents=True, exist_ok=True)
 output.write_text(json.dumps(results, indent=2), encoding="utf-8")
+(output.parent/'cli-literal-arguments.json').write_text(json.dumps(literal_evidence,indent=2,ensure_ascii=False),encoding='utf-8')
 print(json.dumps(results), flush=True)

@@ -12,7 +12,7 @@ set +e
 echo '=== relay service ==='
 systemctl is-active xallor-remote-relay 2>/dev/null || true
 ss -lnt | grep 8443 || true
-curl -sS -w '\nlocal_health:%{http_code}\n' http://127.0.0.1:8443/health || true
+curl -sS -H 'X-Forwarded-Proto: https' -w '\nlocal_health:%{http_code}\n' http://127.0.0.1:8443/health || true
 echo '=== nginx remote/xr locations ==='
 docker exec xallor-api_gateway_1 sh -c 'grep -nE "xr|remote" /etc/nginx/conf.d/*.conf 2>/dev/null | head -n 40' || true
 echo '=== public probes ==='

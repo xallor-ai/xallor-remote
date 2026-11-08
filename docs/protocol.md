@@ -8,6 +8,8 @@ JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本
 
 ## 1. 两条连接
 
+TLS 证书校验失败时不会建立 WebSocket。反代传输策略或浏览器 Origin 不符合入口策略时，在 Upgrade 前返回 HTTP 403，不发送 `hello_ok` 或协议 `error`；这不是新增协议错误码。客户端不得据此推断设备或 grant 状态。入口配置见 [relay.md](relay.md) §5。
+
 | role | 谁发起 | 证明 | 用途 |
 | --- | --- | --- | --- |
 | `device` | 被控 Runtime | `device_id` + `device_secret` | 上线、收 invoke、回事件、**改授权** |
@@ -156,11 +158,13 @@ MCP / CLI 必须用这些 code，再附一句人话。禁止只回 HTTP 502。
 {"type":"error","exec_id":"ex_…","code":"relay_error","message":"目标连接已断开。"}
 ```
 
-`exit` 和 `error` 是互斥终态，示例最后两行属于不同调用。可写输出通道上恰有一个终态且位于最后；管道关闭、CLI 被终止或参数语法解析失败时可能没有完整终态，调用者必须视为结果未确认。不得把 EOF 当成功。命令产生的 JSON/换行只放入 data，不作为事件解析；输出边界是块，不承诺一帧一行命令输出或 stdout/stderr 之间的真实时间顺序。
+`exit` 和 `error` 是互斥终态，示例最后两行属于不同调用。可写输出通道上，执行或本地拒绝恰有一个终态且位于最后；管道关闭或 CLI 被终止时可能没有完整终态，调用者必须视为结果未确认。不得把 EOF 当成功。命令产生的 JSON/换行只放入 data，不作为事件解析；输出边界是块，不承诺一帧一行命令输出或 stdout/stderr 之间的真实时间顺序。
 
 `exec_id` 仅在已观测时出现，可能随空 stdout 事件先到达；这不是目标进程已启动的证明。exit 字段沿用本协议终态语义，缺失的可选元数据省略，不伪造 0/false；completed 缺少有效整数退出码时转为 result_unknown。错误保留已知协议 code，不根据一般传输错误推断命令是否开跑。发送失败也可能已部分发送，所以返回 result_unknown。
 
-本地语义输入校验失败为 invalid_execution/too_large；Runtime 启动或连接失败为 runtime_unavailable。非法选项、help 等 Cobra 语法/帮助流程不属于执行事件流，仍走普通诊断/帮助输出。进程退出状态仅在 completed 且 exit_code=0 时为 0，其余为非零；它不是远端原始退出码透传，远端值读取 exit_code。诊断可写入 CLI stderr，但远端 stderr 在 JSONL 中只作为标准输出上的 stderr 事件。输出写入失败立即停止并关闭 IPC，不补写成功或重试执行。
+本地语义输入校验失败为 invalid_execution/too_large；Runtime 启动或连接失败为 runtime_unavailable。当命令已定位到 exec 且选择 JSONL 时，未知 flag、缺少选项值、值类型错误等参数解析失败也返回唯一的 `{"type":"error","code":"invalid_execution","message":"…"}`，进程退出 1；不带 exec_id/exit_code/duration_ms，不启动 Runtime 或发送执行请求。stderr 保留人话诊断。`--help` 仍成功显示普通帮助，不产生 error 事件；尚未定位到 exec 的根命令路由错误及其它命令保留普通错误通道。
+
+JSONL 选择在 `--` 前识别，允许出现在错误选项之前或之后；作为其它选项值或 `--` 后参数的字面 `--jsonl` 不选择格式。重复设置时最后一个显式布尔值生效，`--jsonl=false` 关闭格式；非法的显式布尔值本身也作为 JSONL 参数错误返回。进程退出状态仅在 completed 且 exit_code=0 时为 0，其余为非零；它不是远端原始退出码透传，远端值读取 exit_code。远端 stderr 在 JSONL 中只作为标准输出上的 stderr 事件。输出写入失败立即停止并关闭 IPC，不补写成功或重试执行。此修复不改变 Request、IPC、MCP 或 WSS 消息。
 
 ---
 

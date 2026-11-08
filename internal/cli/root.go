@@ -27,7 +27,7 @@ func Execute() error {
 	root.AddCommand(cmdRelay(), cmdStart(), cmdEnsure(), cmdStop(), cmdStatus(), cmdDoctor(), cmdGrant(), cmdInbound(), cmdRevoke(), cmdReset(), cmdPeer(), cmdExec(), cmdApprove(), cmdTUI(), cmdMCP(), cmdVersion(), cmdRuntime(), cmdIPCBridge(), cmdHandoff(), cmdAccount())
 	root.AddCommand(cmdDevice())
 	root.AddCommand(cmdConfig())
-	return root.Execute()
+	return executeCLI(root, os.Args[1:])
 }
 
 func cmdStart() *cobra.Command {

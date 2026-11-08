@@ -1,5 +1,9 @@
 # 技术栈与复用
 
+发行签名、SBOM、provenance、下载后验证及尚未完成的安装器强制验签边界见 [release-security.md](release-security.md)。本地 manifest 校验不等于来源认证。
+
+#74 的长期 bootstrap/安装/回滚/MCP 信任根方案见 [install-trust-design.md](install-trust-design.md)。现有 `runtime verify` 复用可信系统 GitHub CLI 验证原始 binary/manifest 的 provenance，仅提供只读观察；它尚未接到任何安装或 vendor 自动选择路径。
+
 SSOT：语言、库、仓库形态、发行。语言级选型结论在 [decisions.md](decisions.md) §4。头关系见 [heads.md](heads.md)。IPC 见 [ipc.md](ipc.md)。
 
 原则：**协议与产品行为是我们的；传输、MCP 语法、TUI 框架、打包不是。** 能依赖稳定社区实现就不要自写。
@@ -31,7 +35,7 @@ SSOT：语言、库、仓库形态、发行。语言级选型结论在 [decision
 | ID | `github.com/google/uuid` | 自写随机串当 UUID |
 | Windows Job Object / Unix 进程组 | `golang.org/x/sys` | 只 `kill` 父进程留孤儿 |
 | Windows named pipe | **`github.com/Microsoft/go-winio`** | localhost TCP 冒充管道 |
-| TLS | `crypto/tls` + 系统根证书 | 自签当默认；`TLS_INSECURE` 仅本机调试 |
+| TLS | `crypto/tls` + 系统根证书 | 自签当默认；跳过证书校验 |
 | grant / secret 哈希 | **SHA-256**（高熵，不必 bcrypt） | 自创哈希；明文落 Relay |
 | Relay 落盘 | v0：**SQLite**，纯 Go 驱动 **`modernc.org/sqlite`**（devices / grants / audit） | v0 上 Postgres；自写 wal；stdout 进库 |
 | JSON | 标准库 `encoding/json` / `JSON.stringify` | 新 IDL（protobuf/connect）——v0 不值得 |

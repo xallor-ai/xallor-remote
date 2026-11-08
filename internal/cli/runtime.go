@@ -16,7 +16,8 @@ func runtimeStore() (release.Store, error) {
 	return release.Store{Dir: filepath.Join(dir, "runtime")}, err
 }
 func cmdRuntime() *cobra.Command {
-	root := &cobra.Command{Use: "runtime", Short: "安装、查看或回滚本机版本"}
+	root := &cobra.Command{Use: "runtime", Short: "验证来源、安装、查看或回滚本机版本"}
+	root.AddCommand(cmdRuntimeVerify())
 	var bundle string
 	install := &cobra.Command{Use: "install", Short: "校验并安装本地发行包，重启后验证", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		if bundle == "" {

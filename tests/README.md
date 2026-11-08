@@ -1,8 +1,19 @@
 # Cross-layer verification
 
+`cli_argument_errors_e2e.py --binary <runtime>` runs the actual CLI without starting Relay/Runtime or creating a profile. It checks one JSONL `invalid_execution` terminal plus stderr and exit 1 for exec parsing errors, including unknown flag order, missing/type-invalid values, true/false precedence, inherited flags, `--`/literal-value boundaries, semantic errors, help, and non-exec commands. The same script runs in the Windows/Linux integration matrix; `internal/cli/exec_flag_error_test.go` also verifies untouched execution arguments and escaped error text.
+
+`execution_input_e2e.py` additionally runs a real remote argv-report program with literal `--jsonl`, `--jsonl=false`, and `--unknown-option` after `--`, in both text and JSONL modes. `cli-literal-arguments.json` records the expected and observed arrays, including empty strings and Unicode; these payload arguments must not change the controller's output format.
+
+`python -m unittest discover -s tests -p test_readme_docs.py` checks the Chinese/English onboarding entrypoints, identical executable examples, shared CLI/Relay/MCP/release spec links, current flags, and whitespace. It covers both human setup and Agent JSON/JSONL/request-file documentation; it does not replace native shell execution tests or close #73.
+
+`release_source_gate_e2e.py` exercises only standalone `runtime verify` refusals with a real CLI and isolated Runtime: unavailable system verifier, dirty metadata and rehashed unsigned bytes cannot produce success, execute a candidate, mutate install state or stop the Runtime. `XALLOR_TEST_REAL_GH=1 go test ./internal/releasetrust` additionally uses the installed real gh with a malformed proof; this is a negative check, not a valid product signature or an install/upgrade/rollback/vendor enforcement test. #74 remains incomplete; see `docs/install-trust-design.md`.
+
 All process tests use owned temporary profiles and a loopback Relay. They never connect to the user's profile or official Relay. Cleanup stops only fixture processes, verifies the owned absolute directory and then removes it; failed cleanup retains evidence.
 
 - `release_lifecycle.py`: manifest validation, install/upgrade/rollback and failed-start recovery, data preservation and actual MCP reconnection.
+- `test_release_evidence.py`: zip/vendor/identity consistency, tampered payload/hash, signature-verifier rejection and pinned verification identity (offline tests; no claim of real OIDC signing).
+- `release_attestation_ci.py`: real signed-release rejection of altered bytes and wrong signer workflow; runs only after attestations exist in release CI.
+- Go `internal/relay` transport/request-policy tests cover PEM TLS, CA/hostname errors, health, public-listener refusal, forwarding spoof/quota/log attribution, trusted proxy chains and exact browser Origin (including IPv6 real upgrades). `internal/noderun/tls_execution_test.go` executes through the real Runtime and Relay using a test-only trusted CA.
 - `packaged_install.py`: npm tarball installation in a new prefix, packaged CLI version/install and MCP reconnection.
 - `diagnostics_e2e.py`: CLI/IPC/Runtime/Relay/target info; offline, pairing, grant, inbound and read-only checks.
 - `handoff_e2e.py --binary <runtime> [--go <go>]`: actual IPC/Relay/Runtime with a deterministic Cursor CLI fixture; durable dedupe, conflicting reuse, matching session/result, bounded Unicode, repository/attachment validation and restart without replay. Authenticated official Cursor CLI verification is a separate gate, not replaced by this fixture.
