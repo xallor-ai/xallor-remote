@@ -54,6 +54,8 @@ Use `xallor-remote device lifecycle` to inspect enrollment, claim, transfer, rev
 
 Use `xallor-remote entitlement contract` to inspect feature/value boundaries. It does not read balances, and Relay inflight/IP limits or local job capacity are not treated as membership entitlements.
 
+Use `xallor-remote usage contract` to inspect privacy-minimized usage event and unknown/idempotency rules. Local activity history is not tamper-evident audit and does not directly create billing.
+
 For local development, run a Relay in one terminal:
 
 ```text

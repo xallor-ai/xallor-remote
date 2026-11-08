@@ -55,6 +55,7 @@ xallor-remote relay --reverse-proxy --trusted-proxy 127.0.0.1
 xallor-remote reset --yes
 xallor-remote device lifecycle
 xallor-remote entitlement contract
+xallor-remote usage contract
 ```
 
 `inbound off` 保留身份；`revoke` 销毁登记。`grant issue` 每次签发新授权码并打开入站；`inbound on` 在没有授权码时也会签发授权码，否则只打开入站。`inbound off` 不吊销已有授权码。`approve`：本机交互确认高危命令；无 TTY 时不要跑。
@@ -66,6 +67,8 @@ xallor-remote entitlement contract
 `xallor-remote device lifecycle` 输出设备 enrollment/claim/transfer/revoke/reset 契约；这是状态和失联处理说明，不是远程管理 API。实际 claim/transfer 仍必须从被控机本机通过已认证 device 连接提交。
 
 `xallor-remote entitlement contract` 输出 feature/value 的静态说明，不读取当前账单或余额；权益判定由管理面在授权后、执行前完成，Relay inflight/IP 保护和 Runtime 本机容量不会被当作会员额度。
+
+`xallor-remote usage contract` 输出隐私最小化 usage event 字段与 unknown/幂等规则；它不读取本机 activity 历史，不是审计导出或账单查询。
 
 `exec` 文本入口只收一个完整脚本参数，不把多个片段自动拼接。单次 `--shell` 只选择本次任务的目标解释器，不修改配置。程序模式的 `--` 后逐项作为参数，空字符串和特殊字符仍须先正确通过本地 Shell；跨系统复杂输入优先使用 `--script-file` / `--request-file`，避免本地 Shell 提前展开。两种文件均在控制端读取，可带 UTF-8 BOM，`-` 从标准输入读取。JSON 形状及上限见 [protocol.md](protocol.md)，其中不含 device_id，由 `--device` 选择目标。
 

@@ -93,6 +93,8 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 
 `info.entitlement_contract` 返回稳定的 feature/unit/scope 说明，不返回余额或当前订阅。权益 decision 必须在 Relay/管理面基于当前 tenant、principal、membership version 和 expiry fail-closed 完成；传输硬顶、IP 保护、本机 job ledger 和协议大小上限保持独立。
 
+`info.usage_event_contract` 返回隐私最小化 usage event 字段、幂等和 unknown 规则。它与本机 `activity.json` 分离：activity 是 bounded 操作元数据历史，不是防篡改审计或账单；usage event 也不等于账单，只有独立管理面在确认终态后才能进一步计量。
+
 ```json
 {"script":{"text":"Get-Location","shell":"powershell"},"timeout_ms":30000}
 {"program":{"executable":"git","args":["status","--short"]},"cwd":"repo"}

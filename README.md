@@ -54,6 +54,8 @@ xallor-remote exec --device <device-id> --request-file ./execution.json --jsonl
 
 会员权益 feature/value 说明可用 `xallor-remote entitlement contract` 查看；它不读取余额，且不把 Relay inflight/IP 限额或本机 job 容量当作会员额度。
 
+隐私最小化 usage event 契约可用 `xallor-remote usage contract` 查看；本机 activity 历史不是防篡改审计，也不直接产生账单。
+
 本机开发先在一个终端运行 Relay：
 
 ```text

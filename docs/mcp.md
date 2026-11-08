@@ -61,6 +61,8 @@ MCP 不执行浏览器 OIDC/SSO，也不把 provider token 当作 grant 或 tena
 
 MCP 不读取或修改会员额度；`entitlement_contract` 只是 feature/unit/scope 说明。当前 MCP 结果不能把 transport quota、IP 保护或本机 job capacity 解释成订阅权益。
 
+`usage_event_contract` 只是隐私最小化字段、幂等和 unknown 规则；MCP 不把本机 `activity.json` 当防篡改审计或直接账单，也不暴露命令、路径、输出、凭据或 IP。
+
 `write`：整文件覆盖、≤1 MiB、原子替换，见 [protocol.md](protocol.md) / [runtime.md](runtime.md)。`read` 的 `head`/`tail` 按行，`offset`/`limit` 按字节；默认 64 KiB。截断时 `truncated=true`，MCP 附一句「不是全文」。`exec` 结果含 `status`、`exit_code`、`duration_ms`、`truncated`、`exec_id`。非零退出、取消、超时、结果未确认 → `isError: true`；中断仍保留已接收的输出。确定性规则见 [ipc.md](ipc.md)。
 
 ---

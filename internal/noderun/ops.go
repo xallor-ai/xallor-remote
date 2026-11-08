@@ -474,6 +474,7 @@ func (d *Daemon) runLocalInfo(link *wsConn, msg protocol.Message) {
 		"operation_policy":     protocol.PolicyMatrix(),
 		"device_lifecycle":     protocol.DeviceLifecycle(),
 		"entitlement_contract": protocol.EntitlementContract(),
+		"usage_event_contract": protocol.UsageEventContract(),
 		"docker":               false,
 		"nvidia":               false,
 	})

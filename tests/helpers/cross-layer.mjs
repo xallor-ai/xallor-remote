@@ -35,6 +35,8 @@ try {
   assert.deepEqual(targetInfo.device_lifecycle.steps.map(step => step.name), ["enroll", "grant_issue_or_rotate", "claim", "transfer", "revoke", "reset"]);
   assert.equal(targetInfo.entitlement_contract.version, 1);
   assert.deepEqual(targetInfo.entitlement_contract.features.map(feature => feature.name), ["exec.concurrent", "terminal.concurrent", "relay.bytes_per_second", "relay.monthly_egress_bytes", "file.max_transfer_bytes"]);
+  assert.equal(targetInfo.usage_event_contract.version, 1);
+  assert.deepEqual(targetInfo.usage_event_contract.outcomes, ["completed", "failed", "unknown"]);
   const contents = "中文 🌍\nline two\n";
   ok(await call(controller, "write", { device_id: targetID, path: "roundtrip.txt", content: contents }));
   assert.equal(ok(await call(controller, "read", { device_id: targetID, path: "roundtrip.txt" })).content, contents);
