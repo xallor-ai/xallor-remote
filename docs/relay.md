@@ -24,6 +24,12 @@ SSOT：职责边界、落盘、官方预算、运维。**连接 / inflight / 流
 
 同一 `device_id`：**一条** device 连接（新的踢旧的）。**多条** client 连接，v0 一条 client 只绑一个目标。细节与踢线后果见 [dataplane.md](dataplane.md)。
 
+`relay registry` 与 target `info.relay_registry` 输出单 Relay sticky registry contract：持久 authority 负责 device identity，在线路由以内部 `device_uid` 和 access incarnation 绑定；新 device 连接先排入 hello，再替换旧连接；断线失败旧 inflight、释放 transport lease、保留 durable identity；旧连接/旧 route 的迟到事件不得到达新绑定。`/health` 只证明 Relay 进程/build liveness，不证明任何 device、target runtime 或执行就绪。多地域、多 Relay 归属、failover 和复制由 #70 另行设计，当前不提供。
+
+`relay failover` 与 target `info.relay_failover` 输出 provider-neutral contract：`healthy/degraded/unavailable/unknown` 四态，分别描述进程、registry、device readiness 和 execution route；它不把本地 `/health` 当 device readiness，不在断线后把执行视为停止/完成，也不自动切换或重放有副作用的 in-flight command/handoff。当前实现仍是单 Relay authority；多地域 ownership、复制、故障转移和 split-brain 解决方案尚未实现。
+
+`relay planes`/target `info.plane_contract`/`/health.plane` 固定 control/data plane 边界：Relay 的管理状态使用已认证 device control message 和本机管理入口，实时 invoke 只在 WSS 数据面转发；没有公开管理 HTTP API，管理凭据不进入数据面持久化，MCP/GUI 不绕过 Runtime。
+
 `device.settings` / `revoke`：**只处理来自对应 device 连接的消息**。client 连接上的同类消息丢弃或 `unauthorized`。
 
 ---

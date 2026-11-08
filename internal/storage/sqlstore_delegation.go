@@ -7,6 +7,13 @@ import (
 )
 
 func migrateDelegation(tx *sql.Tx) error {
+	var version int
+	if err := tx.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		return err
+	}
+	if version >= 6 {
+		return nil
+	}
 	var key [32]byte
 	if _, err := rand.Read(key[:]); err != nil {
 		return err
