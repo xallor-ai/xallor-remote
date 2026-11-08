@@ -22,6 +22,7 @@ SSOT：人怎么操作。命令前缀 `xallor-remote`。四个头与 Runtime 的
 | 授权 | CLI Must | 多 grant、绑账号 |
 | Peer | CLI Must | 分组 |
 | 会话 | CLI Must | 分屏、文件树 |
+| 文件 | CLI Must；GUI 提供 workspace 读/覆盖写入口 | 文件树、批量同步 |
 | 审批 | CLI/本机提示 Must | 推送 |
 | 审计 | Should | 导出 |
 | 账号 / 订阅 | 不做 | [platform.md](platform.md) |
