@@ -46,7 +46,9 @@ func TestLedger_shouldFailClosedOnInvalidPersistedState(t *testing.T) {
 		}
 		requireInvalidUsageState(t, dir, []byte(data))
 	}
-	for _, data := range [][]byte{bytes.Repeat([]byte(" "), maxBytes+1), []byte("{\"version\":1,\"events\":[],\"retired_keys\":[],\"bad\":\"\xff\"}")} {
+	valid, _ := json.Marshal(usageState(1, 0))
+	badUTF8 := bytes.Replace(valid, []byte("event-0"), []byte{0xff}, 1)
+	for _, data := range [][]byte{bytes.Repeat([]byte(" "), maxBytes+1), badUTF8} {
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "usage.json"), data, 0600); err != nil {
 			t.Fatal(err)
