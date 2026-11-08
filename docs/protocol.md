@@ -95,6 +95,10 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 
 `info.usage_event_contract` 返回隐私最小化 usage event 字段、幂等和 unknown 规则。它与本机 `activity.json` 分离：activity 是 bounded 操作元数据历史，不是防篡改审计或账单；usage event 也不等于账单，只有独立管理面在确认终态后才能进一步计量。
 
+该契约 version 2 新增 `time`、`retention` 与 `aggregation`。At 为规范 `time.RFC3339Nano` UTC `Z` 字符串，最长 30 字节，范围闭区间 `1970-01-01T00:00:00Z` 至 `9999-12-31T23:59:59.999999999Z`；最多 9 位小数，尾部多余零、省略时区、偏移形式及逗号小数均拒绝。Append 省略 At 时生成 UTC 时间，持久化 At 不能省略。这里是表示/范围校验，不以时间戳证明真实终态或业务可信性。
+
+同一 ledger 最多保留 5000 个事件及 5000 个淘汰键 SHA-256 tombstone，版本化 envelope 总长最多 4 MiB。保留事件相同 key/event 重复为 no-op；淘汰键的任何重用均 `ErrConflict`。tombstone 满后，需要淘汰新键的追加返回 `ErrRetentionFull`；不丢旧键、不自动开启新幂等窗口。completed 汇总仅限保留事件的精确 tenant/membership scope，int64 溢出返回 `0,ErrOverflow`。这些错误属于本地 usage Go API，不引入新的远程 invoke 错误码。
+
 ```json
 {"script":{"text":"Get-Location","shell":"powershell"},"timeout_ms":30000}
 {"program":{"executable":"git","args":["status","--short"]},"cwd":"repo"}

@@ -35,8 +35,11 @@ def main():
         bad_exit = cluster.cli("controller", "exec", "--device", target, "--", "exit 7", check=False)
         assert bad_exit.returncode != 0, "CLI falsely reported nonzero remote exit as success"
         results.append({"name":"cli_propagates_nonzero_exit", "status":"pass"})
+        usage_contract = json.loads(cluster.cli("controller", "usage", "contract").stdout)
+        assert usage_contract["version"] == 2, usage_contract
         env = dict(cluster.env("controller"), XALLOR_TEST_CLUSTER=str(cluster.root),
-                   XALLOR_TEST_TARGET=target, XALLOR_TEST_RELAY_PID=str(cluster.relay.pid))
+                   XALLOR_TEST_TARGET=target, XALLOR_TEST_RELAY_PID=str(cluster.relay.pid),
+                   XALLOR_TEST_USAGE_CONTRACT=json.dumps(usage_contract))
         subprocess.run(["node", str(ROOT / "tests/helpers/cross-layer.mjs")], env=env, check=True, timeout=210)
         results += json.loads((cluster.root / "cross-layer-results.json").read_text(encoding="utf-8"))
         cluster.restart_relay()
@@ -52,7 +55,8 @@ def main():
         assert json.loads(cluster.cli("target", "status", "--json").stdout)["device_id"] == target
         results.append({"name":"relay_restart_reconnects_without_identity_change", "status":"pass"})
         subprocess.run(["node", str(ROOT / "tests/helpers/mcp-release-smoke.mjs")],
-                       env=dict(cluster.env("controller"), XALLOR_TEST_CLI=str(cluster.binary), XALLOR_TEST_TARGET=target), check=True, timeout=60)
+                       env=dict(cluster.env("controller"), XALLOR_TEST_CLI=str(cluster.binary), XALLOR_TEST_TARGET=target,
+                                XALLOR_TEST_USAGE_CONTRACT=json.dumps(usage_contract)), check=True, timeout=60)
         results.append({"name":"actual_mcp_executes_and_recovers_after_runtime_restart", "status":"pass"})
         # Inspect the real Relay database after exec, files, cancellation, and restart.
         # Operation payloads and output must not acquire a persistence collection.
