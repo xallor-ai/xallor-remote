@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -59,6 +60,9 @@ func cmdRelay() *cobra.Command {
 	c.Flags().StringArrayVar(&transport.AllowedOrigins, "allowed-origin", nil, "允许的浏览器 Origin（完整 http(s) 地址，可重复）")
 	c.PersistentFlags().StringVar(&data, "data", "", "数据目录")
 	c.AddCommand(cmdRelayPrincipal(&data))
+	c.AddCommand(&cobra.Command{Use: "registry", Short: "显示单 Relay sticky registry 契约", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(protocol.RelayRegistry())
+	}})
 	c.Flags().BoolVar(&quota, "quota", false, "启用源 IP 限额")
 	return c
 }
