@@ -48,6 +48,8 @@ Target capabilities come from the target Runtime's `info`; `remote.device_info` 
 
 `xallor-remote policy --json` and the target `info.operation_policy` return the same operation matrix for CLI, MCP, and Agents; the minimal GUI can reuse the same field after its local IPC integration. It describes static boundaries; Relay still revalidates device access, member/tenant authorization, grants, inbound state, and versions on every call.
 
+Account and tenant boundaries are documented in the [OIDC/SSO boundary](docs/oidc.md). The CLI currently uses Relay-operator-issued local credentials and does not run browser login; an OIDC provider token cannot be used directly as a grant or tenant authorization.
+
 For local development, run a Relay in one terminal:
 
 ```text

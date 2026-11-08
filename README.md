@@ -48,6 +48,8 @@ xallor-remote exec --device <device-id> --request-file ./execution.json --jsonl
 
 `xallor-remote policy --json` 与目标 `info.operation_policy` 返回同一份操作矩阵，供 CLI、MCP 和 Agent 读取；GUI 后续接入本机 IPC 后复用同一字段。矩阵是静态边界说明；Relay 仍会在每次调用复验设备访问、成员/租户授权、grant、入站和版本状态。
 
+账号凭据与租户边界见 [OIDC/SSO 边界](docs/oidc.md)：当前 CLI 使用 Relay 运维签发的本地 credential，不执行浏览器登录；OIDC provider token 不能直接当作 grant 或 tenant 授权。
+
 本机开发先在一个终端运行 Relay：
 
 ```text
