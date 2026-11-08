@@ -20,10 +20,10 @@ func cmdConfig() *cobra.Command {
 		}
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 	}})
-	var name string
-	set := &cobra.Command{Use: "set", Short: "设置本机命令解释器", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		if name == "" {
-			return fmt.Errorf("需要 --shell；自动选择请填 auto。")
+	var name, backend string
+	set := &cobra.Command{Use: "set", Short: "设置本机命令解释器与执行后端", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		if name == "" && backend == "" {
+			return fmt.Errorf("需要 --shell 或 --execution-backend。")
 		}
 		if err := shell.Validate(name); err != nil {
 			return fmt.Errorf("本系统不支持此 Shell。")
@@ -31,13 +31,14 @@ func cmdConfig() *cobra.Command {
 		if err := ensureRuntime(); err != nil {
 			return err
 		}
-		result, err := rpc("config.set", map[string]any{"shell": name})
+		result, err := rpc("config.set", map[string]any{"shell": name, "execution_backend": backend})
 		if err != nil {
 			return err
 		}
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 	}}
 	set.Flags().StringVar(&name, "shell", "", "Shell 名称；auto 使用系统默认")
+	set.Flags().StringVar(&backend, "execution-backend", "", "执行后端名称；当前可选 native_user")
 	c.AddCommand(set)
 	return c
 }

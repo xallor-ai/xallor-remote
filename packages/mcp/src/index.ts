@@ -134,7 +134,7 @@ function createServer(): McpServer {
   server.registerTool(
     "remote.device_info",
     {
-      description: "查询一台目标设备的 os/arch/hostname/workspace、shell 能力、执行模式、execution_backend、operation_policy、device_lifecycle、entitlement_contract、usage_event_contract、relay_registry、relay_failover、plane_contract 和 oidc_mapping_contract。OIDC 映射只由本机管理控制面完成，MCP 不接 provider token；usage 只含隐私最小元数据；当前额度仍由管理面提供，授权仍由 Relay 对每次操作复验；只配一台时可省略 device_id。",
+      description: "查询一台目标设备的 os/arch/hostname/workspace、shell 能力、执行模式、execution_backend、execution_backends、operation_policy、device_lifecycle、entitlement_contract、usage_event_contract、relay_registry、relay_failover、plane_contract 和 oidc_mapping_contract。OIDC 映射只由本机管理控制面完成，MCP 不接 provider token；usage 只含隐私最小元数据；当前额度仍由管理面提供，授权仍由 Relay 对每次操作复验；只配一台时可省略 device_id。"
       inputSchema: z.object({
         device_id: z.string().optional().describe("目标设备 ID"),
       }),
@@ -152,7 +152,7 @@ function createServer(): McpServer {
       description: "在对方执行脚本或程序，script 与 program 二选一，流式回收 stdout/stderr。解释器和路径均属于对方。",
       inputSchema: execInputSchema,
     },
-    async ({ script, program, device_id, cwd, timeout_ms }, ctx) => {
+    async ({ script, program, device_id, cwd, timeout_ms, backend }, ctx) => {
       if (!process.env.XALLOR_REMOTE_DEVICE_GRANT && !process.env.XALLOR_REMOTE_DEVICE_ID) {
         const ipc = await ensureRuntime();
         const st = await ipc.call("status");
@@ -176,6 +176,7 @@ function createServer(): McpServer {
           ...(script ? { script } : { program }),
           ...(device_id ? { device_id } : {}),
           ...(cwd ? { cwd } : {}),
+          ...(backend !== undefined ? { backend } : {}),
           ...(timeout_ms ? { timeout_ms } : {}),
         },
         (ev) => {

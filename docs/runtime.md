@@ -106,6 +106,8 @@ on disconnect: 退避重连；不恢复旧子进程
 
 操作矩阵由 `internal/protocol` 定义并通过 `info.operation_policy` 和 CLI `policy --json` 暴露。它只说明静态操作边界；Relay 的动态身份、成员/租户、grant、入站和版本检查仍在每次调用执行，目标 Runtime 不把静态矩阵当成授权凭据。
 
+本机 `config set --execution-backend native_user` 持久化目标选择；执行头可用 `exec --backend native_user -- ...` 或请求 JSON 的 `backend` 明确要求目标后端。请求省略 backend 时沿用目标配置，不能以“配置没成功”为由静默降级。`low_privilege`、`cgroup`、`container` 当前只在 capability 注册表中标为 unavailable，选择会在启动前拒绝。后续低权限 provider 需要单独实现与权限/隔离验证，本轮不实现 privilege drop 或 sandbox。字段及错误码以 [protocol.md](protocol.md) 为准。
+
 ---
 
 ## 7. 策略合同（诚实模型）

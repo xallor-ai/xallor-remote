@@ -62,6 +62,8 @@ Use `xallor-remote relay failover` to inspect the multi-region health, ownership
 
 Use `xallor-remote relay planes` to inspect the control/data plane separation. Management credentials stay on management paths; MCP/GUI use local Runtime IPC and realtime invokes use the WSS data plane.
 
+An execution request may explicitly select `--backend native_user` or the JSON `backend` field. Unsupported backends fail before start with `backend_unavailable`; they never silently fall back. Low-privilege, cgroup, and container backends are not implemented yet.
+
 For local development, run a Relay in one terminal:
 
 ```text

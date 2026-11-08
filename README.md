@@ -62,6 +62,8 @@ xallor-remote exec --device <device-id> --request-file ./execution.json --jsonl
 
 Control/data plane 分离契约可用 `xallor-remote relay planes` 查看；管理凭据只在管理入口使用，MCP/GUI 经本机 Runtime IPC，实时 invoke 只走 WSS 数据面。
 
+执行请求可用 `--backend native_user` 或 JSON 的 `backend` 显式要求目标后端；当前其他后端会在启动前返回 `backend_unavailable`，不会回退执行。低权限、cgroup 和 container 后端尚未实现。
+
 本机开发先在一个终端运行 Relay：
 
 ```text

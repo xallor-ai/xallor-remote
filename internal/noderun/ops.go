@@ -470,7 +470,8 @@ func (d *Daemon) runLocalInfo(link *wsConn, msg protocol.Message) {
 		"workspace":             workspace,
 		"shell":                 shell.Describe(d.store.ConfigSnapshot().Shell),
 		"execution_modes":       []string{"script", "program"},
-		"execution_backend":     process.Describe(),
+		"execution_backend":     process.DescribeBackend(d.store.ConfigSnapshot().ExecutionBackend),
+		"execution_backends":    process.Backends(),
 		"operation_policy":      protocol.PolicyMatrix(),
 		"device_lifecycle":      protocol.DeviceLifecycle(),
 		"entitlement_contract":  protocol.EntitlementContract(),
@@ -480,7 +481,7 @@ func (d *Daemon) runLocalInfo(link *wsConn, msg protocol.Message) {
 		"plane_contract":        protocol.ControlDataPlane(),
 		"oidc_mapping_contract": protocol.OIDCMapping(),
 		"docker":                false,
-		"nvidia":                false,
+		"nvidia":                false
 	})
 	_ = link.send(protocol.Message{Type: protocol.TypeStdout, ExecID: msg.ExecID, Data: string(body)})
 	d.sendOKExit(link, msg.ExecID, start, false)
