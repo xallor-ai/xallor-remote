@@ -33,6 +33,8 @@ try {
   assert.deepEqual(targetInfo.operation_policy.operations.map(row => row.operation), ["info", "read", "write", "exec", "processes", "cancel", "handoff.submit", "handoff.get"]);
   assert.equal(targetInfo.device_lifecycle.version, 1);
   assert.deepEqual(targetInfo.device_lifecycle.steps.map(step => step.name), ["enroll", "grant_issue_or_rotate", "claim", "transfer", "revoke", "reset"]);
+  assert.equal(targetInfo.entitlement_contract.version, 1);
+  assert.deepEqual(targetInfo.entitlement_contract.features.map(feature => feature.name), ["exec.concurrent", "terminal.concurrent", "relay.bytes_per_second", "relay.monthly_egress_bytes", "file.max_transfer_bytes"]);
   const contents = "中文 🌍\nline two\n";
   ok(await call(controller, "write", { device_id: targetID, path: "roundtrip.txt", content: contents }));
   assert.equal(ok(await call(controller, "read", { device_id: targetID, path: "roundtrip.txt" })).content, contents);
