@@ -35,7 +35,7 @@ try {
   assert.deepEqual(targetInfo.device_lifecycle.steps.map(step => step.name), ["enroll", "grant_issue_or_rotate", "claim", "transfer", "revoke", "reset"]);
   assert.equal(targetInfo.entitlement_contract.version, 1);
   assert.deepEqual(targetInfo.entitlement_contract.features.map(feature => feature.name), ["exec.concurrent", "terminal.concurrent", "relay.bytes_per_second", "relay.monthly_egress_bytes", "file.max_transfer_bytes"]);
-  assert.equal(targetInfo.usage_event_contract.version, 1);
+  assert.equal(targetInfo.usage_event_contract.version, 2);
   assert.deepEqual(targetInfo.usage_event_contract.outcomes, ["completed", "failed", "unknown"]);
   assert.equal(targetInfo.relay_registry.version, 1);
   assert.match(targetInfo.relay_registry.stale_event, /old connection/);
@@ -49,6 +49,18 @@ try {
   assert.equal(targetInfo.oidc_mapping_contract.version, 1);
   assert.equal(targetInfo.oidc_mapping_contract.key, "issuer + subject");
   assert.match(targetInfo.oidc_mapping_contract.entry, /local Runtime IPC/);
+  assert.equal(targetInfo.usage_event_contract.time.format, "RFC3339Nano");
+  assert.equal(targetInfo.usage_event_contract.time.zone, "UTC Z");
+  assert.equal(targetInfo.usage_event_contract.time.canonical, true);
+  assert.equal(targetInfo.usage_event_contract.time.max_bytes, 30);
+  assert.equal(targetInfo.usage_event_contract.retention.max_events, 5000);
+  assert.equal(targetInfo.usage_event_contract.retention.max_retired_keys, 5000);
+  assert.equal(targetInfo.usage_event_contract.retention.max_bytes, 4 * 1024 * 1024);
+  assert.match(targetInfo.usage_event_contract.retention.retired_key, /all reuse conflicts/);
+  assert.match(targetInfo.usage_event_contract.retention.when_full, /reject append/);
+  assert.match(targetInfo.usage_event_contract.aggregation, /overflow returns error and zero/);
+  assert.deepEqual(targetInfo.usage_event_contract, JSON.parse(process.env.XALLOR_TEST_USAGE_CONTRACT));
+  pass("usage_contract_matches_cli_with_bounded_time_retention_and_overflow");
   const contents = "中文 🌍\nline two\n";
   ok(await call(controller, "write", { device_id: targetID, path: "roundtrip.txt", content: contents }));
   assert.equal(ok(await call(controller, "read", { device_id: targetID, path: "roundtrip.txt" })).content, contents);
