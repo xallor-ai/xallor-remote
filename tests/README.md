@@ -10,7 +10,7 @@
 
 All process tests use owned temporary profiles and a loopback Relay. They never connect to the user's profile or official Relay. Cleanup stops only fixture processes, verifies the owned absolute directory and then removes it; failed cleanup retains evidence.
 
-- `release_lifecycle.py`: manifest validation, install/upgrade/rollback and failed-start recovery, data preservation and actual MCP reconnection.
+- `release_lifecycle.py`: legacy real-process install/upgrade/rollback harness; its unsigned local bundle is not a production install gate and is not run by CI after source authentication was enforced. Use Go `internal/release` mechanics tests plus `release_install_source_e2e.py` with authenticated raw bundles for current acceptance.
 - `test_release_evidence.py`: zip/vendor/identity consistency, tampered payload/hash, signature-verifier rejection and pinned verification identity (offline tests; no claim of real OIDC signing).
 - `release_attestation_ci.py`: real signed-release rejection of altered bytes and wrong signer workflow; runs only after attestations exist in release CI.
 - Go `internal/relay` transport/request-policy tests cover PEM TLS, CA/hostname errors, health, public-listener refusal, forwarding spoof/quota/log attribution, trusted proxy chains and exact browser Origin (including IPv6 real upgrades). `internal/noderun/tls_execution_test.go` executes through the real Runtime and Relay using a test-only trusted CA.

@@ -73,6 +73,7 @@ CLI：`xallor-remote`。路径与前缀见 [decisions.md](decisions.md)。`platf
 | **栈与复用** | [stack.md](stack.md) |
 | **发行来源验证与剩余安全边界** | [release-security.md](release-security.md) |
 | **安装信任根设计与 #74 边界** | [install-trust-design.md](install-trust-design.md) |
+| #56/#76 治理候选验收与后续依赖 | [governance-acceptance.md](governance-acceptance.md) |
 | CLI 文档入口 / 参数审查 | [cli.md](cli.md) / [cli-ux-review.md](cli-ux-review.md)（建议未实施） |
 | Windows/Linux | [os.md](os.md) |
 | Account / 订阅 | [platform.md](platform.md) |
