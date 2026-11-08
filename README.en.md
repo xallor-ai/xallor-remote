@@ -4,6 +4,8 @@
 
 **XallorRemote** runs one Node on each computer. A device ID and grant code let you send tasks through a Relay to a Windows or Linux computer and stream the results back. Either computer can control the other. No public IP or SSH is required on the target.
 
+Governance gates: #57, #58, #59, #60, #73, and #74.
+
 Start with the product documentation in [docs/README.md](docs/README.md). Contributor rules and PowerShell guidance are in [AGENTS.md](AGENTS.md). See [docs/dataplane.md](docs/dataplane.md) for the Relay, and [docs/heads.md](docs/heads.md) / [docs/stack.md](docs/stack.md) for clients and the technology stack.
 
 The default hosted Relay is `wss://api.xallor.com/remote`. The preferred installation is **one npm package**, `xallor-remote-mcp`, which includes the Runtime; see [docs/mcp.md](docs/mcp.md) / [docs/stack.md](docs/stack.md).
