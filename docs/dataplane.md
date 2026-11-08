@@ -6,6 +6,8 @@ SSOT：连接如何建立、`exec_id` 如何关联、流如何回、cancel / 断
 
 **一句话：** Relay 是有鉴权的实时消息路由器：管 device 连接、grant 校验、`exec_id` 路由和生命周期错误；**不执行、不解释命令、不持久化 stdout / 文件正文。**
 
+`info.plane_contract` 是 control/data plane 的稳定边界：账号、租户、设备归属和设置走本机 IPC/已认证 device control message；数据面只接收 Relay 已验证的 invoke，重建 scope 后经 WSS 转发。Relay 不保存管理凭据，不把 `/health` 或公开 HTTP 当管理 API；管理确认缺失与数据终态缺失均保留 unknown，不自动变更或重放副作用。
+
 ---
 
 ## 1. 发动机

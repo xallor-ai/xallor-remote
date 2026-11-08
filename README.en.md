@@ -48,6 +48,20 @@ Target capabilities come from the target Runtime's `info`; `remote.device_info` 
 
 `xallor-remote policy --json` and the target `info.operation_policy` return the same operation matrix for CLI, MCP, and Agents; the minimal GUI can reuse the same field after its local IPC integration. It describes static boundaries; Relay still revalidates device access, member/tenant authorization, grants, inbound state, and versions on every call.
 
+Account and tenant boundaries are documented in the [OIDC/SSO boundary](docs/oidc.md). The CLI currently uses Relay-operator-issued local credentials and does not run browser login; an OIDC provider token cannot be used directly as a grant or tenant authorization.
+
+Use `xallor-remote device lifecycle` to inspect enrollment, claim, transfer, revoke, and reset preconditions and uncertainty handling. It is a contract report and does not remotely mutate device ownership.
+
+Use `xallor-remote entitlement contract` to inspect feature/value boundaries. It does not read balances, and Relay inflight/IP limits or local job capacity are not treated as membership entitlements.
+
+Use `xallor-remote usage contract` to inspect privacy-minimized usage event and unknown/idempotency rules. Local activity history is not tamper-evident audit and does not directly create billing.
+
+Use `xallor-remote relay registry` to inspect the single-Relay sticky routing contract; it does not claim multi-region HA or failover.
+
+Use `xallor-remote relay failover` to inspect the multi-region health, ownership, unknown-result, and no-replay contract; it reports rules only and does not perform automatic failover.
+
+Use `xallor-remote relay planes` to inspect the control/data plane separation. Management credentials stay on management paths; MCP/GUI use local Runtime IPC and realtime invokes use the WSS data plane.
+
 For local development, run a Relay in one terminal:
 
 ```text

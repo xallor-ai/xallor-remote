@@ -43,6 +43,13 @@ test("connect, stream, cancel, approve and inspect actual history", async ({ pag
     await expect(page.locator("#grant")).toHaveText(grant);
     await page.getByRole("button", { name: "隐藏授权码" }).click();
     expect(await page.locator("body").textContent()).not.toContain(grant);
+    await page.getByRole("button", { name: "文件", exact: true }).click();
+    await page.getByLabel("workspace 内路径").fill("gui-file.txt");
+    await page.getByLabel("内容").fill("GUI file 中文");
+    await page.getByRole("button", { name: "覆盖写入", exact: true }).click();
+    await expect(page.locator("p[role=status]")).toHaveText("已写入目标 workspace。");
+    await page.getByRole("button", { name: "读取", exact: true }).click();
+    await expect(page.getByLabel("内容")).toHaveValue("GUI file 中文");
     await page.screenshot({ path: path.join(process.env.XR_GUI_EVIDENCE!, "desktop.png"), fullPage: true });
     const rejected = await request.post("/__ipc/open", { headers: { Origin: "https://untrusted.example", "Content-Type": "application/json" }, data: {} });
     expect(rejected.status()).toBe(403);
