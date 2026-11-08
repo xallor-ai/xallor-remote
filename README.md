@@ -67,9 +67,9 @@ XALLOR_REMOTE_RELAY_URL="ws://127.0.0.1:8443" go run ./cmd/xallor-remote start
 
 上述明文入口仅供本机开发。公网自托管使用 `relay --listen :8443 --tls-cert <PEM> --tls-key <PEM>` 和 `wss://`，或配置可信 HTTPS 反代；非 loopback 无保护监听会启动失败。代理信任、浏览器 Origin allowlist（含 IPv6）与健康检查配置见 [docs/relay.md](docs/relay.md#5-运维)。
 
-版本与本机升级：先按 [发行来源验证](docs/release-security.md) 核对下载附件与预期标签/commit，成功后再解压和安装。`runtime install` 会在复制、执行候选检查或停止旧 Runtime 前重复验证 raw binary/manifest provenance；rollback 和 MCP vendor 强制来源验证仍未接入，#74 仍在完成中。
+版本与本机升级：先按 [发行来源验证](docs/release-security.md) 核对下载附件与预期标签/commit，成功后再解压和安装。`runtime install`、upgrade 和 rollback 会在使用已安装版本前复验 raw binary/manifest provenance；MCP vendor/PATH 选择也会对候选执行同一固定策略，真实 signed vendor 正向链路仍需 release CI 验证，#74 仍在完成中。
 
-另有只读来源验证入口，使用独立信任的系统 GitHub CLI 和固定签发政策；它不会执行候选或安装，未签名/开发构建默认拒绝。安装复用同一验证器，成功输出不是安装凭证，后续目录变更或绕过入口仍不受保护。rollback 和 MCP vendor 的强制认证尚未接入，#74 未完成；方案与信任根/恢复边界见 [安装信任根设计](docs/install-trust-design.md)。
+另有只读来源验证入口，使用独立信任的系统 GitHub CLI 和固定签发政策；它不会执行候选或安装，未签名/开发构建默认拒绝。安装、rollback 和 MCP vendor 选择复用同一验证器，成功输出不是安装凭证，后续目录变更或绕过入口仍不受保护。离线信任根轮换/撤销和真实 signed vendor 正向链路仍未完成，#74 未完成；方案与信任根/恢复边界见 [安装信任根设计](docs/install-trust-design.md)。
 
 ```text
 xallor-remote runtime verify --bundle <bundle-dir>

@@ -11,7 +11,7 @@
 | #59 | trusted proxy、XFF 链归属、Origin allowlist、IPv6/mapped CIDR | 已实现并有真实 HTTP/WebSocket/限流测试；管理员仍须正确配置代理网络 |
 | #60 | SBOM、release index、GitHub provenance 配置、外部验证入口 | 部分完成；真实 OIDC 正向签发依赖 release workflow，不能由本地 mock 替代 |
 | #73 | exec 参数解析 JSONL 错误通道、双语 README/CLI 文档、真实参数保真回归 | 单点缺陷已修复；命名、help 语言策略、查询 JSON 一致性、完整 PowerShell/Linux 原生矩阵仍开放 |
-| #74 | 固定 trust policy、独立 `runtime verify`、安装前 raw binary/manifest provenance 验证、rehash 拒绝 | install/upgrade 候选已接入；rollback、MCP vendor/PATH、离线根轮换/撤销仍未接入 |
+| #74 | 固定 trust policy、独立 `runtime verify`、安装/升级/回滚前 raw binary/manifest provenance 验证、MCP vendor/PATH 候选拒绝、rehash 拒绝 | install/upgrade/rollback/MCP rejection 已接入；真实 signed-vendor 正向链路、离线根轮换/撤销仍未确认 |
 
 安装器的关键顺序已经是：读取输入到私有快照 → 用独立信任的系统 `gh` 验证 manifest 和 binary → 认证成功后复制、`Control.Check`、保存 pending、停止旧 Runtime；任何失败都不能写安装目录或停止旧 Runtime。`runtime verify` 本身不安装，也不是永久安装凭证。
 
