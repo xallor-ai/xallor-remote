@@ -72,7 +72,7 @@ docs/
 | --- | --- |
 | GitHub Releases | `xallor-remote` 各平台文件 + SHA256SUMS（纯 Go / 无 Node 场景） |
 | npm | **`xallor-remote-mcp` 一个包**：MCP 头 + 嵌入的本平台 Runtime（`vendor/`）；`bin` 含 `xallor-remote-mcp` 与 `xallor-remote` |
-| 查找顺序 | `XALLOR_REMOTE_BIN` → 已校验的安装版本 → **npm 包内 `vendor/<platform>/`** → `PATH` → 数据目录 `bin/`（MCP 与 GUI 共用此顺序；GUI 见 `apps/gui/src-tauri/src/ensure.rs`） |
+| 查找顺序 | `XALLOR_REMOTE_BIN` → 已校验的安装版本 → **npm 包内 `vendor/<platform>/`** → `PATH` → 数据目录 `bin/` |
 | 找不到 | 报错 + 安装说明，**禁止静默联网下载** |
 
 打 npm 包时用仓库脚本把已构建二进制拷进 `vendor/` 再 `npm pack`。以后可再拆 `optionalDependencies` 平台包并校验 checksum。不要把 secret 打进包。

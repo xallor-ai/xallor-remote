@@ -38,9 +38,7 @@ fn launch() -> Result<Session, String> {
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true);
     #[cfg(windows)]
     command.creation_flags(0x0800_0000);
-    let mut child = command.spawn().map_err(|_| {
-        format!("无法启动本机连接。{}", crate::ensure::INSTALL_HINT)
-    })?;
+    let mut child = command.spawn().map_err(|_| "无法启动本机连接，请检查 Runtime 安装。")?;
     let input = Arc::new(AsyncMutex::new(child.stdin.take().ok_or("无法打开输入。")?));
     let queue = Arc::new(Mutex::new(Queue { frames: vec![], bytes: 0, error: None, touched: Instant::now() }));
     let reader_queue = Arc::clone(&queue);
