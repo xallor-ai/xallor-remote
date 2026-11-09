@@ -4,17 +4,35 @@ export type Frame = {
 };
 type Pending = { resolve: (f: Frame) => void; reject: (e: Error) => void; event?: (f: Frame) => void };
 const native = "__TAURI_INTERNALS__" in window;
+const CONNECT_HINT =
+  "连接失败。请安装带 Runtime 的 xallor-remote-mcp，或运行 xallor-remote runtime install，或设置 XALLOR_REMOTE_BIN。";
+
+function errMessage(e: unknown, fallback = CONNECT_HINT): string {
+  if (typeof e === "string" && e.trim()) return e;
+  if (e instanceof Error && e.message.trim()) return e.message;
+  if (e && typeof e === "object") {
+    const o = e as { message?: unknown; error?: unknown };
+    if (typeof o.message === "string" && o.message.trim()) return o.message;
+    if (typeof o.error === "string" && o.error.trim()) return o.error;
+  }
+  return fallback;
+}
+
 async function transport<T>(action: string, args: Record<string, unknown> = {}): Promise<T> {
   if (native) {
     const { invoke } = await import("@tauri-apps/api/core");
-    return invoke<T>(`session_${action}`, args);
+    try {
+      return await invoke<T>(`session_${action}`, args);
+    } catch (e) {
+      throw new Error(errMessage(e));
+    }
   }
   const res = await fetch(`/__ipc/${action}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(args),
     signal: AbortSignal.timeout(30_000),
   });
   const body = await res.json();
-  if (!res.ok) throw new Error(body.message || "连接失败。");
+  if (!res.ok) throw new Error(body.message || CONNECT_HINT);
   return body.result as T;
 }
 
@@ -31,7 +49,7 @@ class Connection {
     if (this.opening) return this.opening;
     this.opening = transport<string>("open").then(id => {
       this.session = id; this.error = ""; void this.poll(id); this.notify(); return id;
-    }).catch(e => { this.error = e instanceof Error ? e.message : "连接失败。"; this.notify(); throw e; }).finally(() => { this.opening = undefined; });
+    }).catch(e => { this.error = errMessage(e); this.notify(); throw e instanceof Error ? e : new Error(this.error); }).finally(() => { this.opening = undefined; });
     return this.opening;
   }
   private fail(id: string, error: Error) {

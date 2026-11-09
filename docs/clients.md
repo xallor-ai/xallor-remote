@@ -97,7 +97,9 @@ Agent 或脚本调用时加 `--jsonl`，逐行读取 stdout 上的 JSON 事件�
 
 **Tauri 2**，调本机 Runtime。「连接」完成查看本机 ID、主动显示/复制授权码、开关入站、添加对方、保存设备备注和逐设备诊断。左栏：连接 / 任务 / 审批 / 审计 / 设置。任务保留流式输出和明确终态，可跨页取消；审批显示真实待确认操作；审计显示本机记录。授权码默认隐藏，显示 30 秒后或窗口失焦时自动隐藏。workspace 在设置里改。不做键鼠。不做 Electron。
 
-工程：`apps/gui`。本机需 Rust + MSVC；开发 `npm run tauri:dev`，发行物 `xallor-remote-gui.exe`（先有本机 Runtime）。
+工程：`apps/gui`。本机需 Rust + MSVC；开发 `npm run tauri:dev`，发行物 `xallor-remote-gui.exe`。
+
+GUI **不内嵌** Runtime，启动时按 [stack.md](stack.md) 同一顺序找 `xallor-remote`：`XALLOR_REMOTE_BIN` → `runtime install` 纳管版本 → 全局 `xallor-remote-mcp` 的 `vendor/<platform>/` → `PATH` 中的真实二进制 → `%APPDATA%\XallorRemote\bin\`（或 Linux `~/.config/xallor-remote/bin/`）。Windows 上 npm 的 `.cmd` shim **不能**被 Tauri 直接 spawn，因此必须能解析到 `vendor/.../xallor-remote.exe`。打开 GUI 前先 `npm i -g xallor-remote-mcp` 并 `xallor-remote ensure`，或 `xallor-remote runtime install --bundle <解压目录>`。
 
 ---
 
