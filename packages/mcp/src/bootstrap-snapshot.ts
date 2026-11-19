@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { MAX_BINARY, MAX_MANIFEST, nativeArtifactObservation } from "./artifact-manifest.js";
 import { verifySourceSync, type SourceVerifier } from "./source-trust.js";
 
-export type BootstrapSnapshot = { directory: string; binary: string; sha256: string; assertUnchanged(): void; cleanup(): void };
+export type BootstrapSnapshot = { directory: string; binary: string; sha256: string; assertUnchanged(): void; cleanup(allowOwnedContentChange?: boolean): void };
 
 export class BootstrapCandidateMissing extends Error {}
 
@@ -102,7 +102,7 @@ export function captureBootstrap(candidate: string, verify: SourceVerifier = ver
       throw new Error("Bootstrap snapshot directory ownership changed");
     }
   };
-  const cleanup = () => {
+  const cleanup = (allowOwnedContentChange = false) => {
     if (removed) return;
     try {
       try { checkOwnedDirectory(); }
@@ -120,7 +120,7 @@ export function captureBootstrap(candidate: string, verify: SourceVerifier = ver
         try {
           const current = fs.lstatSync(file, { bigint: true });
           const original = ownedFiles.get(file);
-          if (!original || !current.isFile() || current.isSymbolicLink() || current.ino !== original.stats.ino || current.dev !== original.stats.dev || current.nlink !== 1n || current.size !== original.stats.size || createHash("sha256").update(fs.readFileSync(file)).digest("hex") !== original.sha256) {
+          if (!original || !current.isFile() || current.isSymbolicLink() || current.ino !== original.stats.ino || current.dev !== original.stats.dev || current.nlink !== 1n || (!allowOwnedContentChange && (current.size !== original.stats.size || createHash("sha256").update(fs.readFileSync(file)).digest("hex") !== original.sha256))) {
             throw new Error("Bootstrap snapshot file ownership changed");
           }
           files.push(file);

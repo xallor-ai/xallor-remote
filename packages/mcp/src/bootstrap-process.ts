@@ -41,7 +41,7 @@ export function runSnapshot(snapshot: BootstrapSnapshot, args: readonly string[]
       closed = true;
       clearTimeout(deadline); clearTimeout(closeDeadline);
       let cleanupFailure: Error | undefined;
-      try { image?.close(); snapshot.cleanup(); }
+      try { image?.close(); snapshot.cleanup(true); }
       catch (error) { cleanupFailure = error instanceof BootstrapCleanupError ? error : new BootstrapCleanupError(snapshot.directory, error); }
       // A late close can safely release a previously retained snapshot. It
       // cannot change a timeout/uncertainty already reported to the caller.
