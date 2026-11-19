@@ -17,8 +17,8 @@ class PublicationReadTests(unittest.TestCase):
             self.assertEqual(json.loads(wait_text(path)), {"pid":42})
         self.assertEqual(path.read_text.call_count, 3)
 
-    # A dead producer cannot become ready; observe its result once and fail
-    # without sleeping or starting another process.
+    # Root exit does not close inherited stdio. Observe only the cached code,
+    # leaving pipe collection and descendant cleanup to the caller.
     def test_fails_immediately_when_producer_exits_before_publication(self):
         path, producer = Mock(), Mock()
         path.read_text.side_effect = FileNotFoundError()
@@ -26,7 +26,8 @@ class PublicationReadTests(unittest.TestCase):
         with patch("fixtures.publication_read.time.sleep") as sleep:
             with self.assertRaisesRegex(AssertionError, "exited before startup"):
                 wait_text(path, producer)
-        producer.communicate.assert_called_once()
+        producer.communicate.assert_not_called()
+        producer.poll.assert_called_once()
         sleep.assert_not_called()
 
     # A persistently unreadable file must exhaust the original 15-second

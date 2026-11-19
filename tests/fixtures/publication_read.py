@@ -17,8 +17,11 @@ def wait_text(path, process=None):
                 isinstance(error, PermissionError) and error.errno == errno.EACCES))
             if not transient:
                 raise
-            if process is not None and process.poll() is not None:
-                raise AssertionError(f"fixture command exited before startup: {process.communicate()!r}") from error
+            code = process.poll() if process is not None else None
+            if code is not None:
+                # The caller owns process cleanup. Inherited pipes can remain
+                # open after root exit, so collecting output here could hang.
+                raise AssertionError(f"fixture command exited before startup: exit code {code}") from error
             if time.monotonic() >= deadline:
                 raise TimeoutError(f"fixture publication did not become readable: {path.name}") from error
         time.sleep(.02)
