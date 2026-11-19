@@ -5,7 +5,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import test, { type TestContext } from "node:test";
 import { packageBuild } from "./buildinfo.js";
-import { captureBootstrap } from "./bootstrap-snapshot.js";
+import { BootstrapCleanupError, captureBootstrap } from "./bootstrap-snapshot.js";
 
 function fixture(t: TestContext) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xr-snapshot-test-"));
@@ -130,12 +130,24 @@ for (const kind of ["unexpected-entry", "replaced-file", "hard-linked-file"]) {
     } else {
       fs.chmodSync(snapshot.binary, 0o700);
       fs.unlinkSync(snapshot.binary);
-      if (kind === "hard-linked-file") {
-        fs.linkSync(f.binary, snapshot.binary);
-        unowned = f.binary;
-      } else {
-        fs.writeFileSync(snapshot.binary, "replacement");
-        unowned = snapshot.binary;
+      try {
+        if (kind === "hard-linked-file") {
+          fs.linkSync(f.binary, snapshot.binary);
+          unowned = f.binary;
+        } else {
+          fs.writeFileSync(snapshot.binary, "replacement");
+          unowned = snapshot.binary;
+        }
+      } catch (error) {
+        // Node 20 Windows leaves the unlinked pinned object delete-pending,
+        // preventing recreation. That is prevention, not a cleanup refusal.
+        if (process.platform !== "win32" || !["EPERM", "EACCES", "EEXIST"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+        assert.throws(() => snapshot.assertUnchanged());
+        try { snapshot.cleanup(); }
+        catch (cleanupError) { assert.ok(cleanupError instanceof BootstrapCleanupError); }
+        assert.deepEqual(fs.readFileSync(f.binary), f.bytes);
+        assert.equal(fs.existsSync(snapshot.binary), false);
+        return;
       }
     }
     fs.chmodSync(unowned, 0o400);

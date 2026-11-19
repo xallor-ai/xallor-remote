@@ -120,11 +120,10 @@ export function captureBootstrap(candidate: string, verify: SourceVerifier = ver
     }
   };
   let released = false;
-  const releaseHandles = () => {
+  const releaseFileHandles = () => {
     if (released) return;
     released = true;
     for (const { fd } of ownedFiles.values()) fs.closeSync(fd);
-    if (directoryFd !== undefined) fs.closeSync(directoryFd);
   };
   let removed = false;
   const checkOwnedDirectory = () => {
@@ -164,10 +163,17 @@ export function captureBootstrap(candidate: string, verify: SourceVerifier = ver
         catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
       }
       for (const file of files) { fs.chmodSync(file, 0o600); fs.unlinkSync(file); }
+      // Older Windows/libuv unlink marks files delete-pending until the final
+      // handle closes. Keep pins through unlink, then settle file deletion
+      // before removing the directory. Linux's directory pin stays held.
+      releaseFileHandles();
       fs.rmdirSync(directory);
       removed = true;
     } catch (error) { throw new BootstrapCleanupError(directory, error); }
-    finally { releaseHandles(); }
+    finally {
+      try { releaseFileHandles(); }
+      finally { if (directoryFd !== undefined) fs.closeSync(directoryFd); }
+    }
   };
   try {
     const manifestFd = fs.openSync(manifest, "wx", 0o600);
