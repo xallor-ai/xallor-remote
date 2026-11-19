@@ -36,6 +36,13 @@ pidfd settlement regression, and the Runtime-owned GUI bridge. This is CI and
 review evidence for the PR only; it is not a protected signed release or a
 production deployment.
 
+The first protected A-tag workflow `44499474905` remains a failure record. Its
+real provenance and tamper rejection passed, but the installer acceptance helper
+asserted the obsolete `runtime/versions` cache after a successful install. The
+current Runtime authority is `runtime/activations`; candidate B updates both
+signed-install acceptance helpers to assert that resource. The failed A report is
+preserved and is not counted as signed-candidate acceptance.
+
 The initial Windows full Go run failed in native handoff cleanup/readiness/probe
 cases. A later full run passed; replacing hardcoded version fixtures does not
 establish the cause of those failures. Python discovery initially timed out in

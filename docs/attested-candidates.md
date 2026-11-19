@@ -2,19 +2,26 @@
 
 本页记录 Issue #75 的可复核证据。它只记录已经完成的 GitHub 受保护发布工作流和原始制品验证，不把本地构建或测试夹具当作签名来源。
 
-## 当前集成状态：PR #108
+## 当前集成状态：PR #108 / PR #109
 
 用户已明确授权候选提交、PR 和 CI/评审通过后的集成。非 GUI 候选已从 main
 `be9a32c4c9713b2c38b1d54664b1183ef3bb2931` 建立独立分支并提交
-[PR #108](https://github.com/xallor-ai/xallor-remote/pull/108)。原 PR97 工作树保留。
-PR #108 的最终提交 `669bd9af03eb731bc0f0cf5940ff7b5dec568847` 已通过完整 CI
-运行 `44495435321`；未合并、未创建 `v0.3.0-rc.1` / `v0.3.0-rc.2`
-tag，未生成新的真实签名 A/B 候选。提交授权已不再是阻塞项。
+[PR #108](https://github.com/xallor-ai/xallor-remote/pull/108)。该 PR 已合并，
+合并提交为 `bec508f2dbc15c7527323518971d4cbf21c180a0`；原 PR97 工作树保留。
+受保护 tag `v0.3.0-rc.1` 已指向该合并提交，workflow `44499474905` 的
+失败记录见下文。版本 B 的元数据修复在 [PR #109](https://github.com/xallor-ai/xallor-remote/pull/109)，
+当前提交为 `214152789afabd3fbac8b1d202bde15a873721ef`，尚未合并或创建 B tag。
 
 当前门槛依次为：最终提交 CI 和独立评审通过、集成候选 A、建立独立版本 B、
 通过受保护 tag 生成真实签名制品，再运行下述双平台签名生命周期。
 `release` 环境的人工审核与生产部署保持独立，不以代码提交授权代替。
 具体 CI 缺口和首次失败记录由 [非 GUI 台账](superpowers/plans/2026-11-17-non-gui-todo.md) 维护。
+
+候选 A 的首次受保护 tag workflow `44499474905` 已保留为失败证据：raw
+provenance、篡改拒绝和 `runtime verify` 均通过，安装验收脚本在成功安装后仍
+读取已不再作为选择权威的 `runtime/versions` 目录而失败。候选 B 的验收脚本已
+改为核对 `runtime/activations`，并同步修正双版本签名生命周期脚本；不会把这次
+失败重写为成功，也不会把 A 的 draft 当成可用候选。
 
 ## 集成前就绪性核对：2026-11-19
 
