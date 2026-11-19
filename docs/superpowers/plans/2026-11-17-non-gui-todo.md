@@ -7,7 +7,31 @@ the linked GitHub issues or claim a production release. Every item is classified
 so local tests, historical reports, draft candidates and production evidence
 cannot be mixed.
 
-## Latest evidence checkpoint — 2026-11-19
+## Current integration gate — PR #108
+
+The user explicitly authorized candidate commits, PRs, and integration after
+review and CI pass. The main-based branch `codex/non-gui-rc1` is now published
+as [PR #108](https://github.com/xallor-ai/xallor-remote/pull/108), starting from
+`be9a32c4c9713b2c38b1d54664b1183ef3bb2931`. The original PR97 worktree is retained.
+Candidate A is `0.3.0-rc.1`; candidate B remains planned as `0.3.0-rc.2`.
+Neither protected tag nor signed A/B acceptance has been created in this batch.
+Production deployment and the release environment's human approval are separate.
+
+PR CI is currently failing. Open repairs concern bootstrap snapshot ownership,
+the existing GUI development bridge's removed executable-selection import,
+explicit native-owner mechanics for the GUI test harness, cross-layer report
+producer schemas, and Linux descendant-exit proof. Fixing the existing bridge
+does not add GUI product functionality. Do not merge or create release tags
+until the final commit passes CI and review.
+
+The initial Windows full Go run failed in native handoff cleanup/readiness/probe
+cases. A later full run passed; replacing hardcoded version fixtures does not
+establish the cause of those failures. Python discovery initially timed out in
+`test_package_stdio`, then passed unchanged (123 tests run, 2 skipped). These
+first failures remain evidence. Old local passing runs below do not certify
+the new integration commit or replace remote CI.
+
+## Pre-integration evidence checkpoint — 2026-11-19
 
 Integration review covered 239 changed implementation files against HEAD:
 127 lifecycle files read in full,33 heads/release files read in full, and79
@@ -24,7 +48,8 @@ Read-only publisher probe confirms the existing xallor-agent account has reposit
 admin and protected-tag bypass. No account switch or permission mutation was made.
 A private-index export reconstructs the non-GUI candidate on main rather than
 including PR97 GUI commits; this produces a tree/patch, not a commit. Explicit
-commit authority and genuinely signed A/B acceptance remain outstanding.
+commit authority was outstanding at that checkpoint and has since been granted;
+genuinely signed A/B acceptance remains outstanding.
 
 Candidate A metadata is now0.3.0-rc.1, with B proposed as0.3.0-rc.2. Go/npm version
 metadata is aligned; two version-dependent test assumptions were corrected to
@@ -104,7 +129,7 @@ official dependency-signature or hermetic-build claim. Signed/published-package
 gates remain open. Historical failures below
 remain evidence, not current pending handles.
 
-Current worktree is uncommitted WIP, not a clean release. The table separates
+The following table describes the pre-integration uncommitted WIP, not a release. It separates
 completed local validation from remaining acceptance. Linux reports belong to
 their specific source snapshots; they do not collectively certify one release.
 
