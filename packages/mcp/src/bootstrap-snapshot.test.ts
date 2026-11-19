@@ -65,11 +65,6 @@ test("should reject changed private bytes after verifier returns", t => {
     fs.writeFileSync(privateBinary, "changed private image");
     return true;
   }, f.temporary));
-  // A changed private file is uncertain ownership evidence. Retain the owned
-  // root for operator inspection instead of deleting a possible replacement.
-  const retained = fs.readdirSync(f.temporary);
-  assert.equal(retained.length, 1);
-  fs.rmSync(path.join(f.temporary, retained[0]), { recursive: true, force: true });
   assert.deepEqual(fs.readdirSync(f.temporary), []);
   assert.deepEqual(fs.readFileSync(f.binary), f.bytes);
 });

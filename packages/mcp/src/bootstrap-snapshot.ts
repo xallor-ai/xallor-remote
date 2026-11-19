@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { MAX_BINARY, MAX_MANIFEST, nativeArtifactObservation } from "./artifact-manifest.js";
 import { verifySourceSync, type SourceVerifier } from "./source-trust.js";
 
-export type BootstrapSnapshot = { directory: string; binary: string; sha256: string; assertUnchanged(): void; cleanup(allowOwnedContentChange?: boolean): void };
+export type BootstrapSnapshot = { directory: string; binary: string; sha256: string; assertUnchanged(): void; cleanup(): void };
 
 export class BootstrapCandidateMissing extends Error {}
 
@@ -35,13 +35,14 @@ function readManifest(file: string): Buffer {
   } finally { fs.closeSync(fd); }
 }
 
-function copyBinary(source: string, target: string): void {
+function copyBinary(source: string, target: string, created: (info: fs.BigIntStats) => void): void {
   const input = fs.openSync(source, READ_FLAGS);
   try {
     const info = fs.fstatSync(input);
     if (!info.isFile() || info.size <= 0 || info.size > MAX_BINARY) throw new Error("Invalid bootstrap binary size");
     const output = fs.openSync(target, "wx", 0o700);
     try {
+      created(fs.fstatSync(output, { bigint: true }));
       const chunk = Buffer.alloc(64 * 1024);
       let copied = 0;
       for (;;) {
@@ -92,8 +93,7 @@ export function captureBootstrap(candidate: string, verify: SourceVerifier = ver
   const owner = fs.lstatSync(directory, { bigint: true });
   const binary = path.join(directory, filename);
   const manifest = path.join(directory, "manifest.json");
-  type OwnedFile = { stats: fs.BigIntStats; sha256: string };
-  const ownedFiles = new Map<string, OwnedFile>();
+  const ownedFiles = new Map<string, fs.BigIntStats>();
   let removed = false;
   const checkOwnedDirectory = () => {
     const current = fs.lstatSync(directory, { bigint: true });
@@ -102,7 +102,7 @@ export function captureBootstrap(candidate: string, verify: SourceVerifier = ver
       throw new Error("Bootstrap snapshot directory ownership changed");
     }
   };
-  const cleanup = (allowOwnedContentChange = false) => {
+  const cleanup = () => {
     if (removed) return;
     try {
       try { checkOwnedDirectory(); }
@@ -120,7 +120,7 @@ export function captureBootstrap(candidate: string, verify: SourceVerifier = ver
         try {
           const current = fs.lstatSync(file, { bigint: true });
           const original = ownedFiles.get(file);
-          if (!original || !current.isFile() || current.isSymbolicLink() || current.ino !== original.stats.ino || current.dev !== original.stats.dev || current.nlink !== 1n || (!allowOwnedContentChange && (current.size !== original.stats.size || createHash("sha256").update(fs.readFileSync(file)).digest("hex") !== original.sha256))) {
+          if (!original || !current.isFile() || current.isSymbolicLink() || current.ino !== original.ino || current.dev !== original.dev || current.nlink !== 1n) {
             throw new Error("Bootstrap snapshot file ownership changed");
           }
           files.push(file);
@@ -135,11 +135,10 @@ export function captureBootstrap(candidate: string, verify: SourceVerifier = ver
   try {
     const manifestFd = fs.openSync(manifest, "wx", 0o600);
     try {
+      ownedFiles.set(manifest, fs.fstatSync(manifestFd, { bigint: true }));
       fs.writeFileSync(manifestFd, raw);
-      ownedFiles.set(manifest, { stats: fs.fstatSync(manifestFd, { bigint: true }), sha256: createHash("sha256").update(raw).digest("hex") });
     } finally { fs.closeSync(manifestFd); }
-    copyBinary(source, binary);
-    ownedFiles.set(binary, { stats: fs.statSync(binary, { bigint: true }), sha256: createHash("sha256").update(fs.readFileSync(binary)).digest("hex") });
+    copyBinary(source, binary, info => ownedFiles.set(binary, info));
     const before = nativeArtifactObservation(binary, manifest, build);
     fs.chmodSync(binary, 0o500);
     fs.chmodSync(manifest, 0o400);
@@ -154,7 +153,7 @@ export function captureBootstrap(candidate: string, verify: SourceVerifier = ver
       for (const file of [binary, manifest]) {
         const current = fs.lstatSync(file, { bigint: true });
         const original = ownedFiles.get(file)!;
-        if (!current.isFile() || current.isSymbolicLink() || current.ino !== original.stats.ino || current.dev !== original.stats.dev || current.nlink !== 1n || current.size !== original.stats.size || createHash("sha256").update(fs.readFileSync(file)).digest("hex") !== original.sha256) {
+        if (!current.isFile() || current.isSymbolicLink() || current.ino !== original.ino || current.dev !== original.dev || current.nlink !== 1n) {
           throw new Error("Bootstrap snapshot file ownership changed");
         }
       }

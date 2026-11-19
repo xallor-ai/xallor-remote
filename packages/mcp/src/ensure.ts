@@ -2,8 +2,6 @@ import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import fs from "node:fs";
-import { verifySourceSync, type SourceVerifier } from "./source-trust.js";
 
 export function dataDir(env: NodeJS.ProcessEnv = process.env): string {
 	if (env.XALLOR_REMOTE_DATA_DIR) {
@@ -55,49 +53,6 @@ export function vendorPlatformKey(platform = process.platform, arch = process.ar
   if (platform === "darwin" && arch === "arm64") return "darwin-arm64";
   if (platform === "darwin" && arch === "x64") return "darwin-x64";
   return `${platform}-${arch}`;
-}
-
-/**
- * Compatibility lookup for the existing GUI development bridge. It is only a
- * path hint: normal callers must pass a verified manifest through the built-in
- * source verifier. It never reads managed Runtime state or selects an
- * unverified installed activation.
- */
-export type FindBinaryOpts = { packageRoot?: string; sourceVerifier?: SourceVerifier; allowUnverified?: boolean };
-
-export function bundledBinary(root = packageRoot()): string | undefined {
-  const directory = path.join(root, "vendor", vendorPlatformKey());
-  for (const name of binaryNames()) {
-    const candidate = path.join(directory, name);
-    try { if (fs.statSync(candidate).isFile()) return candidate; } catch { /* continue */ }
-  }
-  return undefined;
-}
-
-export function findBinary(env = process.env, opts: FindBinaryOpts = {}): string | undefined {
-  const candidates: string[] = [];
-  if (env.XALLOR_REMOTE_BIN) candidates.push(env.XALLOR_REMOTE_BIN);
-  const bundled = bundledBinary(opts.packageRoot ?? packageRoot());
-  if (bundled) candidates.push(bundled);
-  const pathValue = Object.prototype.hasOwnProperty.call(env, "PATH") ? (env.PATH ?? "") : (env.Path ?? "");
-  const separator = process.platform === "win32" ? ";" : ":";
-  for (const directory of pathValue.split(separator)) {
-    if (!directory) continue;
-    for (const name of binaryNames()) candidates.push(path.join(directory, name));
-  }
-  for (const name of binaryNames()) candidates.push(path.join(dataDir(env), "bin", name));
-  for (const candidate of [...new Set(candidates)]) {
-    try {
-      if (!fs.statSync(candidate).isFile()) continue;
-      if (opts.allowUnverified) return candidate;
-      const manifest = path.join(path.dirname(candidate), "manifest.json");
-      if (!fs.statSync(manifest).isFile()) continue;
-      const build = JSON.parse(fs.readFileSync(manifest, "utf8")).build;
-      const verifier = opts.sourceVerifier ?? verifySourceSync;
-      if (verifier(candidate, manifest, build)) return candidate;
-    } catch { /* reject this candidate and continue */ }
-  }
-  return undefined;
 }
 
 export const INSTALL_HINT =
