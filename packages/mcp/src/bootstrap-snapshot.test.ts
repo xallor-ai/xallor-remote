@@ -74,12 +74,47 @@ test("should reject changed private bytes after verifier returns", t => {
 test("should retain a substituted directory rather than deleting unowned files", t => {
   const f = fixture(t);
   const snapshot = captureBootstrap(f.binary, () => true, f.temporary);
-  fs.renameSync(snapshot.directory, snapshot.directory+".retained");
+  try { fs.renameSync(snapshot.directory, snapshot.directory+".retained"); }
+  catch (error) {
+    // Windows refuses the directory rename while its child handles are held.
+    // This proves prevention rather than the Linux post-substitution refusal.
+    if (process.platform !== "win32" || !["EPERM", "EACCES", "EBUSY"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+    snapshot.assertUnchanged();
+    snapshot.cleanup();
+    assert.equal(fs.existsSync(snapshot.directory), false);
+    return;
+  }
   fs.mkdirSync(snapshot.directory);
   const sentinel = path.join(snapshot.directory, "unowned.txt");
   fs.writeFileSync(sentinel, "keep");
   assert.throws(() => snapshot.cleanup());
   assert.equal(fs.readFileSync(sentinel, "utf8"), "keep");
+});
+
+// In-place changes retain physical ownership but must lose execution authority.
+// Cleanup must still reclaim that original object without a hash-based bypass.
+test("should reclaim the original inode after rejecting mutated execution bytes", t => {
+  const f = fixture(t);
+  const snapshot = captureBootstrap(f.binary, () => true, f.temporary);
+  fs.chmodSync(snapshot.binary, 0o700);
+  fs.appendFileSync(snapshot.binary, "changed");
+  assert.throws(() => snapshot.assertUnchanged(), /Artifact size mismatch/);
+  snapshot.cleanup();
+  assert.equal(fs.existsSync(snapshot.directory), false);
+});
+
+// A refused cleanup releases its handles and must never reacquire ownership
+// from path metadata on retry, even if a caller later removes foreign content.
+test("should refuse cleanup retry after ownership evidence has been released", t => {
+  const f = fixture(t);
+  const snapshot = captureBootstrap(f.binary, () => true, f.temporary);
+  const foreign = path.join(snapshot.directory, "foreign");
+  fs.writeFileSync(foreign, "keep");
+  assert.throws(() => snapshot.cleanup());
+  fs.unlinkSync(foreign);
+  assert.throws(() => snapshot.assertUnchanged(), /released/);
+  assert.throws(() => snapshot.cleanup());
+  assert.deepEqual(fs.readFileSync(snapshot.binary), f.bytes);
 });
 
 // Unexpected contents and replaced/linked files are not ownership evidence.

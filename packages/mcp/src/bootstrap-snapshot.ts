@@ -90,10 +90,32 @@ export function captureBootstrap(candidate: string, verify: SourceVerifier = ver
   } catch (error) {
     throw new Error("无法创建私有引导副本。", { cause: error });
   }
-  const owner = fs.lstatSync(directory, { bigint: true });
+  // Linux permits removing empty directories while their descriptors are
+  // open. Pin the directory too, otherwise its inode could also be reused.
+  const directoryFd = process.platform === "linux" ? fs.openSync(directory, READ_FLAGS | fs.constants.O_DIRECTORY) : undefined;
+  const owner = directoryFd === undefined ? fs.lstatSync(directory, { bigint: true }) : fs.fstatSync(directoryFd, { bigint: true });
   const binary = path.join(directory, filename);
   const manifest = path.join(directory, "manifest.json");
-  const ownedFiles = new Map<string, fs.BigIntStats>();
+  const ownedFiles = new Map<string, { info: fs.BigIntStats; fd: number }>();
+  // Keep read handles to the actual created objects for their full lifetime.
+  // A stat tuple alone can be reused after unlink; a live inode cannot. Read
+  // handles also avoid Linux ETXTBSY when the captured binary is executed.
+  const ownFile = (file: string, info: fs.BigIntStats) => {
+    const fd = fs.openSync(file, READ_FLAGS);
+    const pinned = fs.fstatSync(fd, { bigint: true });
+    if (!pinned.isFile() || pinned.ino !== info.ino || pinned.dev !== info.dev || pinned.nlink !== 1n) {
+      fs.closeSync(fd);
+      throw new Error("Bootstrap snapshot file ownership changed during capture");
+    }
+    ownedFiles.set(file, { info, fd });
+  };
+  let released = false;
+  const releaseHandles = () => {
+    if (released) return;
+    released = true;
+    for (const { fd } of ownedFiles.values()) fs.closeSync(fd);
+    if (directoryFd !== undefined) fs.closeSync(directoryFd);
+  };
   let removed = false;
   const checkOwnedDirectory = () => {
     const current = fs.lstatSync(directory, { bigint: true });
@@ -104,6 +126,7 @@ export function captureBootstrap(candidate: string, verify: SourceVerifier = ver
   };
   const cleanup = () => {
     if (removed) return;
+    if (released) throw new BootstrapCleanupError(directory, new Error("Bootstrap ownership handles were released after failed cleanup"));
     try {
       try { checkOwnedDirectory(); }
       catch (error) {
@@ -116,10 +139,13 @@ export function captureBootstrap(candidate: string, verify: SourceVerifier = ver
       }
       // Validate every file before touching any permission. Do not recursively
       // remove links or unknown files a process might have put in this directory.
+      // Pins prevent inode reuse; they do not make pathname unlink atomic with
+      // this check. Concurrent name swaps remain outside the cleanup guarantee
+      // documented in docs/install-trust-design.md.
       for (const file of [binary, manifest]) {
         try {
           const current = fs.lstatSync(file, { bigint: true });
-          const original = ownedFiles.get(file);
+          const original = ownedFiles.get(file)?.info;
           if (!original || !current.isFile() || current.isSymbolicLink() || current.ino !== original.ino || current.dev !== original.dev || current.nlink !== 1n) {
             throw new Error("Bootstrap snapshot file ownership changed");
           }
@@ -131,14 +157,15 @@ export function captureBootstrap(candidate: string, verify: SourceVerifier = ver
       fs.rmdirSync(directory);
       removed = true;
     } catch (error) { throw new BootstrapCleanupError(directory, error); }
+    finally { releaseHandles(); }
   };
   try {
     const manifestFd = fs.openSync(manifest, "wx", 0o600);
     try {
-      ownedFiles.set(manifest, fs.fstatSync(manifestFd, { bigint: true }));
+      ownFile(manifest, fs.fstatSync(manifestFd, { bigint: true }));
       fs.writeFileSync(manifestFd, raw);
     } finally { fs.closeSync(manifestFd); }
-    copyBinary(source, binary, info => ownedFiles.set(binary, info));
+    copyBinary(source, binary, info => ownFile(binary, info));
     const before = nativeArtifactObservation(binary, manifest, build);
     fs.chmodSync(binary, 0o500);
     fs.chmodSync(manifest, 0o400);
@@ -148,11 +175,11 @@ export function captureBootstrap(candidate: string, verify: SourceVerifier = ver
       manifestSHA256: createHash("sha256").update(before.manifestBytes).digest("hex"),
     })) throw new Error("引导程序来源未通过验证。");
     const assertUnchanged = () => {
-      if (removed) throw new Error("Bootstrap snapshot was already released");
+      if (removed || released) throw new Error("Bootstrap snapshot was already released");
       checkOwnedDirectory();
       for (const file of [binary, manifest]) {
         const current = fs.lstatSync(file, { bigint: true });
-        const original = ownedFiles.get(file)!;
+        const original = ownedFiles.get(file)!.info;
         if (!current.isFile() || current.isSymbolicLink() || current.ino !== original.ino || current.dev !== original.dev || current.nlink !== 1n) {
           throw new Error("Bootstrap snapshot file ownership changed");
         }
