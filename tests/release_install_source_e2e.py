@@ -90,12 +90,15 @@ def main():
             assert state['running']['sha256'] == original_manifest['artifact']['sha256']
             pid = state['running']['pid']
             state_file = profile/'runtime/state.json'; state_bytes = state_file.read_bytes()
-            versions = sorted(p.name for p in (profile/'runtime/versions').iterdir())
+            # Activations are the authoritative selected-install resources.
+            # The old content-addressed versions cache is not an install
+            # selection and may legitimately be absent.
+            activations = sorted(p.name for p in (profile/'runtime/activations').iterdir())
             refused = cli(profile,'runtime','install','--bundle',str(tampered))
             after = json.loads(cli(profile,'runtime','status').stdout)
             assert refused.returncode != 0 and after['running']['pid'] == pid
-            assert state_file.read_bytes() == state_bytes and sorted(p.name for p in (profile/'runtime/versions').iterdir()) == versions
-            results.append({'name':'real_authenticated_install_succeeds_and_rehash_preserves_old_process_state_and_versions','status':'pass'})
+            assert state_file.read_bytes() == state_bytes and sorted(p.name for p in (profile/'runtime/activations').iterdir()) == activations
+            results.append({'name':'real_authenticated_install_succeeds_and_rehash_preserves_old_process_state_and_activations','status':'pass'})
     output = ROOT/'dist/verification/release-install-source.json'; output.parent.mkdir(parents=True,exist_ok=True)
     output.write_text(json.dumps({'platform':sys.platform,'real_signed_bundle':bool(args.signed_bundle),
         'cleanup_complete':True,'results':results},indent=2),encoding='utf-8')

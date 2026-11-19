@@ -123,7 +123,9 @@ def run_cycle(args, cycle):
         current_manifest = Path(first.evidence["activation_path"]).parent/"manifest.json"
         held_manifest = current_manifest.with_name("manifest.test-held")
         before_state = (profile/"runtime/state.json").read_bytes()
-        before_versions = sorted(p.name for p in (profile/"runtime/versions").iterdir())
+        # Activations are the authoritative selected-install resources; the
+        # legacy content-addressed versions cache may be absent.
+        before_activations = sorted(p.name for p in (profile/"runtime/activations").iterdir())
         current_manifest.rename(held_manifest)
         try:
             refused = cli("runtime", "install", "--bundle", str(bundles[1]))
@@ -131,7 +133,7 @@ def run_cycle(args, cycle):
             retained = check_running(manifests[0], missing_manifest=True)
             assert retained.reference is first.reference and identity() == original_identity
             assert (profile/"runtime/state.json").read_bytes() == before_state
-            assert sorted(p.name for p in (profile/"runtime/versions").iterdir()) == before_versions
+            assert sorted(p.name for p in (profile/"runtime/activations").iterdir()) == before_activations
             record("missing_baseline_manifest_refused_before_stop", retained)
         finally:
             held_manifest.rename(current_manifest)
@@ -162,13 +164,13 @@ def run_cycle(args, cycle):
                              sha256=hashlib.sha256(candidate.read_bytes()).hexdigest())
         (changed/"manifest.json").write_text(json.dumps(m), encoding="utf-8")
         state_bytes = (profile/"runtime/state.json").read_bytes()
-        versions = sorted(p.name for p in (profile/"runtime/versions").iterdir())
+        activations = sorted(p.name for p in (profile/"runtime/activations").iterdir())
         p = cli("runtime", "install", "--bundle", str(changed))
         assert p.returncode != 0
         unchanged = check_running(manifests[0])
         assert unchanged.reference is restored.reference and identity() == original_identity
         assert (profile/"runtime/state.json").read_bytes() == state_bytes
-        assert sorted(p.name for p in (profile/"runtime/versions").iterdir()) == versions
+        assert sorted(p.name for p in (profile/"runtime/activations").iterdir()) == activations
         record("rehashed_upgrade_refused_without_stopping_current", unchanged)
         if args.startup_fault:
             from fixtures.signed_startup_fault import fail_start_with_database_lock
