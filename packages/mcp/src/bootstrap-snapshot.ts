@@ -93,7 +93,13 @@ export function captureBootstrap(candidate: string, verify: SourceVerifier = ver
   // Linux permits removing empty directories while their descriptors are
   // open. Pin the directory too, otherwise its inode could also be reused.
   const directoryFd = process.platform === "linux" ? fs.openSync(directory, READ_FLAGS | fs.constants.O_DIRECTORY) : undefined;
-  const owner = directoryFd === undefined ? fs.lstatSync(directory, { bigint: true }) : fs.fstatSync(directoryFd, { bigint: true });
+  let owner: fs.BigIntStats;
+  try { owner = directoryFd === undefined ? fs.lstatSync(directory, { bigint: true }) : fs.fstatSync(directoryFd, { bigint: true }); }
+  catch (error) {
+    if (directoryFd !== undefined) fs.closeSync(directoryFd);
+    // Identity acquisition failed: keep the directory, but not a leaked pin.
+    throw new BootstrapCleanupError(directory, error);
+  }
   const binary = path.join(directory, filename);
   const manifest = path.join(directory, "manifest.json");
   const ownedFiles = new Map<string, { info: fs.BigIntStats; fd: number }>();
@@ -102,12 +108,16 @@ export function captureBootstrap(candidate: string, verify: SourceVerifier = ver
   // handles also avoid Linux ETXTBSY when the captured binary is executed.
   const ownFile = (file: string, info: fs.BigIntStats) => {
     const fd = fs.openSync(file, READ_FLAGS);
-    const pinned = fs.fstatSync(fd, { bigint: true });
-    if (!pinned.isFile() || pinned.ino !== info.ino || pinned.dev !== info.dev || pinned.nlink !== 1n) {
+    try {
+      const pinned = fs.fstatSync(fd, { bigint: true });
+      if (!pinned.isFile() || pinned.ino !== info.ino || pinned.dev !== info.dev || pinned.nlink !== 1n) {
+        throw new Error("Bootstrap snapshot file ownership changed during capture");
+      }
+      ownedFiles.set(file, { info, fd });
+    } catch (error) {
       fs.closeSync(fd);
-      throw new Error("Bootstrap snapshot file ownership changed during capture");
+      throw error;
     }
-    ownedFiles.set(file, { info, fd });
   };
   let released = false;
   const releaseHandles = () => {

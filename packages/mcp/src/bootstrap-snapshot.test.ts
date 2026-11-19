@@ -146,3 +146,34 @@ for (const kind of ["unexpected-entry", "replaced-file", "hard-linked-file"]) {
     assert.equal(fs.statSync(unowned).mode, mode);
   });
 }
+
+// Failure while identifying a newly opened pin must close every acquired fd,
+// while leaving unidentified filesystem objects for explicit investigation.
+for (const target of ["file", "directory"]) {
+  test(`should close ownership handles when ${target} identity lookup fails`, { skip: target === "directory" && process.platform !== "linux" }, t => {
+    const f = fixture(t);
+    const originalOpen = fs.openSync;
+    const originalStat = fs.fstatSync;
+    const originalClose = fs.closeSync;
+    const held = new Set<number>();
+    let failFd: number | undefined;
+    let injected = false;
+    t.mock.method(fs, "openSync", (...args: Parameters<typeof fs.openSync>) => {
+      const fd = originalOpen(...args);
+      held.add(fd);
+      const [file, flags] = args;
+      if (typeof file === "string" && file.startsWith(f.temporary) && typeof flags === "number") {
+        if (target === "directory" ? (flags & fs.constants.O_DIRECTORY) !== 0 : path.basename(file) === "manifest.json") failFd = fd;
+      }
+      return fd;
+    });
+    t.mock.method(fs, "fstatSync", (...args: Parameters<typeof fs.fstatSync>) => {
+      if (!injected && args[0] === failFd) { injected = true; throw new Error("injected identity lookup failure"); }
+      return originalStat(...args);
+    });
+    t.mock.method(fs, "closeSync", (fd: number) => { originalClose(fd); held.delete(fd); });
+    assert.throws(() => captureBootstrap(f.binary, () => true, f.temporary));
+    assert.equal(injected, true);
+    assert.equal(held.size, 0, "an acquired ownership handle leaked");
+  });
+}
