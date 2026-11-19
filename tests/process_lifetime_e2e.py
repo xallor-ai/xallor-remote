@@ -77,7 +77,7 @@ try:
     assert "tree-started" in result.stdout
     pids = json.loads(wait_file(normal / "pids.json"))
     assert not owned(pids["child"]).alive(), "successful exec returned while its descendant still ran"
-    results.append("foreground_success_reclaims_descendants")
+    results.append(dict(name="foreground_success_reclaims_descendants", status="pass"))
 
     def git(*values):
         return subprocess.run(["git", "-C", str(workspace), *values], check=True, capture_output=True,
@@ -104,7 +104,7 @@ try:
         time.sleep(.05)
     assert receipt["state"]=="completed" and receipt["result"]=="handoff-fixture-ok", receipt
     assert not ref.alive(), "handoff completed before descendant reclamation"
-    results.append("handoff_success_reclaims_inherited_pipe_descendant")
+    results.append(dict(name="handoff_success_reclaims_inherited_pipe_descendant", status="pass"))
 
     shutdown=workspace/"lifecycle"
     shutdown.mkdir()
@@ -117,7 +117,7 @@ try:
     controller.communicate(timeout=20)
     assert not parent.alive() and not child.alive(), "Runtime exited before foreground cleanup"
     assert controller.returncode!=0, "interrupted foreground reported success"
-    results.append("runtime_shutdown_waits_for_foreground_reclamation")
+    results.append(dict(name="runtime_shutdown_waits_for_foreground_reclamation", status="pass"))
 finally:
     if controller and controller.poll() is None:
         controller.terminate()

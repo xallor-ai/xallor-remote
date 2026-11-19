@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/xallor-ai/xallor-remote/internal/runtimeprocess"
 	"golang.org/x/sys/unix"
 )
 
@@ -51,7 +52,8 @@ func (g *group) stop() error {
 }
 
 // The root remains unreaped throughout this check, reserving the process group
-// ID. Zombies have ceased execution; their reaping belongs to their OS parent.
+// ID. A zombie leader can still have live threads. Every observed group member
+// must signal native process exit; its reaping still belongs to its OS parent.
 // Deliberate setsid/setpgid escapes are outside process-group supervision.
 func (g *group) settle() error {
 	deadline := time.Now().Add(cleanupTimeout)
@@ -62,7 +64,8 @@ func (g *group) settle() error {
 		}
 		active := false
 		for _, e := range entries {
-			if _, err := strconv.Atoi(e.Name()); err != nil {
+			pid, err := strconv.Atoi(e.Name())
+			if err != nil {
 				continue
 			}
 			data, err := os.ReadFile("/proc/" + e.Name() + "/stat")
@@ -84,9 +87,22 @@ func (g *group) settle() error {
 			if err != nil {
 				return err
 			}
-			if pgid == g.pid && fields[0] != "Z" && fields[0] != "X" && fields[0] != "x" {
-				active = true
-				break
+			if pgid == g.pid {
+				watch, err := runtimeprocess.WatchExit(pid)
+				if errors.Is(err, runtimeprocess.ErrProcessGone) {
+					continue
+				}
+				if err != nil {
+					return err
+				}
+				exited, pollErr := watch.Exited()
+				if err = errors.Join(pollErr, watch.Close()); err != nil {
+					return err
+				}
+				if !exited {
+					active = true
+					break
+				}
 			}
 		}
 		if !active {

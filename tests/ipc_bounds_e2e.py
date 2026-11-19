@@ -46,8 +46,9 @@ def main():
         after = json.loads(cluster.cli("target", "runtime", "status").stdout)["running"]["pid"]
         assert before == after, "IPC violation restarted or killed Runtime"
         assert json.loads(cluster.cli("target", "status", "--json").stdout)["online"]
-        result = dict(passed=True, checks=["oversize_without_newline_closes_connection",
-                                          "other_connections_and_runtime_survive"])
+        results = [{"name": name, "status": "pass"} for name in (
+            "oversize_without_newline_closes_connection",
+            "other_connections_and_runtime_survive")]
     finally:
         if bridge:
             if bridge.poll() is None:
@@ -57,7 +58,7 @@ def main():
                 writer.join(timeout=5)
             bridge.stdin.close()
         cluster.close()
-    evidence = completed_report(cluster, result["checks"])
+    evidence = completed_report(cluster, results)
     out = ROOT / "dist/verification/ipc-bounds.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
