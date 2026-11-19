@@ -20,6 +20,8 @@
 
 7. **先定模块再写代码。** 禁止把新功能塞进已有大文件后再拆。全文：[`.cursor/rules/modular-file-design.mdc`](.cursor/rules/modular-file-design.mdc)。
 
+8. **先评估复用，替换实现时同步清理，验证后再交付。** 开始选型、重构/迁移及结束代码改动前，代理必须主动阅读并执行 [`.cursor/rules/reuse-and-cleanup.mdc`](.cursor/rules/reuse-and-cleanup.mdc)，不等待用户提醒。不自动加载 `.mdc` 的工具也须按此链接读取正文。
+
 其它 alwaysApply 铁律：未证实不改 [`.cursor/rules/no-unverified-assumptions.mdc`](.cursor/rules/no-unverified-assumptions.mdc)；用户向文案 [`.cursor/rules/user-facing-ui-copy.mdc`](.cursor/rules/user-facing-ui-copy.mdc)。
 
 ---
