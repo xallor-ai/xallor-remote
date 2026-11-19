@@ -9,18 +9,21 @@ import sys
 import tempfile
 import time
 import urllib.request
-from fixtures.runtime_cluster import Cluster
+from fixtures.mechanics_cli import add_mechanics_options, cluster_from_options, completed_report
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 repo = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument("--binary", required=True)
+parser.add_argument("--binary", default="dist/xallor-remote.exe")
+add_mechanics_options(parser)
 parser.add_argument("--native", action="store_true")
 args = parser.parse_args()
 evidence = Path(os.environ.get("XR_GUI_EVIDENCE") or tempfile.mkdtemp(prefix="xr-gui-evidence-"))
 evidence.mkdir(parents=True, exist_ok=True)
-cluster = Cluster(args.binary)
+report = evidence / "gui.json"
+cluster = cluster_from_options(args, report, Path(__file__))
 server = None
+failure = None
 log = (evidence / "vite.log").open("wb")
 try:
     cluster.start()
@@ -56,7 +59,8 @@ try:
     subprocess.run(["node", "node_modules/@playwright/test/cli.js", "test", "--config", "playwright.config.ts"],
                    cwd=gui, env=env, check=True, timeout=300)
     print("GUI evidence:", evidence)
-except Exception:
+except Exception as error:
+    failure = type(error).__name__
     for name in cluster.profiles:
         audit = cluster.root / name / "activity.json"
         if audit.is_file():
@@ -68,4 +72,15 @@ finally:
         server.terminate()
         server.wait(timeout=10)
     log.close()
-    cluster.close()
+    try:
+        cluster.close()
+    except Exception as error:
+        report.write_text(json.dumps({"status": "failed", "evidence": cluster.evidence,
+                                     "cleanup_complete": False, "results": [],
+                                     "failure": failure, "cleanup_failure": type(error).__name__}, indent=2), encoding="utf-8")
+        raise
+    if failure:
+        report.write_text(json.dumps({"status": "failed", "evidence": cluster.evidence,
+                                     "cleanup_complete": True, "results": [],
+                                     "failure": failure}, indent=2), encoding="utf-8")
+report.write_text(json.dumps(completed_report(cluster, [{"name": "browser-native-bridge" if args.native else "browser-bridge", "status": "pass"}]), indent=2), encoding="utf-8")

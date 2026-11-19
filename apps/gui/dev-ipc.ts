@@ -22,7 +22,7 @@ export async function handleDevIpc(req: IncomingMessage, res: ServerResponse): P
     const value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     const action = req.url.slice("/__ipc/".length);
     let result: unknown;
-    if (action === "open") result = sessions.open();
+    if (action === "open") result = await sessions.open();
     else if (action === "poll") result = sessions.poll(value.session);
     else if (action === "send") result = await sessions.send(value.session, value.frame);
     else if (action === "close") result = sessions.close(value.session);

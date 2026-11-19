@@ -247,7 +247,7 @@ grant 回退。旧会话被设置变更撤销后，可在同一连接显式重�
 
 ## 7. GUI 连接与本机记录
 
-桌面 GUI 启动同安装版本的 `xallor-remote ipc-bridge` 子进程，由 Go 复用 profile 路径和 ensure，透明转发 NDJSON 到一条本机 IPC。子进程不实现策略，不接 Relay。关闭窗口或子进程输入流会关闭该 IPC；只取消该连接的任务，Runtime 继续运行。开发页面的 HTTP 转发仅用于本机开发，要求同源 POST JSON；发行 GUI 不监听 HTTP。
+桌面 GUI 启动同安装版本的 `xallor-remote ipc-bridge` 子进程，由 Go 复用 profile 路径和 ensure，透明转发 NDJSON 到一条本机 IPC。子进程不实现策略，不接 Relay。关闭窗口或子进程输入流会关闭该 IPC；只取消该连接的任务，Runtime 继续运行。开发页面的 HTTP 转发仅用于本机开发，要求同源 POST JSON；它直接连接已启动的本机 Runtime，并在同一连接上验证 `runtime.ensure` 就绪身份后开放会话，不查找或启动二进制。运行开发页面前须通过 CLI 启动 Runtime。发行 GUI 不监听 HTTP。
 
 GUI 单次任务上限 60 秒，页面切换保留当前连接和最多 20 条内存任务，最多 8 个并行任务；单任务显示最多 256 Ki 字符，截断明确提示。收到终态才确认结果；断开或超时显示待确认，重新连接不重放命令。IPC 桥单帧上限 2 MiB，积压上限 8 MiB / 4096 帧，溢出关闭连接并明确报错。
 

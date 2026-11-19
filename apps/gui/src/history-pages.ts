@@ -1,7 +1,7 @@
 import { rpc, type Status } from "./bridge";
 import { action, esc, feedback, form } from "./ui";
+import { approvalDetails, approvalResponse, type Approval } from "./approval-state";
 
-type Approval = { id: string; exec_id: string; preview: string; created: string };
 export async function approvalPage(root: HTMLElement, signal: AbortSignal) {
   root.innerHTML = '<h2>审批</h2><p role="status"></p><div id="pending">正在读取…</div>';
   const panel = root.querySelector<HTMLElement>("#pending")!;
@@ -16,11 +16,11 @@ export async function approvalPage(root: HTMLElement, signal: AbortSignal) {
       if (current === previous) return;
       previous = current;
       panel.innerHTML = pending.map((p, i) => `<section class="card" data-approval="${i}"><h3>本机操作等待确认</h3><p class="meta">${esc(p.created)}</p>
-        <pre>${esc(p.preview)}</pre><div class="row"><button class="allow">允许执行</button><button class="deny">拒绝</button></div></section>`).join("") || '<p class="hint">当前没有等待确认的操作。</p>';
+        <pre>${esc(approvalDetails(p))}</pre><p class="meta">${esc(p.request_sha256)} · ${esc(p.expires)}</p><div class="row"><button class="allow">允许执行</button><button class="deny">拒绝</button></div></section>`).join("") || '<p class="hint">当前没有等待确认的操作。</p>';
       pending.forEach((p, i) => {
         for (const [selector, allow] of [["allow", true], ["deny", false]] as const) {
           action(root, `[data-approval="${i}"] .${selector}`, async () => {
-            await rpc("approval.respond", { approval_id: p.id, allow });
+            await rpc("approval.respond", approvalResponse(p, allow));
             feedback(root, allow ? "已允许执行。" : "已拒绝。", false);
             previous = ""; await refresh();
           });

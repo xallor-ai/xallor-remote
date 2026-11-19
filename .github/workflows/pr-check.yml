@@ -133,8 +133,8 @@ jobs:
         with:
           name: gui-cargo-lock-${{ matrix.os }}
           path: apps/gui/src-tauri/Cargo.lock
-      - run: go build -o dist/gui-runtime.exe ./cmd/xallor-remote
-      - run: python tests/gui_e2e.py --binary dist/gui-runtime.exe --native
+      - name: GUI bridge through native owner mechanics (not signed acceptance)
+        run: python tests/gui_e2e.py --owner-mechanics --native
         env:
           XR_GUI_EVIDENCE: ${{ runner.temp }}/xr-gui-evidence
       - uses: actions/upload-artifact@v4
