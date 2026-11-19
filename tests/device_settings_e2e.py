@@ -7,15 +7,16 @@ import sqlite3
 import subprocess
 import sys
 import time
-from fixtures.runtime_cluster import Cluster
+from fixtures.mechanics_cli import add_mechanics_options, cluster_from_options, completed_report
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 platform = "windows-amd64/xallor-remote.exe" if os.name == "nt" else "linux-amd64/xallor-remote"
 parser.add_argument("--binary", default=str(ROOT / "dist/release" / platform))
+add_mechanics_options(parser)
 args = parser.parse_args()
-cluster = Cluster(args.binary)
+cluster = cluster_from_options(args, ROOT / "dist/verification/device-settings.json", __file__)
 results = []
 db = None
 pending = None
@@ -47,7 +48,8 @@ try:
     db = sqlite3.connect(cluster.root / "relay/relay.db", timeout=3)
     db.execute("BEGIN IMMEDIATE")
     pending = subprocess.Popen([str(cluster.binary), "inbound", "off"], env=cluster.env("target"),
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               **({"creationflags":subprocess.CREATE_NO_WINDOW} if os.name=="nt" else {}))
     def locally_disabled():
         return not cluster.device_state("target")["inbound"]
 
@@ -105,4 +107,4 @@ finally:
 
 output = ROOT / "dist/verification/device-settings.json"
 output.parent.mkdir(parents=True, exist_ok=True)
-output.write_text(json.dumps(results, indent=2), encoding="utf-8")
+output.write_text(json.dumps(completed_report(cluster, results), indent=2), encoding="utf-8")

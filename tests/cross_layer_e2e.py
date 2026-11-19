@@ -7,9 +7,12 @@ import os
 from pathlib import Path
 import subprocess
 import sqlite3
+import shutil
 import sys
 import time
 from fixtures.runtime_cluster import Cluster
+from fixtures.relay_schema_contract import assert_relay_metadata_schema
+from fixtures.mechanics_cli import begin_report, completed_report
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,12 +23,25 @@ def main():
     platform = "windows-amd64/xallor-remote.exe" if os.name == "nt" else "linux-amd64/xallor-remote"
     parser.add_argument("--binary", default=str(ROOT / "dist/release" / platform))
     parser.add_argument("--go", default="go")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--owner-mechanics", action="store_true", help="Run native owner fixture with controlled verifier; not signed acceptance")
+    mode.add_argument("--owner-mechanics-binary", help="Explicit trusted precompiled native _test fixture; not signed acceptance")
+    parser.add_argument("--tree-fixture", help="Explicit trusted precompiled process-tree test program")
     args = parser.parse_args()
-    cluster = Cluster(args.binary)
+    output = ROOT / "dist/verification/cross-layer.json"
+    begin_report(output, None, __file__)
+    cluster = Cluster(args.binary, mechanics_go=args.go if args.owner_mechanics else None,
+                      mechanics_binary=args.owner_mechanics_binary)
+    begin_report(output, cluster, __file__)
     results = []
     try:
         tree = cluster.root / ("tree.exe" if os.name == "nt" else "tree")
-        subprocess.run([args.go, "build", "-o", str(tree), "./tests/fixtures/process-tree"], cwd=ROOT, check=True, timeout=180)
+        if args.tree_fixture:
+            shutil.copy2(Path(args.tree_fixture).resolve(), tree)
+            tree.chmod(0o700)
+        else:
+            subprocess.run([args.go, "build", "-o", str(tree), "./tests/fixtures/process-tree"], cwd=ROOT, check=True, timeout=180)
+        cluster.evidence["tree_fixture_sha256"] = hashlib.sha256(tree.read_bytes()).hexdigest()
         cluster.start()
         target = cluster.add("target")
         cluster.add("controller")
@@ -67,20 +83,18 @@ def main():
         # Inspect the real Relay database after exec, files, cancellation, and restart.
         # Operation payloads and output must not acquire a persistence collection.
         with closing(sqlite3.connect((cluster.root / "relay/relay.db").as_uri() + "?mode=ro", uri=True)) as db:
-            assert db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall() == [(name,) for name in ("authority", "device_grants", "device_ownership", "device_shares", "devices", "execution_signing_key", "memberships", "oidc_issuers", "oidc_subject_mappings", "principal_credentials", "principals", "tenants")]
-            assert db.execute("PRAGMA user_version").fetchone() == (8,)
+            assert_relay_metadata_schema(db)
             assert db.execute("SELECT singleton,typeof(key),length(key) FROM execution_signing_key").fetchall() == [(1, "blob", 32)]
             assert db.execute("SELECT inbound FROM devices WHERE id=?", (target,)).fetchone() == (1,)
             uid, grant_id, token_hash = db.execute("SELECT d.uid,g.id,g.token_hash FROM devices d JOIN device_grants g ON g.device_uid=d.uid WHERE d.id=?", (target,)).fetchone()
             assert len(uid) == 32 and len(grant_id) == 32 and uid != target
             current_grant = cluster.grant("target")
             assert token_hash == hashlib.sha256(current_grant.encode("utf-8")).hexdigest()
-        results.append({"name":"relay_persists_identity_without_operation_payloads", "status":"pass"})
+        results.append({"name":"relay_metadata_schema_and_identity_binding", "status":"pass"})
     finally:
         cluster.close()
-        output = ROOT / "dist/verification/cross-layer.json"
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(completed_report(cluster, results), indent=2), encoding="utf-8")
     print(json.dumps(results), flush=True)
 
 

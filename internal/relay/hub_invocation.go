@@ -2,6 +2,11 @@ package relay
 
 import (
 	"errors"
+	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/accesscode"
+	"github.com/xallor-ai/xallor-remote/internal/delegation"
+	"github.com/xallor-ai/xallor-remote/internal/principal"
+	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/admission"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
@@ -27,14 +32,44 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 		h.handleCancel(from, msg.ExecID)
 		return
 	}
+	h.mu.Lock()
+	verified, known := h.clients[from]
+	h.mu.Unlock()
+	if !known {
+		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.Unauthorized))
+		return
+	}
+	if code := h.verifySessionAccess(from, msg.SessionID, msg.Op); code != "" {
+		_ = from.Enqueue(protocol.Nack(msg.ExecID, code))
+		return
+	}
 	if code := h.verifyClientAccess(from, msg.Op); code != "" {
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, code))
 		return
 	}
+	if msg.Op == protocol.OpHandoffSubmit {
+		ctx, release, err := h.beginIdentity(from, targetID)
+		if err != nil {
+			_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.RelayError))
+			return
+		}
+		defer release()
+		if ctx.Err() != nil {
+			_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.RelayError))
+			return
+		}
+		// Owner code/session management uses the same per-device gate. Recheck
+		// after acquiring it so a pre-gate approval cannot publish a stale proof.
+		if code := h.verifySessionAccess(from, msg.SessionID, msg.Op); code != "" {
+			_ = from.Enqueue(protocol.Nack(msg.ExecID, code))
+			return
+		}
+	}
 	h.mu.Lock()
-	defer h.mu.Unlock()
+	var retired accesscode.TargetBinding
+	defer func() { h.mu.Unlock(); _ = h.retireSessionTarget(retired) }()
 	binding, ok := h.clients[from]
-	if !ok || binding.targetID != targetID || !binding.access.Matches(h.access[targetID]) {
+	if !ok || binding != verified || binding.targetID != targetID || !binding.access.Matches(h.access[targetID]) {
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.Unauthorized))
 		return
 	}
@@ -57,6 +92,10 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 	}
 	if !dev.record.Inbound {
 		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.InboundDisabled))
+		return
+	}
+	if binding.sessionRequired && (binding.session == nil || msg.SessionID != binding.session.ID || !binding.session.Target.Valid() || binding.session.Target != dev.sessionTarget || !binding.session.Allows(msg.Op) || binding.session.CanOperate(time.Now().UTC()) != nil) {
+		_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.Unauthorized))
 		return
 	}
 	lease, err := h.admission.Acquire(admission.Request{DeviceUID: binding.access.DeviceUID})
@@ -92,7 +131,17 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 			_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.Unauthorized))
 			return
 		}
-		proof, err = h.executionAuthority.Issue(targetID, binding.access, binding.identity, binding.authorization)
+		if binding.session != nil {
+			if issuer, ok := h.executionAuthority.(interface {
+				IssueSession(string, access.Binding, principal.Identity, access.Authorization, accesscode.SessionAuthorization) (string, error)
+			}); ok {
+				proof, err = issuer.IssueSession(targetID, binding.access, binding.identity, binding.authorization, *binding.session)
+			} else {
+				err = delegation.ErrDenied
+			}
+		} else {
+			proof, err = h.executionAuthority.Issue(targetID, binding.access, binding.identity, binding.authorization)
+		}
 		if err != nil {
 			_ = from.Enqueue(protocol.Nack(msg.ExecID, protocol.RelayError))
 			return
@@ -106,10 +155,8 @@ func (h *Hub) handleInvoke(from Sender, targetID string, msg protocol.Message) {
 	scope := h.invocationScope(binding)
 	msg = protocol.Message{Type: protocol.TypeInvoke, ExecID: routeID, Op: msg.Op, Payload: msg.Payload, Scope: &scope, Delegation: proof}
 	if err := dev.conn.Enqueue(msg); err != nil {
-		h.failDeviceLocked(targetID, protocol.DeviceOffline)
 		dev.conn.Close()
-		dev.online = false
-		dev.conn = nil
+		retired = h.retireDeviceLocked(targetID, dev)
 	}
 }
 

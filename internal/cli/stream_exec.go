@@ -8,19 +8,20 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/execution"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/runtimehead"
 )
 
-func streamExec(device string, request execution.Request, jsonl bool, stdout, stderr io.Writer) error {
-	raw, err := ipc.Dial(2 * time.Second)
+func streamExec(device, sessionID string, request execution.Request, jsonl bool, stdout, stderr io.Writer) error {
+	c, err := runtimehead.Dial(2 * time.Second)
 	if err != nil {
-		return localExecError(stdout, jsonl, protocol.RuntimeUnavailable, err)
+		return localExecError(stdout, jsonl, runtimehead.ErrorCode(err), err)
 	}
-	defer raw.Close()
-	c := ipc.NewConn(raw)
+	defer c.Close()
 	params := struct {
-		DeviceID string `json:"device_id,omitempty"`
+		DeviceID  string `json:"device_id,omitempty"`
+		SessionID string `json:"session_id,omitempty"`
 		execution.Request
-	}{DeviceID: device, Request: request}
+	}{DeviceID: device, SessionID: sessionID, Request: request}
 	if err := ipc.Call(c, "e1", "exec", params); err != nil {
 		return localExecError(stdout, jsonl, protocol.ResultUnknown, err)
 	}

@@ -2,6 +2,7 @@ package noderun
 
 import (
 	"testing"
+	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -20,6 +21,58 @@ func TestClientLink_should_route_by_exec_id(t *testing.T) {
 	gotB, okB := b.next()
 	if !okA || !okB || gotA.Data != "A" || gotB.Data != "B" {
 		t.Fatalf("crossed: a=%q b=%q", gotA.Data, gotB.Data)
+	}
+}
+
+func TestClientLink_should_routeSessionResults_by_request_and_session_id(t *testing.T) {
+	cl := &clientLink{}
+	ch := subscribeReplyForTest(t, cl, protocol.TypeSessionResult, "request-a", "session-a")
+	cl.dispatch(protocol.Message{Type: protocol.TypeSessionResult, RequestID: "request-a", SessionID: "session-a", Status: protocol.SessionActive})
+	select {
+	case got := <-ch:
+		if got.Status != protocol.SessionActive {
+			t.Fatalf("session result=%+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("session result was not routed")
+	}
+}
+
+func TestClientLink_shouldPreserveSessionUnknown_whenLinkFails(t *testing.T) {
+	cl := &clientLink{}
+	ch := subscribeReplyForTest(t, cl, protocol.TypeSessionResult, "request-unknown", "session-unknown")
+	cl.failWaiters()
+	select {
+	case got := <-ch:
+		if got.Type != protocol.TypeSessionResult || got.Status != protocol.SessionUnknownState || got.Code != protocol.SessionUnknown {
+			t.Fatalf("unknown session result=%+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("session loss did not produce unknown result")
+	}
+}
+
+func TestClientLink_shouldRouteResumeResults_andPreserveUnknown(t *testing.T) {
+	cl := &clientLink{}
+	ch := subscribeReplyForTest(t, cl, protocol.TypeSessionResumeResult, "request-resume", "session-resume")
+	cl.dispatch(protocol.Message{Type: protocol.TypeSessionResumeResult, RequestID: "request-resume", SessionID: "session-resume", Status: protocol.SessionActive, ResumeID: "next"})
+	select {
+	case got := <-ch:
+		if got.Status != protocol.SessionActive || got.ResumeID != "next" {
+			t.Fatalf("resume result=%+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("resume result was not routed")
+	}
+	ch = subscribeReplyForTest(t, cl, protocol.TypeSessionResumeResult, "request-unknown", "session-unknown")
+	cl.failWaiters()
+	select {
+	case got := <-ch:
+		if got.Type != protocol.TypeSessionResumeResult || got.Status != protocol.SessionUnknownState {
+			t.Fatalf("unknown resume result=%+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("resume link loss did not become unknown")
 	}
 }
 

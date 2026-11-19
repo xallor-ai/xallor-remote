@@ -103,6 +103,10 @@ func (cl *clientLink) unsubscribe(id string) {
 }
 
 func (cl *clientLink) dispatch(msg protocol.Message) {
+	if msg.Type == protocol.TypeSessionResult || msg.Type == protocol.TypeSessionResumeResult {
+		cl.dispatchSessionReply(msg)
+		return
+	}
 	if msg.ExecID == "" {
 		return
 	}
@@ -120,6 +124,7 @@ func (cl *clientLink) failWaiters() {
 	for _, w := range cl.waiters {
 		w.finish(protocol.Message{Type: protocol.TypeError, Code: protocol.RelayError})
 	}
+	cl.failSessionReplies()
 }
 
 func (cl *clientLink) closeConn() {

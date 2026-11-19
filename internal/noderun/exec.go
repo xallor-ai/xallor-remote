@@ -40,20 +40,6 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		_ = link.send(protocol.Nack(msg.ExecID, protocol.PolicyDeny))
 		return
 	}
-	if needsApprovalCommand(policyText) {
-		preview := policyText
-		if len(preview) > 200 {
-			preview = preview[:200] + "…"
-		}
-		allow, code := d.approvals.ask(ctx, msg.ExecID, preview)
-		if !allow {
-			if code == "" {
-				code = protocol.PolicyDeny
-			}
-			_ = link.send(protocol.Nack(msg.ExecID, code))
-			return
-		}
-	}
 	cwd := workspace
 	if p.Cwd != "" {
 		resolved, err := resolveInWorkspace(workspace, p.Cwd)
@@ -62,6 +48,10 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 			return
 		}
 		cwd = resolved
+	}
+	if msg.Scope == nil || !msg.Scope.Valid() {
+		_ = link.send(protocol.Nack(msg.ExecID, protocol.Unauthorized))
+		return
 	}
 	if p.TimeoutMS > 0 {
 		var cancel context.CancelFunc
@@ -73,10 +63,6 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 		return
 	}
 
-	if msg.Scope == nil || !msg.Scope.Valid() {
-		_ = link.send(protocol.Nack(msg.ExecID, protocol.Unauthorized))
-		return
-	}
 	guard, stop, err := delegation.Maintain(ctx, msg.ExecID, d.renewForeground)
 	if err != nil {
 		_ = link.send(protocol.Nack(msg.ExecID, executionLeaseStartCode(ctx, err)))
@@ -84,10 +70,26 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 	}
 	defer stop()
 	ctx = guard
+	// Build the unstarted command before approval. The exact resolved executable,
+	// argv, cwd and original script are what the human approves; the command is
+	// reused after approval and is never rebuilt from a shortened preview.
 	cmd, err := execution.Build(p, cfg.Shell, cwd)
 	if err != nil {
 		_ = link.send(protocol.Nack(msg.ExecID, executionErrorCode(err)))
 		return
+	}
+	if needsApprovalCommand(policyText) {
+		details := detailsForExecution(p, cmd, cwd, backend.Capability().Name, msg.DeviceID)
+		details.Runtime.ActivationID = d.activationID
+		details.Runtime.LaunchID = d.launchID
+		allow, code := d.approvals.ask(ctx, approvalRequest{ExecID: msg.ExecID, Details: details})
+		if !allow {
+			if code == "" {
+				code = protocol.PolicyDeny
+			}
+			_ = link.send(protocol.Nack(msg.ExecID, code))
+			return
+		}
 	}
 	owner, err := d.jobs.ReserveExec(*msg.Scope, msg.ExecID)
 	if err != nil {
@@ -180,6 +182,11 @@ func (d *Daemon) runLocalExec(ctx context.Context, link *wsConn, msg protocol.Me
 	}
 	releaseErr := finishOwner()
 	if releaseErr != nil || errors.Is(err, process.ErrCleanup) {
+		// Local diagnostic only: no command, output, credentials or scope.
+		// The remote terminal retains its stable resource-uncertainty code.
+		if d.log != nil {
+			d.log.Error("task resource cleanup unconfirmed", "cleanup_error", err, "release_error", releaseErr)
+		}
 		_ = link.send(protocol.Err(msg.ExecID, executionResourceCode(errors.Join(releaseErr, err))))
 		return
 	}

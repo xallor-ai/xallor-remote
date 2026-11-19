@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from fixtures.runtime_cluster import Cluster
+from fixtures.mechanics_cli import add_mechanics_options, cluster_from_options, completed_report, begin_report
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 root = Path(__file__).resolve().parents[1]
@@ -14,12 +14,26 @@ parser = argparse.ArgumentParser()
 platform = "windows-amd64/xallor-remote.exe" if os.name == "nt" else "linux-amd64/xallor-remote"
 parser.add_argument("--binary", default=str(root/"dist/release"/platform))
 parser.add_argument("--go", default="go")
+add_mechanics_options(parser, add_go=False)
 args = parser.parse_args()
-cluster = Cluster(args.binary)
+output = root/"dist/verification/execution-input.json"
+literal_output = output.parent/'cli-literal-arguments.json'
+begin_report(literal_output, None, __file__)
+cluster = cluster_from_options(args, output, __file__)
+quiet = {"creationflags":subprocess.CREATE_NO_WINDOW} if os.name=="nt" else {}
 results = []
+
+def run_node(script, env):
+    result = subprocess.run(["node", str(root/"tests/helpers"/script)], env=env,
+                            capture_output=True, text=True, encoding="utf-8", errors="replace",
+                            timeout=120, **quiet)
+    print(result.stdout, end="", flush=True)
+    print(result.stderr, end="", file=sys.stderr, flush=True)
+    result.check_returncode()
+
 try:
     fixture = cluster.root/("argv-report.exe" if os.name == "nt" else "argv-report")
-    subprocess.run([args.go, "build", "-o", str(fixture), "./tests/fixtures/argv-report"], cwd=root, check=True, timeout=180)
+    subprocess.run([args.go, "build", "-o", str(fixture), "./tests/fixtures/argv-report"], cwd=root, check=True, timeout=180, **quiet)
     cluster.start()
     target = cluster.add("target")
     cluster.add("controller")
@@ -67,15 +81,14 @@ try:
     failed = cluster.cli("controller", "exec", "--device", target, "--program", str(fixture), "--", "exit-seven", check=False)
     assert failed.returncode != 0 and "退出码 7" in failed.stderr, failed
     env = dict(cluster.env("controller"), XALLOR_TEST_CLUSTER=str(cluster.root), XALLOR_TEST_TARGET=target, XALLOR_TEST_PROGRAM=str(fixture))
-    subprocess.run(["node", str(root/"tests/helpers/execution-input.mjs")], env=env, check=True, timeout=120)
+    run_node("execution-input.mjs", env)
     results.append("ipc_validates_modes_and_preserves_native_exit_without_job_leak")
     results.append("relative_and_absolute_workspaces_programs_scripts_and_cwd_boundary")
-    subprocess.run(["node", str(root/"tests/helpers/mcp-release-smoke.mjs")], env=env, check=True, timeout=120)
+    run_node("mcp-release-smoke.mjs", env)
     results.append("mcp_exec_accepts_script_and_program_contracts")
 finally:
     cluster.close()
-output = root/"dist/verification/execution-input.json"
-output.parent.mkdir(parents=True, exist_ok=True)
-output.write_text(json.dumps(results, indent=2), encoding="utf-8")
-(output.parent/'cli-literal-arguments.json').write_text(json.dumps(literal_evidence,indent=2,ensure_ascii=False),encoding='utf-8')
+output.write_text(json.dumps(completed_report(cluster, results), indent=2), encoding="utf-8")
+literal_evidence.update(evidence=dict(cluster.evidence), cleanup_complete=cluster.cleanup_complete)
+literal_output.write_text(json.dumps(literal_evidence,indent=2,ensure_ascii=False),encoding='utf-8')
 print(json.dumps(results), flush=True)

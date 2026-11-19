@@ -1,9 +1,8 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
-import { findBinary, INSTALL_HINT } from "./ensure.js";
+import { launchBootstrap } from "./bootstrap-launcher.js";
 import { bindHostCancel, execFrameText, newExecProgress, type ToolCtx } from "./exec-result.js";
 import { readToolText } from "./read-result.js";
 import { failText, RuntimeIpc, type Frame } from "./ipc.js";
@@ -11,29 +10,15 @@ import { MCP_VERSION } from "./version.js";
 import { guardedArgs, checkRuntimeBuild } from "./profile-format.js";
 import { packageBuild } from "./buildinfo.js";
 import { execInputSchema } from "./exec-input.js";
-import { verifySourceSync } from "./source-trust.js";
+import { connectOwner, ensureOwner, OWNER_OBSERVATION_TIMEOUT_MS } from "./runtime-owner.js";
+import { runtimeSession } from "./runtime-session.js";
 
-let session: RuntimeIpc | undefined;
-
-async function ensureRuntime(): Promise<RuntimeIpc> {
-  if (session?.isConnected) {
-    return session;
-  }
-  session?.close();
-  session = undefined;
+const ensureRuntime = runtimeSession(async bootstrap => {
   const ipc = new RuntimeIpc();
   try {
-    try {
-      await ipc.connect(400);
-    } catch {
-      const bin = findBinary(process.env, { sourceVerifier: verifySourceSync });
-      if (!bin) {
-        throw new Error(INSTALL_HINT);
-      }
-      await runEnsure(bin);
-      await ipc.connect(8000);
-    }
-    const st = await ipc.call("status");
+    await connectOwner(ipc, bootstrap);
+    await ensureOwner(ipc, packageBuild());
+    const st = await ipc.call("status", {}, OWNER_OBSERVATION_TIMEOUT_MS);
     if (st.ok === false) {
       throw new Error(failText(st));
     }
@@ -46,40 +31,19 @@ async function ensureRuntime(): Promise<RuntimeIpc> {
         throw new Error(failText(add));
       }
     }
-    session = ipc;
     return ipc;
   } catch (error) {
     ipc.close();
     throw error;
   }
-}
-
-function runEnsure(bin: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(bin, guardedArgs(["ensure"]), {
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: process.env,
-    });
-    let err = "";
-    child.stderr?.on("data", (b: Buffer) => {
-      err += b.toString();
-    });
-    const t = setTimeout(() => {
-      child.kill();
-      reject(new Error("ensure 超时。"));
-    }, 12000);
-    child.on("error", (e) => {
-      clearTimeout(t);
-      reject(e);
-    });
-    child.on("exit", (code) => {
-      clearTimeout(t);
-      if (code === 0) resolve();
-      else reject(new Error(err.trim() || `ensure 退出码 ${code}`));
-    });
+}, async () => {
+  const result = await launchBootstrap(guardedArgs(["ensure"]), {
+    stdio: "pipe", windowsHide: true, env: process.env, timeoutMs: 150_000,
   });
-}
+  if (result.code !== 0 || result.signal) {
+    throw new Error(result.stderr.trim() || "Runtime 引导未成功，请检查运行状态。");
+  }
+});
 
 function textResult(text: string, isError = false) {
   return { content: [{ type: "text" as const, text }], isError };
@@ -137,12 +101,100 @@ function createServer(): McpServer {
       description: "查询一台目标设备的 os/arch/hostname/workspace、shell 能力、执行模式、execution_backend、execution_backends、operation_policy、device_lifecycle、entitlement_contract、usage_event_contract、relay_registry、relay_failover、plane_contract 和 oidc_mapping_contract。OIDC 映射只由本机管理控制面完成，MCP 不接 provider token；usage 只含隐私最小元数据；当前额度仍由管理面提供，授权仍由 Relay 对每次操作复验；只配一台时可省略 device_id。",
       inputSchema: z.object({
         device_id: z.string().optional().describe("目标设备 ID"),
+        session_id: z.string().min(1).optional().describe("已批准的逻辑会话 ID"),
       }),
     },
-    async ({ device_id }) => {
+    async ({ device_id, session_id }) => {
       const ipc = await ensureRuntime();
-      const f = await ipc.call("info", device_id ? { device_id } : {});
+      const f = await ipc.call("info", { ...(device_id ? { device_id } : {}), ...(session_id ? { session_id } : {}) });
       return fromFrame(f, typeof f.result?.content === "string" ? f.result.content : undefined);
+    },
+  );
+
+  server.registerTool(
+    "remote.session_request",
+    {
+      description: "实验性 WIP：通过本机 Runtime 请求目标 Runtime 批准逻辑 session；授权码只从 XALLOR_REMOTE_ACCESS_CODE 环境变量读取。",
+      inputSchema: z.object({
+        device_id: z.string().optional(),
+        code_id: z.string(),
+        target_uid: z.string(),
+        generation: z.number().int().positive(),
+        scope: z.array(z.string()).min(1),
+        session_expires_at: z.number().int().positive().optional(),
+      }),
+    },
+    async ({ device_id, code_id, target_uid, generation, scope, session_expires_at }) => {
+      const secret = process.env.XALLOR_REMOTE_ACCESS_CODE;
+      if (!secret) {
+        return textResult("缺少 XALLOR_REMOTE_ACCESS_CODE；不会通过工具参数或日志接收授权码。", true);
+      }
+      const ipc = await ensureRuntime();
+      const f = await ipc.call("session.request", {
+        ...(device_id ? { device_id } : {}),
+        code_id,
+        code_secret: secret,
+        target_uid,
+        generation,
+        scope,
+        ...(session_expires_at ? { session_expires_at } : {}),
+      });
+      return fromFrame(f);
+    },
+  );
+
+  server.registerTool(
+    "remote.device_code_revoke",
+    {
+      description: "通过本机 Runtime owner 管理通道撤销目标设备的逻辑授权码及其派生 session。Relay 执行 owner 校验；不会接收或输出 secret。",
+      inputSchema: z.object({
+        code_id: z.string().min(1),
+      }),
+    },
+    async ({ code_id }) => {
+      const ipc = await ensureRuntime();
+      return fromFrame(await ipc.call("device.access", { action: "code.revoke", code_id }));
+    },
+  );
+
+  server.registerTool(
+    "remote.device_code_rotate",
+    {
+      description: "通过本机 Runtime owner 管理通道轮换本机设备的逻辑授权码。新 secret 只从 XALLOR_REMOTE_CODE_SECRET 环境变量读取，不进入工具参数；结果只返回原替代码的状态和策略元数据，不回显 secret，也不代表已获准执行。结果未确认时不得自动重试。",
+      inputSchema: z.object({
+        code_id: z.string().min(1),
+        new_code_id: z.string().min(1),
+      }),
+    },
+    async ({ code_id, new_code_id }) => {
+      const secret = process.env.XALLOR_REMOTE_CODE_SECRET;
+      if (!secret) {
+        return textResult("缺少 XALLOR_REMOTE_CODE_SECRET；不会通过工具参数或日志接收新 secret。", true);
+      }
+      const ipc = await ensureRuntime();
+      return fromFrame(await ipc.call("device.access", { action: "code.rotate", code_id, new_code_id, new_secret: secret }));
+    },
+  );
+
+  server.registerTool(
+    "remote.session_resume",
+    {
+      description: "实验性 WIP：通过本机 Runtime 使用一次性 resume capability 恢复已批准逻辑 session；capability 只从 XALLOR_REMOTE_RESUME_CAPABILITY 环境变量读取。",
+      inputSchema: z.object({
+        device_id: z.string(),
+        session_id: z.string(),
+        resume_id: z.string(),
+        target_uid: z.string(),
+      }),
+    },
+    async ({ device_id, session_id, resume_id, target_uid }) => {
+      const capability = process.env.XALLOR_REMOTE_RESUME_CAPABILITY;
+      if (!capability) {
+        return textResult("缺少 XALLOR_REMOTE_RESUME_CAPABILITY；不会通过工具参数或日志接收 resume capability。", true);
+      }
+      const ipc = await ensureRuntime();
+      const f = await ipc.call("session.resume", { device_id, session_id, resume_id, resume_capability: capability, target_uid });
+      return fromFrame(f);
     },
   );
 
@@ -152,7 +204,7 @@ function createServer(): McpServer {
       description: "在对方执行脚本或程序，script 与 program 二选一，流式回收 stdout/stderr。解释器和路径均属于对方。",
       inputSchema: execInputSchema,
     },
-    async ({ script, program, device_id, cwd, timeout_ms, backend }, ctx) => {
+    async ({ script, program, device_id, session_id, cwd, timeout_ms, backend }, ctx) => {
       if (!process.env.XALLOR_REMOTE_DEVICE_GRANT && !process.env.XALLOR_REMOTE_DEVICE_ID) {
         const ipc = await ensureRuntime();
         const st = await ipc.call("status");
@@ -175,6 +227,7 @@ function createServer(): McpServer {
         {
           ...(script ? { script } : { program }),
           ...(device_id ? { device_id } : {}),
+          ...(session_id ? { session_id } : {}),
           ...(cwd ? { cwd } : {}),
           ...(backend !== undefined ? { backend } : {}),
           ...(timeout_ms ? { timeout_ms } : {}),
@@ -222,6 +275,7 @@ function createServer(): McpServer {
       inputSchema: z.object({
         path: z.string(),
         device_id: z.string().optional(),
+        session_id: z.string().min(1).optional().describe("已批准的逻辑会话 ID"),
         head: z.number().int().nonnegative().max(1_048_576).optional().describe("从头读的行数"),
         tail: z.number().int().nonnegative().max(1_048_576).optional().describe("从尾读的行数"),
         offset: z.number().int().nonnegative().max(1_073_741_824).optional().describe("按字节的起点，可超过 1MiB"),
@@ -246,6 +300,7 @@ function createServer(): McpServer {
         path: z.string(),
         content: z.string(),
         device_id: z.string().optional(),
+        session_id: z.string().min(1).optional().describe("已批准的逻辑会话 ID"),
       }),
     },
     async (args) => {
@@ -261,11 +316,12 @@ function createServer(): McpServer {
       description: "列出对方当前用户可见进程（只读）。",
       inputSchema: z.object({
         device_id: z.string().optional(),
+        session_id: z.string().min(1).optional().describe("已批准的逻辑会话 ID"),
       }),
     },
-    async ({ device_id }) => {
+    async ({ device_id, session_id }) => {
       const ipc = await ensureRuntime();
-      const f = await ipc.call("processes", device_id ? { device_id } : {});
+      const f = await ipc.call("processes", { ...(device_id ? { device_id } : {}), ...(session_id ? { session_id } : {}) });
       return fromFrame(f, typeof f.result?.content === "string" ? f.result.content : undefined);
     },
   );

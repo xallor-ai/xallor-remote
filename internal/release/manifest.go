@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/xallor-ai/xallor-remote/internal/buildinfo"
+	"github.com/xallor-ai/xallor-remote/internal/runtimeimage"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,7 +17,7 @@ import (
 	"time"
 )
 
-const maxBinaryBytes = 256 * 1024 * 1024
+const maxBinaryBytes = runtimeimage.MaxBytes
 
 var digestPattern = regexp.MustCompile("^[a-f0-9]{64}$")
 
@@ -59,13 +60,17 @@ func readJSON(path string, v any) error {
 		return err
 	}
 	defer f.Close()
-	d := json.NewDecoder(io.LimitReader(f, 65537))
+	return decodeJSON(f, v)
+}
+
+func decodeJSON(reader io.Reader, v any) error {
+	d := json.NewDecoder(io.LimitReader(reader, 65537))
 	d.DisallowUnknownFields()
-	if err = d.Decode(v); err != nil {
+	if err := d.Decode(v); err != nil {
 		return err
 	}
 	var extra any
-	if err = d.Decode(&extra); err != io.EOF {
+	if err := d.Decode(&extra); err != io.EOF {
 		return errors.New("unexpected trailing manifest data")
 	}
 	return nil
@@ -73,7 +78,7 @@ func readJSON(path string, v any) error {
 func (s Store) Stage(bundle string) (Manifest, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	return withSourceSnapshot(ctx, bundle, "", s.sourceVerifier, s.copyAuthenticatedSnapshot)
+	return s.withSourceSnapshot(ctx, bundle, "", s.copyAuthenticatedSnapshot)
 }
 func (s Store) copyArtifact(source *os.File, m Manifest) error {
 	dest := s.Path(m)

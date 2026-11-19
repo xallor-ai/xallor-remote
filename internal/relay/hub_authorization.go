@@ -1,6 +1,9 @@
 package relay
 
-import "github.com/xallor-ai/xallor-remote/internal/protocol"
+import (
+	"github.com/xallor-ai/xallor-remote/internal/accesscode"
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
+)
 
 func (h *Hub) handleAuth(from Sender, msg protocol.Message) {
 	if msg.Type == protocol.TypeDeviceSettings && !msg.ValidDeviceSettings() {
@@ -36,6 +39,11 @@ func (h *Hub) handleAuth(from Sender, msg protocol.Message) {
 		return
 	}
 	record := d.record
+	// Fence stale session reads before changing durable authority, without
+	// tearing down existing execution streams or disturbing idempotent sync.
+	if msg.Type == protocol.TypeDeviceSettings && (record.Inbound != *msg.Inbound || (record.OwnershipID == "" && record.GrantHash != msg.GrantHash)) {
+		d.ready = false
+	}
 	h.mu.Unlock()
 	switch msg.Type {
 	case protocol.TypeDeviceSettings:
@@ -59,29 +67,49 @@ func (h *Hub) handleAuth(from Sender, msg protocol.Message) {
 		return
 	}
 	h.mu.Lock()
-	defer h.mu.Unlock()
+	var retired accesscode.TargetBinding
+	defer func() { h.mu.Unlock(); _ = h.retireSessionTarget(retired) }()
 	// Drop may run during I/O. Apply a committed change to the same identity
 	// even if it went offline, but never resurrect or overwrite a replacement.
 	if h.devices[id] != d {
+		retired = accesscode.TargetBinding{DeviceUID: record.UID, Epoch: record.SessionEpoch}
 		return
 	}
 	if msg.Type == protocol.TypeRevoke {
-		h.failDeviceLocked(id, protocol.DeviceOffline)
+		retired = h.retireDeviceLocked(id, d)
 		from.Close()
 		delete(h.devices, id)
 		delete(h.access, id)
 		return
 	}
 	wasInbound := d.record.Inbound
+	if h.accessCodes != nil {
+		next := accesscode.TargetBinding{DeviceUID: record.UID, Epoch: record.SessionEpoch}
+		if !next.Valid() || (record.Inbound && !record.SessionEpochActive) {
+			retired = h.stopDeviceRoutingLocked(from)
+			_ = from.Enqueue(protocol.Message{Type: protocol.TypeError, Code: protocol.RelayError})
+			from.Close()
+			return
+		}
+		if next != d.sessionTarget || !record.SessionEpochActive {
+			h.invalidateSessionConsentLocked(id, d.sessionTarget)
+		}
+		d.sessionTarget = next
+	}
 	d.record = record
 	h.access[id] = record.Binding()
 	if wasInbound && !record.Inbound {
 		h.revokeForegroundRoutesLocked(id)
 	}
+	if !d.online || d.conn != from || ctx.Err() != nil {
+		d.ready = false
+		retired = d.sessionTarget
+		return
+	}
 	// Queue the confirmation before publishing readiness, so initial invokes
 	// cannot precede the settings response on the shared device connection.
 	if err := from.Enqueue(protocol.Message{Type: protocol.TypeDeviceSettingsResult, RequestID: msg.RequestID, DeviceContext: h.deviceContext(record)}); err != nil {
-		h.stopDeviceRoutingLocked(from)
+		retired = h.stopDeviceRoutingLocked(from)
 		from.Close()
 		return
 	}
@@ -90,10 +118,11 @@ func (h *Hub) handleAuth(from Sender, msg protocol.Message) {
 
 func (h *Hub) rejectIdentity(from Sender, code string) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.stopDeviceRoutingLocked(from)
+	retired := h.stopDeviceRoutingLocked(from)
 	_ = from.Enqueue(protocol.Message{Type: protocol.TypeError, Code: code})
 	from.Close()
+	h.mu.Unlock()
+	_ = h.retireSessionTarget(retired)
 }
 
 // Existing foreground execs keep their route until a real terminal, but cannot
@@ -106,14 +135,12 @@ func (h *Hub) revokeForegroundRoutesLocked(id string) {
 	}
 }
 
-func (h *Hub) stopDeviceRoutingLocked(from Sender) {
+func (h *Hub) stopDeviceRoutingLocked(from Sender) accesscode.TargetBinding {
 	// Failed/uncertain writes stop routing immediately, before network drain.
 	for id, d := range h.devices {
 		if d.conn == from {
-			h.failDeviceLocked(id, protocol.DeviceOffline)
-			d.online = false
-			d.conn = nil
-			break
+			return h.retireDeviceLocked(id, d)
 		}
 	}
+	return accesscode.TargetBinding{}
 }

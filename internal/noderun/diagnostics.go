@@ -6,6 +6,8 @@ import (
 	"github.com/xallor-ai/xallor-remote/internal/diagnostics"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/runtimeowner"
+	"path/filepath"
 )
 
 // Public status is a whitelist, never a serialization of the credential store.
@@ -17,11 +19,19 @@ func (d *Daemon) status() map[string]any {
 	}
 	return map[string]any{"device_id": id, "workspace": ws, "relay": diagnostics.Endpoint(relay),
 		"inbound": inbound, "has_grant": grant != "", "online": d.deviceOnline(),
-		"version": buildinfo.Version(), "build": buildinfo.Running(), "peers": public}
+		"version": buildinfo.Version(), "build": d.runningIdentity(), "peers": public}
 }
 
 func (d *Daemon) handleObservation(c *ipc.Conn, req ipc.Request) bool {
 	switch req.Method {
+	case "runtime.operation.status":
+		journal := runtimeowner.Journal{Dir: filepath.Join(d.store.Dir, "runtime", "lifecycle")}
+		_ = c.WriteFrame(journal.QueryOperation(req))
+	case "runtime.operation.reconcile":
+		journal := runtimeowner.Journal{Dir: filepath.Join(d.store.Dir, "runtime", "lifecycle")}
+		_ = c.WriteFrame(journal.ReconcileObservation(req))
+	case "runtime.ensure", "runtime.status":
+		return d.handleRuntimeOwner(c, req)
 	case "status":
 		_ = c.WriteFrame(ipc.OK(req.ID, d.status()))
 	case "doctor":
@@ -30,6 +40,10 @@ func (d *Daemon) handleObservation(c *ipc.Conn, req ipc.Request) bool {
 		}
 		if json.Unmarshal(req.Params, &p) != nil || (p.DeviceID != "" && !protocol.IsNumericDeviceID(p.DeviceID)) {
 			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "需要有效的 9 位设备 ID。"))
+			return true
+		}
+		if p.DeviceID != "" && !d.startupReady() {
+			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.RuntimePendingRecovery, "Runtime 启动尚未完成，暂不能探测对方设备。"))
 			return true
 		}
 		go func() { _ = c.WriteFrame(ipc.OK(req.ID, d.diagnose(p.DeviceID))) }()

@@ -7,6 +7,7 @@ permissions:
   contents: read
 jobs:
   bundles:
+    if: github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v') && github.ref_protected
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -31,6 +32,22 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
         working-directory: packages/mcp
       - run: python -m unittest discover -s tests -p test_release_evidence.py
+      - name: Release workflow and signed lifecycle input policy
+        run: |
+          python -m pip install PyYAML==6.0.3
+          python -m unittest discover -s tests -p test_release_workflow_policy.py
+          python -m unittest discover -s tests -p test_signed_lifecycle_ci.py
+          python -m unittest discover -s tests -p test_signed_lifecycle_prepare.py
+          python -m unittest discover -s tests -p "test_package_*.py"
+          python -m unittest discover -s tests -p test_signed_package_gate.py
+      - name: Signed lifecycle report and preparation failure regression
+        run: python -m unittest discover -s tests -p test_signed_upgrade_report.py
+      - name: Native image observations and lifecycle references
+        run: |
+          python -m unittest discover -s tests -p "test_runtime_image*.py"
+          python -m unittest discover -s tests -p test_runtime_observation_set.py
+          python -m unittest discover -s tests -p test_runtime_observer_e2e.py
+          python -m unittest discover -s tests -p test_restore_evidence.py
       - run: python -m unittest discover -s tests -p test_relay_templates.py
       - run: python -m unittest discover -s tests -p test_readme_docs.py
       - run: python tests/release_source_gate_e2e.py
@@ -38,6 +55,9 @@ jobs:
       - run: node scripts/pack-mcp-with-runtime.mjs
       - run: python scripts/release_evidence.py
       - name: Sign artifact and SBOM provenance
+        # Only a protected v* tag reaches this job. A workflow_dispatch against
+        # an ordinary branch is skipped; it is not a dry-run artifact build.
+        if: startsWith(github.ref, 'refs/tags/v')
         id: attest
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
@@ -52,12 +72,14 @@ jobs:
             dist/release/linux-amd64/xallor-remote
             dist/release/linux-amd64/manifest.json
       - name: Verify signed release and reject substitutions
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python scripts/verify_release.py --directory dist/release --repo "$GITHUB_REPOSITORY" --source-ref "$GITHUB_REF" --revision "$GITHUB_SHA"
           python tests/release_attestation_ci.py
       - name: Preserve offline signature bundle
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
         run: cp "$ATTESTATION_BUNDLE" dist/release/provenance.sigstore.json
@@ -72,6 +94,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python tests/release_install_source_e2e.py --binary dist/release/linux-amd64/xallor-remote --signed-bundle dist/release/linux-amd64
+      - name: Verify signed MCP vendor launch and tamper refusal
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tests/mcp_signed_vendor_e2e.py --signed-bundle dist/release/linux-amd64 --foreign-manifest dist/release/windows-amd64/manifest.json --package-build packages/mcp/build.json --output dist/verification/mcp-signed-vendor.json
+      - name: Preserve signed vendor acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-signed-vendor-evidence
+          path: |
+            dist/verification/mcp-signed-vendor.json
+            dist/verification/raw-attestation-policy.json
       - uses: actions/upload-artifact@v4
         with:
           name: verified-release-bundles
@@ -81,9 +116,10 @@ jobs:
             dist/release/*.tgz
             dist/release/*.json
   draft:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v') && github.ref_protected
     needs: bundles
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
     steps:

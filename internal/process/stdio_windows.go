@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"reflect"
+	"sync"
 	"time"
 )
 
@@ -16,7 +17,7 @@ import (
 // never selects a weaker process-supervision path.
 type commandIO struct {
 	files         [3]*os.File
-	child, parent []*os.File
+	child, parent []*ownedIOFile
 	copies        []func() error
 	done          chan error
 }
@@ -25,7 +26,7 @@ func prepareCommandIO(cmd *exec.Cmd) (_ *commandIO, err error) {
 	s := &commandIO{}
 	defer func() {
 		if err != nil {
-			s.closeAll()
+			err = failedStartCleanup(err, s.closeAll())
 		}
 	}()
 	if cmd.Stdin == nil {
@@ -37,8 +38,9 @@ func prepareCommandIO(cmd *exec.Cmd) (_ *commandIO, err error) {
 		r, w, err = os.Pipe()
 		if err == nil {
 			s.files[0] = r
-			s.child, s.parent = append(s.child, r), append(s.parent, w)
-			s.copies = append(s.copies, func() error { defer w.Close(); _, e := io.Copy(w, cmd.Stdin); return e })
+			s.child, s.parent = append(s.child, ownIO(r)), append(s.parent, ownIO(w))
+			owned := s.parent[len(s.parent)-1]
+			s.copies = append(s.copies, func() error { _, e := io.Copy(w, cmd.Stdin); return failedStartCleanup(e, owned.Close()) })
 		}
 	}
 	if err != nil {
@@ -60,7 +62,7 @@ func prepareCommandIO(cmd *exec.Cmd) (_ *commandIO, err error) {
 func (s *commandIO) null(flags int) (*os.File, error) {
 	f, err := os.OpenFile(os.DevNull, flags, 0)
 	if err == nil {
-		s.child = append(s.child, f)
+		s.child = append(s.child, ownIO(f))
 	}
 	return f, err
 }
@@ -76,34 +78,47 @@ func (s *commandIO) output(writer io.Writer) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.child, s.parent = append(s.child, w), append(s.parent, r)
-	s.copies = append(s.copies, func() error { defer r.Close(); _, e := io.Copy(writer, r); return e })
+	s.child, s.parent = append(s.child, ownIO(w)), append(s.parent, ownIO(r))
+	owned := s.parent[len(s.parent)-1]
+	s.copies = append(s.copies, func() error { _, e := io.Copy(writer, r); return failedStartCleanup(e, owned.Close()) })
 	return w, nil
 }
 
-func (s *commandIO) startCopies() {
-	// The child inherited duplicates; close our writer ends so EOF is observable.
+// An adapter-owned file is closed exactly once, even when the copy goroutine
+// races a forced drain shutdown. Preserve the first close failure on all paths.
+type ownedIOFile struct {
+	file *os.File
+	once sync.Once
+	err  error
+}
+
+func ownIO(f *os.File) *ownedIOFile { return &ownedIOFile{file: f} }
+func (f *ownedIOFile) Close() error { f.once.Do(func() { f.err = f.file.Close() }); return f.err }
+func (s *commandIO) startCopies() error {
+	var errs []error
 	for _, f := range s.child {
-		_ = f.Close()
+		errs = append(errs, f.Close())
 	}
-	s.child = nil
+	if err := errors.Join(errs...); err != nil {
+		return failedStartCleanup(nil, err)
+	}
 	s.done = make(chan error, len(s.copies))
 	for _, copyStream := range s.copies {
 		go func(copyStream func() error) { s.done <- copyStream() }(copyStream)
 	}
+	return nil
 }
-
-func (s *commandIO) closeAll() {
-	for _, files := range [][]*os.File{s.child, s.parent} {
+func (s *commandIO) closeAll() error {
+	var errs []error
+	for _, files := range [][]*ownedIOFile{s.child, s.parent} {
 		for _, f := range files {
-			_ = f.Close()
+			errs = append(errs, f.Close())
 		}
 	}
-	s.child, s.parent = nil, nil
+	return errors.Join(errs...)
 }
-
-func (s *commandIO) finish(delay time.Duration) error {
-	defer s.closeAll()
+func (s *commandIO) finish(delay time.Duration) (err error) {
+	defer func() { err = failedStartCleanup(err, s.closeAll()) }()
 	if s.done == nil || len(s.copies) == 0 {
 		return nil
 	}
@@ -112,13 +127,12 @@ func (s *commandIO) finish(delay time.Duration) error {
 	var errs []error
 	for range s.copies {
 		select {
-		case err := <-s.done:
-			errs = append(errs, err)
+		case e := <-s.done:
+			errs = append(errs, e)
 		case <-timer.C:
-			// Like os/exec, arbitrary caller readers/writers must themselves
-			// unblock; closing the pipe cannot interrupt user code in Write.
-			s.closeAll()
-			errs = append(errs, exec.ErrWaitDelay, <-s.done)
+			// Closing owned pipes unblocks native IO. Arbitrary caller code in Write
+			// must still return; probe capture writers are bounded and nonblocking.
+			errs = append(errs, failedStartCleanup(nil, s.closeAll()), exec.ErrWaitDelay, <-s.done)
 		}
 	}
 	return errors.Join(errs...)

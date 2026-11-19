@@ -9,10 +9,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/accesscode"
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
@@ -34,7 +36,10 @@ type Authority struct {
 	accounts principal.Authenticator
 	access   Access
 	now      func() time.Time
+	sessions accesscode.Store
 }
+
+func (a *Authority) SetSessionStore(store accesscode.Store) { a.sessions = store }
 
 func NewAuthority(key [32]byte, devices Devices, accounts principal.Authenticator, permissions Access) *Authority {
 	return &Authority{key: key, devices: devices, accounts: accounts, access: permissions, now: time.Now}
@@ -47,6 +52,11 @@ type claims struct {
 	Identity      principal.Identity
 	Authorization access.Authorization
 	Expires       int64
+	SessionID     string
+	CodeID        string
+	Generation    uint64
+	TargetEpoch   string
+	SessionScope  []string
 }
 
 // Issue accepts only the transport's already authenticated connection snapshot.
@@ -56,6 +66,22 @@ func (a *Authority) Issue(deviceID string, binding access.Binding, identity prin
 		return "", ErrDenied
 	}
 	c := claims{Authority: a.devices.Authority(), DeviceID: deviceID, Binding: binding, Identity: identity, Authorization: authorization, Expires: a.now().Add(protocol.DelegationProofLifetime).UnixMilli()}
+	return a.issue(c)
+}
+
+// IssueSession binds a background proof to the approved logical session.
+func (a *Authority) IssueSession(deviceID string, binding access.Binding, identity principal.Identity, authorization access.Authorization, session accesscode.SessionAuthorization) (string, error) {
+	if a.devices == nil || a.key == [32]byte{} || !binding.Matches(binding) || !session.Target.Valid() || session.Target.DeviceUID != binding.DeviceUID || session.CanOperate(a.now().UTC()) != nil || !session.Allows(protocol.OpHandoffSubmit) {
+		return "", ErrDenied
+	}
+	expires := a.now().Add(protocol.DelegationProofLifetime).UnixMilli()
+	if session.ExpiresAt != nil {
+		expires = min(expires, session.ExpiresAt.UnixMilli())
+	}
+	return a.issue(claims{Authority: a.devices.Authority(), DeviceID: deviceID, Binding: binding, Identity: identity, Authorization: authorization, Expires: expires, SessionID: session.ID, CodeID: session.CodeID, Generation: session.Generation, TargetEpoch: session.Target.Epoch, SessionScope: append([]string(nil), session.Scope...)})
+}
+
+func (a *Authority) issue(c claims) (string, error) {
 	data, err := json.Marshal(c)
 	if err != nil {
 		return "", err
@@ -94,6 +120,22 @@ func (a *Authority) Renew(ctx context.Context, deviceID, uid, proof string) (tim
 	}
 	var c claims
 	if json.Unmarshal(data, &c) != nil || c.Authority != a.devices.Authority() || c.DeviceID != deviceID || c.Binding.DeviceUID != uid || c.Expires <= a.now().UnixMilli() {
+		return 0, ErrDenied
+	}
+	if c.SessionID != "" && a.sessions != nil {
+		var session accesscode.SessionAuthorization
+		if err := a.sessions.ReadAccessCode(ctx, func(r accesscode.Reader) error { var err error; session, err = r.Session(ctx, c.SessionID); return err }); err != nil {
+			return 0, err
+		}
+		if session.ID != c.SessionID || session.CodeID != c.CodeID || session.Generation != c.Generation || !session.Target.Valid() || session.Target.DeviceUID != uid || session.Target.Epoch != c.TargetEpoch || session.CanOperate(a.now().UTC()) != nil || !session.Allows(protocol.OpHandoffSubmit) || !slices.Equal(session.Scope, c.SessionScope) {
+			return 0, ErrDenied
+		}
+		// Preserve both the signed original deadline and any tighter current
+		// consent deadline through the remaining identity/permission I/O.
+		if session.ExpiresAt != nil {
+			c.Expires = min(c.Expires, session.ExpiresAt.UnixMilli())
+		}
+	} else if c.SessionID != "" {
 		return 0, ErrDenied
 	}
 	return a.renew(ctx, c, protocol.OpHandoffSubmit)

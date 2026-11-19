@@ -88,10 +88,10 @@ func cmdStop() *cobra.Command {
 		Use:   "stop",
 		Short: "停止本机 Runtime",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if _, err := rpc("stop", map[string]any{}); err != nil {
+			if err := (runtimeControl{}).Stop(); err != nil {
 				return err
 			}
-			fmt.Println("已停止。")
+			fmt.Fprintln(cmd.OutOrStdout(), "已停止。")
 			return nil
 		},
 	}

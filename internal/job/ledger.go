@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -78,42 +77,12 @@ func (l *Ledger) initializeLocked() error {
 	}
 	l.unlock = unlock
 	l.jobs = map[string]Record{}
-	path := filepath.Join(l.dir, "jobs.json")
-	f, err := os.Open(path)
-	if os.IsNotExist(err) {
-		return nil
-	}
+	disk, err := readDiskState(filepath.Join(l.dir, "jobs.json"))
 	if err != nil {
 		l.err = err
 		return ErrUnavailable
 	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Size() > maxLedgerBytes {
-		l.err = ErrUnavailable
-		return l.err
-	}
-	var disk diskState
-	decoder := json.NewDecoder(io.LimitReader(f, maxLedgerBytes+1))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&disk); err != nil || disk.Version != 1 || disk.Jobs == nil || len(disk.Jobs) > Capacity {
-		l.err = ErrUnavailable
-		return l.err
-	}
-	if decoder.Decode(new(any)) != io.EOF {
-		l.err = ErrUnavailable
-		return l.err
-	}
-	// Windows cannot atomically replace a file while this read handle is open.
-	if err := f.Close(); err != nil {
-		l.err = err
-		return ErrUnavailable
-	}
 	for id, r := range disk.Jobs {
-		if !validRecord(id, r) {
-			l.err = ErrUnavailable
-			return l.err
-		}
 		// Start must persist occupied before it can launch any child. A reserved
 		// record therefore proves that this lost owner never started a process.
 		if r.State == "reserved" {

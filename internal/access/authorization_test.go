@@ -1,6 +1,9 @@
 package access
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Operation permissions never imply cancellation of other connections or an
 // unknown future operation, and request-specific fields cannot be mixed.
@@ -18,6 +21,11 @@ func TestAuthorization_should_rejectAmbiguousRequestsAndUnknownOperations(t *tes
 	} {
 		if req.Validate() == nil {
 			t.Fatalf("accepted %+v", req)
+		}
+	}
+	for _, req := range []Request{{Action: "code.revoke", CodeID: strings.Repeat("x", 129)}, {Action: "code.rotate", CodeID: "old", NewCodeID: "new", NewSecret: strings.Repeat("x", 4097)}, {Action: "code.rotate", CodeID: "old", NewCodeID: "new", NewSecret: "bad\x00secret"}} {
+		if req.Validate() == nil {
+			t.Fatalf("accepted oversized/malformed code request: %+v", req)
 		}
 	}
 	owned := Binding{DeviceUID: "uid", OwnershipID: "owner-version"}

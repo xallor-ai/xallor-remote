@@ -35,6 +35,8 @@ SSOT：人怎么操作。命令前缀 `xallor-remote`。四个头与 Runtime 的
 xallor-remote ensure
 xallor-remote start | stop | status
 xallor-remote grant issue | show | rotate
+xallor-remote session request --device … --code-id … --target-uid … --generation … --scope info
+xallor-remote session resume --device … --session-id … --resume-id … --target-uid …
 xallor-remote inbound on | off
 xallor-remote revoke
 xallor-remote peer add --device … --grant …
@@ -47,6 +49,7 @@ xallor-remote exec --device … --request-file <本地JSON文件或->
 xallor-remote exec --device … --jsonl --program git -- status --short
 xallor-remote config get
 xallor-remote config set --shell auto|powershell|pwsh|bash|sh
+xallor-remote runtime reconcile --operation <id> --revision <n> --digest <sha256>
 xallor-remote approve
 xallor-remote mcp print-config
 xallor-remote mcp merge-config
@@ -55,6 +58,8 @@ xallor-remote relay --listen :8443 --tls-cert <PEM> --tls-key <PEM>
 xallor-remote relay --reverse-proxy --trusted-proxy 127.0.0.1
 xallor-remote reset --yes
 xallor-remote device lifecycle
+xallor-remote device code revoke --code-id …
+xallor-remote device code rotate --code-id … --new-code-id … [--secret-stdin]
 xallor-remote entitlement contract
 xallor-remote usage contract
 xallor-remote relay registry
@@ -62,6 +67,26 @@ xallor-remote relay failover
 ```
 
 `inbound off` 保留身份；`revoke` 销毁登记。`grant issue` 每次签发新授权码并打开入站；`inbound on` 在没有授权码时也会签发授权码，否则只打开入站。`inbound off` 不吊销已有授权码。`approve`：本机交互确认高危命令；无 TTY 时不要跑。
+
+`session request` 是非 GUI 实验性入口：授权码只从环境变量
+`XALLOR_REMOTE_ACCESS_CODE` 读取，不放在命令行参数或日志；它要求目标 UID、generation
+和 scope，并等待接收方 Runtime 批准。当前仍属于 WIP，断线恢复和生产授权码类型尚未作为稳定 CLI 能力发布。
+MCP 的 `remote.session_request` 使用同一 Runtime IPC 和环境变量边界，不自行连接 Relay。
+`session resume` / MCP `remote.session_resume` 使用独立的
+`XALLOR_REMOTE_RESUME_CAPABILITY`，只消费一次并接收轮换后的 capability；它不复用原始授权码。
+CLI 对这两个 session 调用保留同一条已准入 IPC 连接，业务等待上限为 120 秒，覆盖
+Runtime 的 90 秒结果等待及连接准备；其它普通 RPC 仍为 10 秒。超时或断线不自动重放。
+
+`device code revoke/rotate` 是本机 owner 的实验性逻辑授权码管理入口，经 Runtime IPC
+执行，不能代替顶层 grant/设备动作。轮换的新 secret 由受信调用方设置到
+`XALLOR_REMOTE_CODE_SECRET`，或通过 `--secret-stdin` 提供 UTF-8 字节；不接受
+`--new-secret` 明文参数。两种来源同时存在会在读取 stdin、启动 Runtime 前拒绝；
+设置为空的环境变量仍算已提供来源，不会悄悄改读 stdin。
+最多 4096 字节；stdin 最多读取 4099 字节后判定长度，只去掉一个终止 LF 或 CRLF，
+保留其余空格、换行和孤立 CR。空值、非法 UTF-8、NUL 和超限均拒绝。本地参数错误
+不启动 Runtime，也不回显输入。stdin 由凭据工具/管道提供并结束输入，不隐式提示输入。
+成功只显示原替代码的状态和策略元数据，不显示 secret 或内部意图摘要；字段见
+[protocol.md](protocol.md)。结果未确认时不得自动重试或据此重放业务命令。
 
 `config` 修改当前本机 Runtime；要改变对方执行解释器或执行后端，在对方设备执行。`get` 返回 JSON 配置，`set --shell` 与 `set --execution-backend native_user` 持久保存并用于后续任务，不改变已运行任务。各系统支持项和自动选择规则见 [os.md](os.md)。当前只有 `native_user` 可用；`low_privilege`、`cgroup`、`container` 选择会返回 `backend_unavailable`，不会静默回退。
 
@@ -80,6 +105,7 @@ xallor-remote relay failover
 `exec` 文本入口只收一个完整脚本参数，不把多个片段自动拼接。单次 `--shell` 只选择本次任务的目标解释器，不修改配置。程序模式的 `--` 后逐项作为参数，空字符串和特殊字符仍须先正确通过本地 Shell；跨系统复杂输入优先使用 `--script-file` / `--request-file`，避免本地 Shell 提前展开。两种文件均在控制端读取，可带 UTF-8 BOM，`-` 从标准输入读取。JSON 形状及上限见 [protocol.md](protocol.md)，其中不含 device_id，由 `--device` 选择目标。
 
 `--cwd` 是对方 workspace 内的目录，`--timeout-ms` 设置本次执行期限；`--backend` 可显式要求目标后端。请求文件模式将这些参数写在 JSON 内，不再叠加同名 CLI 选项；程序模式不接受 `--shell`。脚本文件按内容发送，不会在目标落地，也不绕过目标命令行长度限制。CLI 文本输出和退出状态保持现有语义；此入口不是交互终端。
+`--session-id` 可复用 `session request` 成功返回的逻辑会话；Runtime 会把它绑定到后续 invoke，目标 Relay 仍会按原 scope、generation 和 expiry 复验。
 
 Agent 或脚本调用时加 `--jsonl`，逐行读取 stdout 上的 JSON 事件，并检查最后的 exit/error；不要解析 stderr 人话或把命令输出中的 JSON 当回执。已知退出码、超时、截断和错误均有独立字段，格式见 [protocol.md](protocol.md)。人直接操作可继续使用默认文本展示，两种方式执行同一请求。
 

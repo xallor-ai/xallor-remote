@@ -33,11 +33,17 @@ jobs:
         run: go vet ./...
 
       - name: Test
-        run: go test ./...
+        # Native lifecycle cases keep their own deadlines; the Windows package
+        # now contains enough separate process scenarios to exceed ten minutes.
+        run: go test -timeout 20m ./...
 
       - name: Race detection
         if: runner.os == 'Linux'
         run: go test -race ./internal/principal ./internal/access ./internal/delegation ./internal/admission ./internal/storage ./internal/relay ./internal/noderun ./internal/release ./internal/handoff ./internal/process ./internal/job ./internal/execution ./internal/identity
+
+      - name: Runtime ownership race detection
+        if: runner.os == 'Linux'
+        run: go test -race ./internal/runtimeowner ./internal/runtimehead ./internal/runtimeprocess ./internal/launcherresource ./internal/releasetrust ./internal/nativepipe
 
       - name: Build
         shell: bash
@@ -162,6 +168,22 @@ jobs:
         working-directory: packages/mcp
       - run: python tests/release_source_gate_e2e.py
       - run: python -m unittest discover -s tests -p test_release_evidence.py
+      - name: Release workflow and signed lifecycle input policy
+        run: |
+          python -m pip install PyYAML==6.0.3
+          python -m unittest discover -s tests -p test_release_workflow_policy.py
+          python -m unittest discover -s tests -p test_signed_lifecycle_ci.py
+          python -m unittest discover -s tests -p test_signed_lifecycle_prepare.py
+          python -m unittest discover -s tests -p "test_package_*.py"
+          python -m unittest discover -s tests -p test_signed_package_gate.py
+      - name: Signed lifecycle report and preparation failure regression
+        run: python -m unittest discover -s tests -p test_signed_upgrade_report.py
+      - name: Native image observations and lifecycle references
+        run: |
+          python -m unittest discover -s tests -p "test_runtime_image*.py"
+          python -m unittest discover -s tests -p test_runtime_observation_set.py
+          python -m unittest discover -s tests -p test_runtime_observer_e2e.py
+          python -m unittest discover -s tests -p test_restore_evidence.py
       - run: python -m unittest discover -s tests -p test_relay_templates.py
       - run: python -m unittest discover -s tests -p test_readme_docs.py
       - run: python scripts/build-release.py
@@ -169,7 +191,8 @@ jobs:
       - run: node scripts/pack-mcp-with-runtime.mjs
       - run: python scripts/release_evidence.py
       - run: python tests/packaged_install.py
-      - run: python tests/diagnostics_e2e.py
+      - name: Diagnostics through native owner mechanics (not signed acceptance)
+        run: python tests/diagnostics_e2e.py --owner-mechanics
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -204,34 +227,76 @@ jobs:
       - run: npm run build
         working-directory: packages/mcp
       - run: python scripts/build-release.py --platform ${{ matrix.platform }}
-      - run: python tests/cross_layer_e2e.py
-      - run: python tests/backend_selection_e2e.py
-      - run: python tests/principal_e2e.py
+      - name: Fixture selection and evidence contracts
+        run: python -m unittest discover -s tests -p test_mechanics_cli.py
+      - name: Fixture environment and cleanup contracts
+        run: python -m unittest discover -s tests -p test_runtime_cluster.py
+      - name: Relay metadata schema acceptance contract
+        run: python -m unittest discover -s tests -p test_relay_schema_contract.py
+      - name: Handoff identity cancellation boundary (temporary Go overlay)
+        run: python tests/handoff_identity_cancel_e2e.py
+      - name: Handoff fault-injection evidence completeness
+        run: python -m unittest discover -s tests -p test_handoff_identity_cancel.py
+      - name: Intentional uncertain-job retention contracts
+        run: python -m unittest discover -s tests -p test_expected_retention.py
+      - name: Cross-layer native owner mechanics (not signed acceptance)
+        run: python tests/cross_layer_e2e.py --owner-mechanics
+      - name: Build read-only native Runtime observer
+        run: go build -o dist/verification/runtime-observer${{ runner.os == 'Windows' && '.exe' || '' }} ./tests/fixtures/runtime-observer
+      - name: Observe actual Runtime image and launch without repairing state
+        run: python tests/runtime_observer_e2e.py --owner-mechanics --observer dist/verification/runtime-observer${{ runner.os == 'Windows' && '.exe' || '' }}
+      - name: Observe real startup failure and same-operation restoration
+        run: python tests/runtime_recovery_observer_e2e.py --owner-mechanics --observer dist/verification/runtime-observer${{ runner.os == 'Windows' && '.exe' || '' }}
+      - name: Logical consent through real MCP stdio and independent owners
+        run: python tests/mcp_consent_e2e.py
+      - name: MCP consent evidence completeness
+        run: python -m unittest tests.test_mcp_consent_evidence
+      - name: Backend selection through native owner mechanics
+        run: python tests/backend_selection_e2e.py --owner-mechanics
+      - name: Principal access through native owner mechanics
+        run: python tests/principal_e2e.py --owner-mechanics
       - run: python -m unittest discover -s tests -p test_ready_url.py
-      - run: python tests/client_auth_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
-      - run: python tests/ipc_bounds_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
-      - run: python tests/ownership_e2e.py
-      - run: python tests/foreground_authorization_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
-      - run: python tests/process_lifetime_e2e.py
-      - run: python tests/job_lifecycle_e2e.py
-      - run: python tests/shell_adapter_e2e.py
-      - run: python tests/execution_input_e2e.py
-      - run: python tests/execution_results_e2e.py
-      - run: python tests/exec_jsonl_e2e.py
+      - name: Client authentication through native owner mechanics
+        run: python tests/client_auth_e2e.py --owner-mechanics
+      - name: IPC limits through native owner mechanics
+        run: python tests/ipc_bounds_e2e.py --owner-mechanics
+      - name: Device ownership through native owner mechanics
+        run: python tests/ownership_e2e.py --owner-mechanics
+      - name: Foreground authorization through native owner mechanics
+        run: python tests/foreground_authorization_e2e.py --owner-mechanics
+      - name: Process lifetime through native owner mechanics
+        run: python tests/process_lifetime_e2e.py --owner-mechanics
+      - name: Job lifecycle through native owner mechanics
+        run: python tests/job_lifecycle_e2e.py --owner-mechanics
+      - name: Shell adapter through native owner mechanics
+        run: python tests/shell_adapter_e2e.py --owner-mechanics
+      - name: Execution input through native owner mechanics
+        run: python tests/execution_input_e2e.py --owner-mechanics
+      - name: Execution results through native owner mechanics
+        run: python tests/execution_results_e2e.py --owner-mechanics
+      - name: JSONL stream through native owner mechanics
+        run: python tests/exec_jsonl_e2e.py --owner-mechanics
       - run: python tests/cli_argument_errors_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
-      - run: python tests/cli_peer_flag_e2e.py --binary dist/release/${{ runner.os == 'Windows' && 'windows-amd64/xallor-remote.exe' || 'linux-amd64/xallor-remote' }}
-      - run: python tests/resource_boundaries_e2e.py
-      - run: python tests/device_settings_e2e.py
-      - run: python tests/identity_transactions_e2e.py
+      - name: Peer flag through native owner mechanics
+        run: python tests/cli_peer_flag_e2e.py --owner-mechanics
+      - name: Resource boundaries through native owner mechanics
+        run: python tests/resource_boundaries_e2e.py --owner-mechanics
+      - name: Device settings through native owner mechanics
+        run: python tests/device_settings_e2e.py --owner-mechanics
+      - name: Identity transactions through native owner mechanics
+        run: python tests/identity_transactions_e2e.py --owner-mechanics
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: cross-layer-${{ matrix.os }}
           path: |
             dist/verification/cross-layer.json
+            dist/verification/mcp-consent.json
+            dist/verification/runtime-observer.json
+            dist/verification/runtime-recovery-observer.json
             dist/verification/backend-selection.json
             dist/verification/principal.json
-              dist/verification/client-auth.json
+            dist/verification/client-auth.json
             dist/verification/ownership.json
             dist/verification/foreground-authorization.json
             dist/verification/process-lifetime.json
@@ -241,17 +306,19 @@ jobs:
             dist/verification/execution-results.json
             dist/verification/exec-jsonl.json
             dist/verification/cli-argument-errors.json
+            dist/verification/cli-peer-flag.json
             dist/verification/cli-literal-arguments.json
             dist/verification/resource-boundaries.json
             dist/verification/device-settings.json
             dist/verification/identity-transactions.json
+            dist/verification/handoff-identity-cancel.json
             dist/release/**/manifest.json
 
   # Single required status for branch protection.
   handoff:
     name: Cursor handoff contract (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -261,18 +328,20 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: go build -o dist/handoff-runtime.exe ./cmd/xallor-remote
+      - name: Build native owner contract fixture (not signed acceptance)
+        run: go test -c -o dist/handoff-owner.test.exe ./internal/cli
       - run: python -m unittest discover -s tests -p test_cursor_session.py
       - run: python -m unittest discover -s tests -p test_file_stamp.py
-      - run: python tests/handoff_e2e.py --binary dist/handoff-runtime.exe
-      - run: python tests/handoff_scope_e2e.py --binary dist/handoff-runtime.exe
-      - run: python tests/handoff_revocation_e2e.py --binary dist/handoff-runtime.exe
-      - run: python tests/handoff_authorization_e2e.py --binary dist/handoff-runtime.exe
+      - run: python tests/handoff_e2e.py --owner-mechanics-binary dist/handoff-owner.test.exe
+      - run: python tests/handoff_scope_e2e.py --owner-mechanics-binary dist/handoff-owner.test.exe
+      - run: python tests/handoff_revocation_e2e.py --owner-mechanics-binary dist/handoff-owner.test.exe
+      - run: python tests/handoff_authorization_e2e.py --owner-mechanics-binary dist/handoff-owner.test.exe
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: handoff-scope-${{ matrix.os }}
           path: |
+            dist/verification/handoff.json
             dist/verification/handoff-scope.json
             dist/verification/handoff-revocation.json
             dist/verification/handoff-authorization.json

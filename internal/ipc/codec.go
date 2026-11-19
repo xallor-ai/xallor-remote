@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"sync"
 	"sync/atomic"
 
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
@@ -30,13 +29,13 @@ type Frame struct {
 
 type Conn struct {
 	c      net.Conn
-	mu     sync.Mutex
+	writes chan struct{}
 	rd     *lineReader
 	closed atomic.Bool
 }
 
 func NewConn(c net.Conn) *Conn {
-	return &Conn{c: c, rd: newLineReader(c)}
+	return &Conn{c: c, rd: newLineReader(c), writes: make(chan struct{}, 1)}
 }
 
 func (c *Conn) ReadRequest() (Request, error) {
@@ -63,21 +62,6 @@ func (c *Conn) ReadFrame() (Frame, error) {
 		return Frame{}, err
 	}
 	return f, nil
-}
-
-func (c *Conn) WriteFrame(f Frame) error {
-	b, err := json.Marshal(f)
-	if err != nil {
-		return err
-	}
-	if len(b) > protocol.MaxIPCMessageBytes {
-		_ = c.Close()
-		return ErrMessageTooLarge
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	_, err = c.c.Write(append(b, '\n'))
-	return err
 }
 
 func (c *Conn) Close() error {
@@ -120,10 +104,7 @@ func Call(c *Conn, id, method string, params any) error {
 	if len(b) > protocol.MaxIPCMessageBytes {
 		return ErrMessageTooLarge
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	_, err = c.c.Write(append(b, '\n'))
-	return err
+	return c.writeBytes(append(b, '\n'))
 }
 
 // FailureMessage preserves the Runtime's actionable explanation, including an

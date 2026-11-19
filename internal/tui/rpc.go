@@ -7,6 +7,7 @@ import (
 
 	"github.com/xallor-ai/xallor-remote/internal/execution"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
+	"github.com/xallor-ai/xallor-remote/internal/runtimehead"
 )
 
 func rpc(method string, params map[string]any) (map[string]any, error) {
@@ -16,6 +17,13 @@ func rpc(method string, params map[string]any) (map[string]any, error) {
 	}
 	defer raw.Close()
 	c := ipc.NewConn(raw)
+	if method != "status" {
+		c, err = runtimehead.Handshake(raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	_ = raw.SetDeadline(time.Now().Add(10 * time.Second))
 	if err := ipc.Call(c, "1", method, params); err != nil {
 		return nil, err
 	}
@@ -37,12 +45,11 @@ func rpc(method string, params map[string]any) (map[string]any, error) {
 }
 
 func streamExec(command string, onOut func(string)) error {
-	raw, err := ipc.Dial(2 * time.Second)
+	c, err := runtimehead.Dial(2 * time.Second)
 	if err != nil {
-		return fmt.Errorf("Runtime 未运行，请先 xallor-remote start 或 ensure")
+		return err
 	}
-	defer raw.Close()
-	c := ipc.NewConn(raw)
+	defer c.Close()
 	if err := ipc.Call(c, "e1", "exec", execution.Request{Script: &execution.Script{Text: command}}); err != nil {
 		return err
 	}

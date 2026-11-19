@@ -39,29 +39,55 @@ func (h *Hub) RegisterDevice(id, secret string, inbound bool, conn Sender) strin
 		}
 	}
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if ctx.Err() != nil {
+		h.mu.Unlock()
 		return protocol.RelayError
 	}
 	if h.store == nil {
 		if old := h.devices[id]; old != nil {
 			if old.record.SecretHash != hash {
+				h.mu.Unlock()
 				return protocol.Unauthorized
 			}
 			record = old.record
 		}
+	}
+	// Authentication succeeded. Fence the old in-memory incarnation before
+	// its durable epoch changes; failed rotation must not restore old routing.
+	if old := h.devices[id]; old != nil {
+		previous := old.conn
+		h.retireDeviceLocked(id, old)
+		if previous != nil && previous != conn {
+			previous.Close()
+		}
+	}
+	h.mu.Unlock()
+	target, err := h.activateSessionTarget(ctx, record.UID)
+	if err != nil {
+		return identityErrorCode(err)
+	}
+	published := false
+	defer func() {
+		if !published {
+			_ = h.retireSessionTarget(target)
+		}
+	}()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if ctx.Err() != nil {
+		return protocol.RelayError
 	}
 	// Queue the greeting before publishing a routable connection, so an invoke
 	// racing with registration can never be the peer's first received frame.
 	if err := conn.Enqueue(protocol.Message{Type: protocol.TypeHelloOK, Role: protocol.RoleDevice}); err != nil {
 		return protocol.RelayError
 	}
-	if old := h.devices[id]; old != nil && old.conn != nil && old.conn != conn {
-		h.failDeviceLocked(id, protocol.DeviceOffline)
-		old.conn.Close()
+	if target.Valid() {
+		record.SessionEpoch, record.SessionEpochActive = target.Epoch, true
 	}
 	h.access[id] = record.Binding()
-	h.devices[id] = &deviceSlot{conn: conn, record: record, online: true}
+	h.devices[id] = &deviceSlot{conn: conn, record: record, online: true, sessionTarget: target, sessionConnection: conn}
+	published = true
 	return ""
 }
 

@@ -1,6 +1,5 @@
 """Handoff state/dedupe/recovery over a real Relay and two Runtimes."""
 import argparse
-import ctypes
 import hashlib
 import json
 import os
@@ -9,18 +8,34 @@ import subprocess
 import sys
 import time
 import uuid
-from fixtures.runtime_cluster import Cluster
+from fixtures.mechanics_cli import cluster_from_options, completed_report
+from fixtures.handoff_cli import add_handoff_options, prepare_agent
+from fixtures.process_ref import ProcessRef
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-parser = argparse.ArgumentParser()
-parser.add_argument("--binary", required=True)
-parser.add_argument("--go", default="go")
-args = parser.parse_args()
 repo = Path(__file__).resolve().parents[1]
-cluster = Cluster(args.binary)
+parser = argparse.ArgumentParser()
+add_handoff_options(parser)
+parser.add_argument("--output", default=str(repo/"dist/verification/handoff.json"))
+args = parser.parse_args()
+output = Path(args.output).resolve()
+cluster = cluster_from_options(args, output, __file__)
+references, results = [], []
+
+def passed(name):
+    results.append({"name":name,"status":"pass"})
+    print(name,flush=True)
+
 try:
     cluster.start()
     controller, target = cluster.add("controller"), cluster.add("target")
+    owners = {name: json.loads(cluster.cli(name, "status", "--json").stdout)["build"]
+              for name in ("controller", "target")}
+    assert owners["controller"]["pid"] != owners["target"]["pid"]
+    for owner in owners.values():
+        assert owner["runtime_owner_protocol"] == 1 and owner["launch_id"] and owner["activation_id"]
+    cluster.evidence["runtime_owners_before"] = owners
+    cluster.evidence["authorization_mode"] = "shared grant; logical consent acceptance is separate"
     cluster.cli("target", "grant", "issue")
     grant = cluster.grant("target")
     cluster.cli("controller", "peer", "add", "--device", target, "--grant", grant)
@@ -28,17 +43,22 @@ try:
     def git(*values):
         return subprocess.run(["git", "-C", str(workspace), *values], check=True, capture_output=True,
                               encoding="utf-8", errors="replace").stdout.strip()
-    git("init", "--quiet")
-    (workspace / "review.md").write_text("A harmless review fixture.\n", encoding="utf-8")
-    git("add", "review.md")
-    git("-c", "user.name=Xallor Test", "-c", "user.email=test@example.invalid", "commit", "--quiet", "-m", "fixture")
+    # Reuse an existing commit in an owned clone; never create a commit or
+    # alter the source checkout merely to obtain a clean workspace fixture.
+    source_revision = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                                     check=True, capture_output=True, encoding="utf-8", errors="replace").stdout.strip()
+    subprocess.run(["git", "clone", "--quiet", "--no-hardlinks", "--no-checkout",
+                    "--single-branch", "--no-tags", str(repo), str(workspace)],
+                   check=True, capture_output=True, encoding="utf-8", errors="replace", timeout=180)
+    git("checkout", "--quiet", "--detach", source_revision)
     revision = git("rev-parse", "HEAD")
-    fake = cluster.root / ("fixture-cursor.exe" if os.name == "nt" else "fixture-cursor")
-    subprocess.run([args.go, "build", "-o", str(fake), "./tests/fixtures/cursor-cli"], cwd=repo, check=True)
+    assert revision == source_revision and git("status", "--porcelain") == ""
+    cluster.evidence["workspace_fixture"] = {"mode": "clone-existing-commit", "revision": revision}
+    fake = prepare_agent(cluster, args)
     cluster.cli("target", "handoff", "configure", "--executable", str(fake))
     base = dict(workspace=str(workspace), revision=revision, agent="cursor", session_id=str(uuid.uuid4()),
                 mode="ask", prompt="Review the fixture.", trust_workspace=True, timeout_seconds=30,
-                attachments=[dict(path="review.md", sha256=hashlib.sha256((workspace / "review.md").read_bytes()).hexdigest())])
+                attachments=[dict(path="README.md", sha256=hashlib.sha256((workspace / "README.md").read_bytes()).hexdigest())])
     def submit(value, check=True):
         request = cluster.root / "request.json"
         request.write_text(json.dumps(value), encoding="utf-8")
@@ -56,35 +76,17 @@ try:
             time.sleep(.1)
     def count():
         return len((cluster.root / "target" / "fixture-agent-count").read_text().splitlines())
-    def process_alive(pid):
-        if os.name == "nt":
-            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-            kernel.OpenProcess.restype = ctypes.c_void_p
-            kernel.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
-            kernel.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
-            kernel.CloseHandle.argtypes = [ctypes.c_void_p]
-            handle = kernel.OpenProcess(0x100000, 0, pid)
-            if not handle:
-                assert ctypes.get_last_error() == 87, "cannot inspect fixture process"
-                return False
-            try:
-                return kernel.WaitForSingleObject(handle, 0) == 258
-            finally:
-                kernel.CloseHandle(handle)
-        try:
-            os.kill(pid, 0)
-            return True
-        except ProcessLookupError:
-            return False
     request = dict(base, request_id="one")
     assert submit(request)["state"] == "received"
     result = wait("one", {"completed", "failed", "unknown"})
     assert result["state"] == "completed" and result["result"] == "handoff-fixture-ok", result
+    assert result["session_id"] == base["session_id"] and result["request_id"] == "one", result
+    assert Path(result["workspace"]).resolve() == workspace.resolve() and result["revision"] == revision, result
     assert count() == 1
     assert submit(request)["state"] == "completed" and count() == 1
     assert submit(dict(request, prompt="changed"), check=False).returncode != 0
     assert count() == 1
-    print("PASS exact session receipt and duplicate/conflict protection")
+    passed("exact_session_receipt_and_duplicate_conflict_protection")
 
     for request_id, marker, state, code in [
         ("wrong-session", "TEST_WRONG_SESSION", "unknown", "session_mismatch"),
@@ -102,13 +104,13 @@ try:
             assert len(result.get("result", "").encode("utf-8")) <= 65536
         else:
             assert result["truncated"] and len(result["result"].encode("utf-8")) <= 65536
-    print("PASS wrong session, missing terminal, bounded Unicode result")
+    passed("wrong_session_missing_terminal_and_bounded_unicode_result")
 
     for mode in ("plan", "agent"):
         submit(dict(base, request_id="mode-" + mode, mode=mode, prompt="TEST_MODE_" + mode.upper()))
         assert wait("mode-" + mode, {"completed", "failed", "unknown"})["state"] == "completed"
     assert submit(dict(base, request_id="no-mode", mode=""), check=False).returncode != 0
-    print("PASS explicit mode forwarding; no implicit agent mode")
+    passed("explicit_mode_forwarding_without_implicit_agent_mode")
 
     # The request budget includes five native preflight launches. Leave enough
     # time to observe the running child on loaded Windows hosts, then still
@@ -118,10 +120,13 @@ try:
     submit(dict(base, request_id="timeout", prompt="TEST_WAIT", timeout_seconds=timeout_seconds))
     assert wait("timeout", {"running"})["state"] == "running"
     timed_pid = int((cluster.root / "target" / "fixture-agent-pid").read_text())
+    timed_ref = ProcessRef(timed_pid)
+    references.append(timed_ref)
+    assert timed_ref.alive(), "deadline fixture exited before observation"
     assert wait("timeout", {"unknown", "completed", "failed"})["code"] == "interrupted"
     assert time.monotonic() - timeout_started < timeout_seconds + 10, "deadline did not bound the real CLI"
-    assert not process_alive(timed_pid), "owned CLI survived timeout"
-    print("PASS deadline returns unknown and reclaims owned CLI")
+    assert not timed_ref.alive(), "owned CLI survived timeout"
+    passed("deadline_returns_unknown_and_reclaims_owned_cli")
 
     previous = count()
     submit(dict(base, request_id="wrong-revision", revision="0" * 40))
@@ -130,14 +135,14 @@ try:
     submit(dict(base, request_id="bad-attachment", attachments=[dict(path="../outside", sha256="0" * 64)]))
     assert wait("bad-attachment", {"failed"})["code"] == "attachment_outside_workspace"
     assert count() == previous
-    (workspace / "review.md").write_text("dirty", encoding="utf-8")
+    (workspace / "README.md").write_text("dirty", encoding="utf-8")
     submit(dict(base, request_id="dirty-workspace"))
     assert wait("dirty-workspace", {"failed"})["code"] == "workspace_dirty"
-    git("checkout", "--", "review.md")
+    git("checkout", "--", "README.md")
     submit(dict(base, request_id="directory-attachment", attachments=[dict(path=".git", sha256="0" * 64)]))
     assert wait("directory-attachment", {"failed"})["code"] == "attachment_unavailable"
     assert count() == previous
-    print("PASS repository/attachment binding before CLI launch")
+    passed("repository_and_attachment_binding_precede_cli_launch")
 
     running = dict(base, request_id="restart", prompt="TEST_WAIT")
     submit(running)
@@ -145,9 +150,16 @@ try:
     assert submit(dict(running, request_id="concurrent"), check=False).returncode != 0
     previous = count()
     pid = int((cluster.root / "target" / "fixture-agent-pid").read_text())
+    running_ref = ProcessRef(pid)
+    references.append(running_ref)
+    assert running_ref.alive(), "restart fixture exited before stop"
     cluster.stop("target")
-    assert not process_alive(pid), "owned CLI survived Runtime stop"
+    assert not running_ref.alive(), "owned CLI survived Runtime stop"
     cluster.cli("target", "ensure")
+    restarted = json.loads(cluster.cli("target", "status", "--json").stdout)["build"]
+    assert restarted["launch_id"] and restarted["launch_id"] != owners["target"]["launch_id"]
+    assert restarted["sha256"] == owners["target"]["sha256"]
+    cluster.evidence["target_owner_after_restart"] = restarted
     deadline = time.monotonic() + 15
     while True:
         ready = cluster.cli("controller", "doctor", "--device", target, "--json", check=False)
@@ -155,8 +167,14 @@ try:
             break
         assert time.monotonic() < deadline
         time.sleep(.1)
-    assert get("restart")["state"] == "unknown"
+    recovered = get("restart")
+    assert recovered["state"] == "unknown" and recovered["session_id"] == base["session_id"] and recovered["request_id"] == "restart"
     assert submit(running)["state"] == "unknown" and count() == previous
-    print("PASS Runtime stop/restart returns unknown without replay")
+    passed("runtime_stop_restart_returns_unknown_without_replay")
 finally:
-    cluster.close()
+    try:
+        for reference in references:
+            reference.close()
+    finally:
+        cluster.close()
+output.write_text(json.dumps(completed_report(cluster,results),indent=2),encoding="utf-8")

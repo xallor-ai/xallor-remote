@@ -52,10 +52,19 @@ Cursor 等 spawn 的短驻 stdio 进程：全局安装后的 `xallor-remote-mcp`
 | `remote.device_info` | 单台；只配一台可省 id；返回目标 `build`、`shell`、`execution_modes`、`execution_backend`、`operation_policy`、`device_lifecycle` 与 `entitlement_contract` |
 | `remote.exec` | **流式**；script / program 二选一，cwd 默认对方 workspace；输入见 [protocol.md](protocol.md) |
 | `remote.exec_cancel` | exec_id，幂等 |
+| `remote.session_resume` | 使用一次性 resume capability 恢复已批准 session，并接收轮换后的 capability |
+| `remote.device_code_revoke` | WIP：通过本机 Runtime 的 owner 管理通道撤销本机逻辑授权码 |
+| `remote.device_code_rotate` | WIP：轮换本机逻辑授权码；secret 只从 `XALLOR_REMOTE_CODE_SECRET` 读取，结果只含原替代码元数据 |
 | `remote.read` / `remote.write` | 路径原样传递 |
 | `remote.processes` | 只读 |
 
 不提供签发 / 轮换 / 吊销 grant、不开入站。`remote.exec_cancel` 只能取消本 MCP 会话经 Runtime 发起的 exec（最终仍受 protocol：按 client 连接隔离）。
+
+逻辑授权码管理与上述 v0 grant 不同，不能用于管理一个仅持远端 grant 访问的设备。
+Relay 在写事务内复验当前 owner，Runtime 验证轮换意图和设备归属后剥除内部摘要；
+工具结果不回显 secret，也不承诺秘密“只返回一次”。同意图回执可能表示原替代码已
+消费、撤销或到期，不能把它当作新执行权限；未知结果不得自动重试。当前仍未完成
+独立 MCP/Runtime 服务和发行包全链路验收。
 
 MCP 不执行浏览器 OIDC/SSO，也不把 provider token 当作 grant 或 tenant 授权；未来身份登录必须由管理面完成 issuer/audience/JWKS 验证和本地 membership 映射后，再由 Relay 按现有 account/access 规则复验。
 
@@ -65,7 +74,7 @@ MCP 只连接本机 Runtime IPC；不持有 Relay WSS、不调用公开管理 HT
 
 `usage_event_contract` 只是隐私最小化字段、幂等和 unknown 规则；MCP 不把本机 `activity.json` 当防篡改审计或直接账单，也不暴露命令、路径、输出、凭据或 IP。
 
-`write`：整文件覆盖、≤1 MiB、原子替换，见 [protocol.md](protocol.md) / [runtime.md](runtime.md)。`read` 的 `head`/`tail` 按行，`offset`/`limit` 按字节；默认 64 KiB。截断时 `truncated=true`，MCP 附一句「不是全文」。`exec` 结果含 `status`、`exit_code`、`duration_ms`、`truncated`、`exec_id`。非零退出、取消、超时、结果未确认 → `isError: true`；中断仍保留已接收的输出。确定性规则见 [ipc.md](ipc.md)。
+`write`：整文件覆盖、≤1 MiB、原子替换，见 [protocol.md](protocol.md) / [runtime.md](runtime.md)。`read` 的 `head`/`tail` 按行，`offset`/`limit` 按字节；默认 64 KiB。截断时 `truncated=true`，MCP 附一句「不是全文」。`device_info`、`read`、`write`、`processes` 和 `exec` 都可带 `session_id`，复用 `remote.session_request` 返回的已批准逻辑会话；scope、generation、expiry 仍由 Relay 复验。`exec` 结果含 `status`、`exit_code`、`duration_ms`、`truncated`、`exec_id`。非零退出、取消、超时、结果未确认 → `isError: true`；中断仍保留已接收的输出。确定性规则见 [ipc.md](ipc.md)。
 
 ---
 

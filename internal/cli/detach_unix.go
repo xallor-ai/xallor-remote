@@ -7,8 +7,6 @@ import (
 	"syscall"
 )
 
-func detach(cmd *exec.Cmd) error {
+func configureDetached(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	return cmd.Start()
 }
-

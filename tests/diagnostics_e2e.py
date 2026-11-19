@@ -16,8 +16,13 @@ def main():
     p = argparse.ArgumentParser()
     platform = "windows-amd64/xallor-remote.exe" if os.name == "nt" else "linux-amd64/xallor-remote"
     p.add_argument("--binary", default=str(ROOT / "dist/release" / platform))
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--owner-mechanics", action="store_true", help="Explicit _test Runtime and controlled verifier; not signature acceptance")
+    mode.add_argument("--owner-mechanics-binary", help="Explicit trusted native _test fixture for offline execution; not signature acceptance")
+    p.add_argument("--go", default="go")
     args = p.parse_args()
-    cluster = Cluster(args.binary)
+    cluster = Cluster(args.binary, mechanics_go=args.go if args.owner_mechanics else None,
+                      mechanics_binary=args.owner_mechanics_binary)
     results = []
 
     def diagnose(name, device=""):
@@ -77,7 +82,7 @@ def main():
         cluster.close()
     out = ROOT / "dist/verification/diagnostics.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    out.write_text(json.dumps({"evidence":cluster.evidence,"cleanup_complete":True,"results":results}, indent=2), encoding="utf-8")
     print(json.dumps(results), flush=True)
 
 

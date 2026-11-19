@@ -55,6 +55,27 @@ func TestReadExec_should_emitOneTerminal_and_preserveCertainty(t *testing.T) {
 	}
 }
 
+// A shell-unavailable response may be preceded by an empty stdout observation;
+// empty data is metadata, not command output and must not make the result unknown.
+func TestReadExec_should_acceptEmptyStdoutObservation_beforeTerminal(t *testing.T) {
+	frames := []ipc.Frame{
+		ipc.Event("e1", "stdout", ""),
+		ipc.OK("e1", map[string]any{"status": "completed", "exit_code": 0}),
+	}
+	var events []ipc.ExecEvent
+	err := ipc.ReadExec("e1", func() (ipc.Frame, error) {
+		frame := frames[0]
+		frames = frames[1:]
+		return frame, nil
+	}, func(event ipc.ExecEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil || len(events) != 2 || events[0].Type != "stdout" || events[0].Data != "" || events[1].Type != "exit" || events[1].Status != "completed" || events[1].ExitCode == nil || *events[1].ExitCode != 0 {
+		t.Fatalf("empty stdout observation was not preserved: err=%v events=%+v", err, events)
+	}
+}
+
 // A broken output consumer must stop reading immediately rather than swallowing
 // the error or appending another terminal to a partially written JSON line.
 func TestReadExec_should_stop_when_eventSinkFails(t *testing.T) {

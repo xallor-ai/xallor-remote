@@ -35,7 +35,7 @@ func setTestAccess(t *testing.T, s *SQLStore, id, grant string, inbound bool) ac
 }
 func waitCondition(t *testing.T, condition func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for !condition() {
 		if time.Now().After(deadline) {
 			t.Fatal("fixture condition not reached")

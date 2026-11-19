@@ -76,6 +76,21 @@ func (s *Service) Resolve(ctx context.Context, expected Device, actor principal.
 	return result, nil
 }
 
+// ResolveIn applies the same access policy to an existing transaction reader.
+// It opens no additional transaction, allowing atomic authority checks and
+// session/capability changes without waiting on the same SQL pool twice.
+func ResolveIn(ctx context.Context, reader Reader, expected Device, actor principal.Identity) (Authorization, error) {
+	s := &Service{now: time.Now}
+	result, err := s.resolve(ctx, reader, expected.UID, actor)
+	if err != nil {
+		return Authorization{}, err
+	}
+	if result.Binding != expected.Binding() {
+		return Authorization{}, ErrDenied
+	}
+	return result, nil
+}
+
 func (s *Service) Verify(ctx context.Context, actor principal.Identity, expected Authorization, operation string) error {
 	return s.store.ReadAccess(ctx, func(reader Reader) error {
 		current, err := s.resolve(ctx, reader, expected.Binding.DeviceUID, actor)

@@ -29,12 +29,6 @@ func TestPrincipalWire_should_denyExpiredCaller_whenDatabaseWaitCrossesDeadline(
 			if err != nil {
 				t.Fatal(err)
 			}
-			// Keep the initial handshake and later verification bound to this same
-			// expiry, so rejection cannot be explained by changed identity fields.
-			a.ExpiresAt = time.Now().Unix() + 4
-			if _, err := s.db.ExecContext(ctx, `UPDATE principal_credentials SET expires_at=? WHERE id=?`, a.ExpiresAt, a.CredentialID); err != nil {
-				t.Fatal(err)
-			}
 			h := relay.NewHub(s, principal.NewService(s), access.NewService(s), nil, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
 			srv := httptest.NewTLSServer(relay.Handler(h, nil))
 			defer srv.Close()
@@ -75,6 +69,12 @@ func TestPrincipalWire_should_denyExpiredCaller_whenDatabaseWaitCrossesDeadline(
 					t.Fatal("initial account hello failed")
 				}
 			}
+			// Start the short expiry immediately before the request under test;
+			// setup/TLS time must not consume the deadline budget.
+			a.ExpiresAt = time.Now().Unix() + 4
+			if _, err := s.db.ExecContext(ctx, `UPDATE principal_credentials SET expires_at=? WHERE id=?`, a.ExpiresAt, a.CredentialID); err != nil {
+				t.Fatal(err)
+			}
 			held, err := s.db.Conn(ctx)
 			if err != nil {
 				t.Fatal(err)
@@ -91,6 +91,9 @@ func TestPrincipalWire_should_denyExpiredCaller_whenDatabaseWaitCrossesDeadline(
 				t.Fatal("request did not reach storage before deadline")
 			}
 			time.Sleep(time.Until(time.Unix(a.ExpiresAt, 0)) + 20*time.Millisecond)
+			if releasedAt := time.Now().Unix(); releasedAt < a.ExpiresAt {
+				t.Fatalf("fixture released pool before wall-clock expiry: release=%d expiry=%d", releasedAt, a.ExpiresAt)
+			}
 			_ = held.Close()
 			denied := read(client)
 			if denied.Code != protocol.Unauthorized {

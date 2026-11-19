@@ -10,11 +10,39 @@ SSOT：命名管道 / Unix socket 上的报文与 ensure。路径与权限见 [d
 | --- | --- |
 | Windows | `\\.\pipe\XallorRemote` |
 | Linux / macOS | `$XDG_RUNTIME_DIR/xallor-remote.sock`，否则 `~/.config/xallor-remote/ipc.sock` |
-| 权限 | 仅当前用户（Unix `0600`；Windows 管道 DACL 限本用户） |
+| 权限 | 仅当前用户（Unix `0600`；Windows 管道由 Runtime 使用受保护的当前 TokenUser DACL 创建） |
 | 帧 | **一行一条压缩 JSON**（NDJSON）。对象内部换行必须转义，禁止 pretty-print |
 | 禁止 | 在 localhost 再开一个随机 TCP 端口当「更好写」 |
 
 同一用户多头可并行连。连不上 = Runtime 没起来，走 §5 ensure，不要改连 Relay。
+
+Windows 的监听器在创建普通 IPC 和 lifecycle 管道时都会构造受保护的显式
+单 SID DACL；获取当前用户 SID 或安全描述符失败则拒绝监听，不回退到系统默认
+命名管道 ACL。这个边界保证的是本机监听端点的访问权限，不等同于客户端已经
+完成 Runtime 服务端身份认证。事务交接另行使用内核 peer PID、进程镜像和持久
+事务绑定做认证；普通 head 的服务端身份校验仍须使用公开、可验证的 OS 机制，
+不能依赖 Node `net.Socket` 的私有句柄字段。
+
+版本交接进程在旧 owner 退出期间提供固定只读生命周期端点：Windows 为当前
+Runtime 管道名加 `-lifecycle`；Unix 为同目录 `txn.sock`（XDG runtime 默认路径使用
+`xallor-txn.sock`）。它只处理 `runtime.operation.status` 与只读
+`runtime.operation.reconcile`，不接受执行、安装或回滚请求。
+只有持有 profile 生命周期锁的已认证事务进程可以监听；关闭时终止并等待所有查询连接。
+新 owner 启动后可在普通 IPC 查询同一持久事务；两处返回相同记录，不从端点存在推断成功。
+无 IPC 时的 `runtime status` 仍可只读观察 active 记录；unfinished 会阻止自动 bootstrap。
+字段及结果语义见 [protocol.md](protocol.md)。
+
+已有 Runtime 时，CLI `runtime install` / `runtime rollback` 在同一条通过 ready
+握手的连接上只提交一次，显示事务 ID，随后只查询原 ID。连接未知或握手拒绝不能
+退回本地安装。CLI `runtime status --operation <id>` 提供离线只读回执；终态是否
+释放事务写锁由 settled 单独说明。明确无 owner 时，完整空选择的首次安装只执行一次
+受信源引导；已有完整 Current 的冷升级／回滚先启动原选定 owner，再经 IPC 提交变更。
+它们受同一生命周期锁和“锁内再次确认无 owner”的限制；并发出现的其他选择不能被
+误报为请求 bundle 已安装。无 unfinished journal 的 legacy pending 回滚由受信
+恢复角色执行：先重新验证原 Current，首次初始化失败且无 Current 时仅允许原 Pending
+映像清除失败选择；都必须确认无服务、无运行锁及未释放作业。CLI 等待该次恢复子进程
+退出后只读查询同一事务，不直接执行回滚状态机。已有 unfinished journal 的显式核对与
+恢复尚未完成，继续拒绝自动重放，不应据此宣称整体接管验收已全部完成。
 
 ---
 
@@ -72,13 +100,20 @@ SSOT：命名管道 / Unix socket 上的报文与 ensure。路径与权限见 [d
 | `config.get` / `config.set` | 人侧头 | get 返回 `{relay_url,workspace,shell,execution_backend}`，未配置 shell 显示 auto，backend 默认 native_user；set 接受这四项，省略或空值不更新；backend 选择见 [protocol.md](protocol.md)，不支持时整项更新返回 backend_unavailable，错误不改变活动配置 |
 | `account.set` | 人侧头 | `{token:string}`；必须明确提供，空字符串表示清除；返回 `{configured:bool}` |
 | `account.status` | 人侧头 | 返回 `{configured:bool}`，不返回凭据或宣称已在线认证 |
-| `device.access` | 人侧头 | 归属/分享管理参数见协议；凭据由 Runtime 获取，头不得传入 token 或设备密钥 |
+| `device.access` | 本机管理头 | 归属/分享及 WIP 授权码管理参数、按动作区分的结果见协议；账号凭据由 Runtime 获取，头不得传入 token 或设备密钥 |
 | `approval.subscribe` | 人侧头 | 注册为审批 UI；断开即取消 |
-| `approval.respond` | 人侧头 | 独立请求 ID；`{approval_id,allow:bool}`，同一审批最多确认一次 |
-| `approval.list` | 人侧头 | 当前待审批 `{pending:[{id,exec_id,preview,created}]}`；只读，不代替订阅 |
+| `approval.respond` | 人侧头 | 独立请求 ID；`{approval_id,request_sha256,allow:bool}`，摘要不匹配或重复确认均拒绝 |
+| `approval.list` | 人侧头 | 当前待审批的完整不可变 `details`、`request_sha256`、`created`、`expires`；只读，不代替订阅 |
 | `audit.list` | 人侧头 | 本机最近 500 条操作元数据 `{entries:[...]}`；读取失败明确报错 |
+| `runtime.ensure` | 任一头 | 请求唯一 Runtime owner 确保当前 profile 的已验证版本就绪；不返回可执行路径 |
+| `runtime.status` | 任一头 | 读取 Runtime owner 的 ready/pending/unknown 状态、版本、摘要、PID、activation_id 和 launch_id |
 
-MCP **可以**调 `status` / `peer.*` / 下面远程方法；**不要**调 grant/inbound/revoke/account.set/device.access（包里不实现）。Runtime 不做「MCP 指纹鉴权」——防模型靠 tool 面，不靠 IPC 分角色。MCP 连接**不算**审批 UI。
+MCP 提供 `status` / `peer.*` / 下面远程方法；不提供 grant/inbound/revoke/account.set
+或设备归属/分享管理工具。当前 WIP 另有 `remote.device_code_revoke` 和
+`remote.device_code_rotate`，只把对应 code action 送到 `device.access`，仍由 Relay
+检查本设备 owner 身份。它们不是通用 device.access 工具，也不能输入账号 token。
+Runtime 不做「MCP 指纹鉴权」——工具暴露面与 IPC 身份隔离是两件事。
+MCP 连接**不算**审批 UI；这些管理工具尚未完成发行包和独立进程验收。
 
 `device.access` 经当前 device 出站连接发送，校验连接 Relay 地址与当前凭据绑定地址一致；请求和响应关联到该连接实例。最多 16 个等待 Relay 结果的请求，每次 5 秒期限包含写入排队；断线/超时返回结果未确认，不自动重放管理动作。响应来自已认证 Relay，成功状态直接回到调用头。`peer.add` 的 grant 可以省略，供账号授权访问；添加 peer 不表示已通过远程授权验证。
 
@@ -100,12 +135,13 @@ CLI `doctor [--device ID] [--json]` 不调用 ensure，也不创建数据目录�
 
 | method | 对应 |
 | --- | --- |
-| `exec` | invoke op=exec；params 为 [protocol.md](protocol.md) 的 script/program 输入，另带 device_id |
+| `exec` | invoke op=exec；params 为 [protocol.md](protocol.md) 的 script/program 输入，另带 device_id；可带已批准的 `session_id` |
 | `exec.cancel` | 仅取消 **这条 IPC 连接** 发起的 exec（Runtime 再映射到自己的 client 连接） |
-| `read` / `write` / `processes` / `info` | 对应 op |
-| `handoff.submit` / `handoff.get` | 对应 op，`params.device_id` 必填，载荷见 [protocol.md](protocol.md#cursor-交接载荷与回执)。非流式 `result.content` 为 JSON 回执/错误，外层成功仅表示提交或查询已返回 |
+| `read` / `write` / `processes` / `info` | 对应 op；可带已批准的 `session_id` |
+| `handoff.submit` / `handoff.get` | 对应 op，`params.device_id` 必填；可选 `params.session_id` 绑定已批准的逻辑授权，和载荷中 Cursor 会话不同。载荷见 [protocol.md](protocol.md#cursor-交接载荷与回执)。非流式 `result.content` 为 JSON 回执/错误，外层成功仅表示提交或查询已返回 |
 
 `exec` / `read` 等若本机配了多 peer，`params.device_id` 必填；只有一个 peer 时可省。
+`session_id` 由 `session.request` 成功结果返回，Runtime 会把它绑定到每个后续 invoke；调用方不能自行扩展其 scope 或有效期。
 
 ---
 
@@ -114,10 +150,14 @@ CLI `doctor [--device ID] [--json]` 不调用 ensure，也不创建数据目录�
 被控机上的高危命令：Runtime 向 **当时连着的人侧头** 发：
 
 ```json
-{"id":"a9","event":"approval","params":{"exec_id":"ex_…","preview":"rm -rf …"}}
+{"id":"a9","event":"approval","params":{"approval_id":"a9","exec_id":"ex_…","request_sha256":"…64 hex…","created":"…","expires":"…","details":{"kind":"script","script":"Restart-Computer","shell":"powershell","executable":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","args":["…"],"cwd":"C:\\workspace","runtime":{"pid":1234,"sha256":"…64 hex…"}}}}
 ```
 
-头以独立请求 ID 发送 `approval.respond`，参数为 `{approval_id:"a9",allow:true|false}`。审批 ID 与 IPC 请求 ID 不混用；重复确认返回 unknown_exec。
+头以独立请求 ID 发送 `approval.respond`，参数为 `{approval_id:"a9",request_sha256:"…",allow:true|false}`。Runtime 对完整 details 做摘要绑定；详情内容改变、摘要不匹配、过期或重复确认都返回拒绝。审批 ID 与 IPC 请求 ID 不混用；批准不会重新解释或重建命令。
+
+执行审批与逻辑会话审批的事件投递都受同一总审批期限约束；每次写入的两秒预算包含
+排队和传输。写入、取消回调和 deadline 清理按连接串行，不能由后一条审批覆盖或清除
+前一条的期限；执行取消会中断阻塞投递，不能让不读取事件的头拖住 Runtime 停止。
 
 v0：**发出后 T 秒内没有任何头订阅/应答 → `policy_deny` 或 `approval_timeout`**（与 [runtime.md](runtime.md) 一致）。MCP 连接不算「有 UI」。无头机不要等。
 
@@ -125,16 +165,50 @@ v0：**发出后 T 秒内没有任何头订阅/应答 → `policy_deny` 或 `app
 
 ## 5. ensure
 
+### Runtime owner contract
+
+MCP、CLI、TUI、GUI 都是本机 Runtime 的头；它们不各自选择、验签或启动 Runtime。`runtime.ensure` 是唯一的自动确保入口，显式 `runtime install` / `runtime rollback` 仍由 Runtime owner 的同一激活状态机执行。
+
+请求参数：
+
+```json
+{"id":"r1","method":"runtime.ensure","params":{"required_profile_format":1,"required_protocol":1}}
+```
+
+`required_profile_format` 与 `required_protocol` 均为必填整数，缺失、null 或与运行版本不符时拒绝。成功结果中的 `runtime` 至少包含 `state:"ready"`、`version`、`revision`、`protocol`、`profile_format`、`sha256`、`pid` 和不透明的 `activation_id`、`launch_id`。头必须检查完整身份和所需格式，不能只凭 `ok:true` 放行。摘要是 64 位小写十六进制，两个 ID 都是 32 位小写十六进制，PID 是正整数。结果不返回可供头启动程序的路径；这些身份字段是当前观察，不是可复用的执行授权。
+
+`runtime.status` 成功表示查询完成，不代表 Runtime 就绪。其 `result.runtime.state` 为 `ready`、`pending`、`unverified` 或 `unknown`；非 ready 时附 `code`，不返回已确认的 activation/launch ID。`runtime.ensure` 对同样的非 ready 状态返回失败信封。安装记录缺失、来源证明失败、运行映像与选定副本不一致、验证期间记录发生变化时都不能报 ready；pending 不被自动修复。activation ID 来自稳定且已验证的安装选择，不从进程路径或 Linux memfd 名称推断。launch ID 还必须与该服务进程启动时从已认证继承许可中保留的 ID 一致；不能把磁盘上后来写入的同制品新启动 ID 当成本进程身份。此观察不自动结束或重放未知事务。
+
+来源验证失败、profile/protocol 不匹配、pending 恢复、启动失败或清理未确认分别返回结构化错误 `runtime_source_unverified`、`runtime_profile_mismatch`、`runtime_pending_recovery`、`runtime_start_failed`、`runtime_cleanup_uncertain`。头收到未知结果时只查询 `runtime.status`，不重放 ensure，不自行换另一个候选。
+
+Owner 在返回 ready 前必须把已验证的 binary 和原始 manifest 放入自己的 activation snapshot，重查摘要、构建身份、PID 和 IPC readiness，并保留 snapshot 到进程退出和清理确认。`runtime.ensure` 不会因为某个头关闭窗口而杀掉 Runtime；Runtime 的所有权和头的 IPC 会话分离。
+
 头（尤其 MCP）启动：
 
 ```text
 1. 试连 IPC
-2. 通 → 发 status，版本不匹配则报错退出（见 [stack.md](stack.md)）
-3. 不通 → 按顺序找 `xallor-remote`：`XALLOR_REMOTE_BIN` → 已校验的托管制品 → npm 包内 `vendor/<platform>/` → `PATH` → 数据目录 `bin/`
-4. 以隐藏窗口/脱离终端方式拉起 `xallor-remote start`；托管制品状态不完整或校验失败时拒绝回退到其它版本
-5. 轮询 IPC，默认 10s，失败给人话（找不到二进制、权限、杀软）
-6. 通了之后：若环境变量带 DEVICE_ID+GRANT，peer.add 收编（幂等）
+2. 通 → 发 runtime.ensure；只有完整、格式匹配的 ready 身份才允许继续
+3. 仅在明确确认端点不存在/拒绝连接时，经统一可信引导入口启动一次来源验证过的私有映像；权限错误或超时不等于没有 owner
+4. 引导结果不确定时只观察状态，不重放启动、不换候选；pending/来源失败均交付明确错误
+5. IPC 可连接后仍需完成 owner 身份和来源验证；它不等于 ready
+6. ready 之后：若环境变量带 DEVICE_ID+GRANT，peer.add 收编（幂等）
 ```
+
+同一 MCP 进程内的并发首次调用共享一次连接和 ready 验证；未验证完成的连接
+不交给工具使用。断线后新连接必须重新准入，不重放业务请求。该 MCP 进程最多
+调用一次首次引导，成功或失败结果都保留：后续调用可以重新观察已由用户恢复的
+IPC，但不能因端点仍缺失而再次启动候选。恢复服务后无需缓存旧 ready 结果。
+
+MCP 对 `runtime.ensure` 及准入后的本机 `status` 观察设置 65 秒应答期限，
+覆盖 Runtime 的 60 秒来源观察预算。已连接但未应答不代表 owner 不存在；
+超时关闭该连接、报告状态未确认，不触发引导重放。观察完成或连接失败即清除
+对应计时器，执行流不继承准入观察期限。
+
+就绪检查与后续业务请求必须使用同一条 IPC 连接；新建连接时重新执行
+`runtime.ensure`，不能沿用先前连接的 ready 结果。拒绝或响应身份不完整时关闭
+连接，不发送业务请求、不自动切换候选。长驻流在握手完成后清除握手期限，
+避免把来源验证的超时当作任务运行期限。诊断 `status` / `runtime.status` 和显式
+停止、恢复路径不依赖 ready，以便未就绪时仍可检查与处理。
 
 **v0 不从网上静默下载二进制**（供应链）。发行见 [stack.md](stack.md)。
 
@@ -154,6 +228,22 @@ v0：**发出后 T 秒内没有任何头订阅/应答 → `policy_deny` 或 `app
 ```
 
 IPC 的 `id` 与 WSS 的 `exec_id` 是两层。Runtime 做映射；头只需要 IPC `id` 和返回里的 `exec_id`（给 cancel / 展示用）。
+
+非 GUI WIP 的 `session.request` / `session.resume` 同样由 Runtime 为每次调用生成
+独立的 WSS `request_id`，回执必须同时匹配该 ID、`session_id` 和结果消息类型。
+不能只按 session 关联：同一 session 的并发请求各有独立的 IPC 终态。pending 等进度
+不会占用终态缓冲；每个等待者只接纳一次终态，连接失效不能覆盖已经收到的终态。
+
+连接失效时，所有尚未完成的会话调用返回 `session_unknown`；对已失效连接不能再注册
+等待者。开始尝试发送后的传输错误也返回 `session_unknown`，因为错误不能证明 Relay
+未收到或未提交。明确在发送前因帧大小拒绝时返回 `too_large`。unknown 不授权头重放
+请求，也不表示一次性授权码或恢复凭证仍可用。此内存回执关联不提供跨 Runtime 重启
+的持久化结果查询或未知提交结算。
+
+控制连接进入逻辑会话模式后，拒绝、审批入队失败或设置变更撤销授权都不会恢复 v0
+grant 回退。旧会话被设置变更撤销后，可在同一连接显式重新 `session.request`，但
+同一控制连接只能有一个 pending；必须重新获得接收方批准。旧执行流与新逻辑会话
+按原请求分别结算，旧终态不能结束新会话或提前释放仍在运行的作业资源。
 
 ## 7. GUI 连接与本机记录
 

@@ -58,22 +58,23 @@ func Start(ctx context.Context, cmd *exec.Cmd) (*Child, error) {
 
 func startPrepared(ctx context.Context, cmd *exec.Cmd, g boundary) (*Child, error) {
 	if err := ctx.Err(); err != nil {
-		_ = g.close()
-		return nil, err
+		return nil, failedStartCleanup(err, g.close())
 	}
 	cmd.WaitDelay = time.Second
 	if err := g.start(cmd); err != nil {
-		_ = g.close()
-		return nil, err
+		return nil, failedStartCleanup(err, g.close())
 	}
 	if err := g.attach(cmd); err != nil {
 		// The Windows root is still suspended until attach succeeds. Never fall
 		// back to an unsupervised process when job assignment/resume fails.
-		_ = g.stop()
+		stopErr := g.stop()
 		_ = cmd.Process.Kill()
-		_ = g.wait(cmd)
-		_ = g.close()
-		return nil, fmt.Errorf("process supervision: %w", err)
+		settleErr := g.settle()
+		waitErr := g.wait(cmd)
+		if _, ok := waitErr.(*exec.ExitError); ok {
+			waitErr = nil
+		}
+		return nil, failedStartCleanup(fmt.Errorf("process supervision: %w", err), errors.Join(stopErr, settleErr, waitErr, g.close()))
 	}
 	c := &Child{group: g, done: make(chan struct{})}
 	go func() {
@@ -100,6 +101,13 @@ func startPrepared(ctx context.Context, cmd *exec.Cmd, g boundary) (*Child, erro
 		close(c.done)
 	}()
 	return c, nil
+}
+
+func failedStartCleanup(cause, cleanup error) error {
+	if cleanup == nil {
+		return cause
+	}
+	return errors.Join(cause, fmt.Errorf("%w: %v", ErrCleanup, cleanup))
 }
 
 // Stop is idempotent and cannot signal a recycled process/group after Wait.

@@ -48,7 +48,7 @@ func cmdRelay() *cobra.Command {
 			}
 			accounts, permissions := principal.NewService(store), access.NewService(store)
 			authority := delegation.NewAuthority(key, store, accounts, permissions)
-			hub := relay.NewHub(store, accounts, permissions, authority, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}))
+			hub := relay.NewHub(store, accounts, permissions, authority, admission.New(admission.Limits{PerDevice: protocol.MaxDeviceRequests}), store)
 			return relay.Serve(listen, hub, log, relay.Quota{Enabled: quota}, transport)
 		},
 	}

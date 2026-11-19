@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -39,12 +40,16 @@ func (j *job) start(cmd *exec.Cmd) (err error) {
 				err = errors.Join(err, fmt.Errorf("%w: %v", ErrCleanup, cleanup))
 			}
 			if cmd.Process != nil {
-				cmd.ProcessState, _ = cmd.Process.Wait()
+				var waitErr error
+				cmd.ProcessState, waitErr = cmd.Process.Wait()
+				err = failedStartCleanup(err, waitErr)
 			}
 		}
-		j.io.closeAll()
+		// A failure closing a duplicated native handle can arise after copy
+		// goroutines started. Join their completion before returning ownership.
+		err = failedStartCleanup(err, j.io.finish(time.Second))
 	}()
-	var handles [3]windows.Handle
+	handles := make([]windows.Handle, 3)
 	for n, f := range j.io.files {
 		if f == nil {
 			return errors.New("nil standard file")
@@ -52,7 +57,14 @@ func (j *job) start(cmd *exec.Cmd) (err error) {
 		if err := windows.DuplicateHandle(windows.CurrentProcess(), windows.Handle(f.Fd()), windows.CurrentProcess(), &handles[n], 0, true, windows.DUPLICATE_SAME_ACCESS); err != nil {
 			return err
 		}
-		defer windows.CloseHandle(handles[n])
+		defer func(h windows.Handle) { err = failedStartCleanup(err, windows.CloseHandle(h)) }(handles[n])
+	}
+	// Preserve only explicitly requested image-protection handles. Standard IO
+	// uses private duplicates above; arbitrary inheritable handles remain excluded.
+	if a := cmd.SysProcAttr; a != nil {
+		for _, h := range a.AdditionalInheritedHandles {
+			handles = append(handles, windows.Handle(h))
+		}
 	}
 	attrs, err := windows.NewProcThreadAttributeList(2)
 	if err != nil {
@@ -64,7 +76,7 @@ func (j *job) start(cmd *exec.Cmd) (err error) {
 	}
 	// Restrict inheritance: concurrent launches must not acquire each other's
 	// pipes, or any unrelated handle marked inheritable in the Runtime.
-	if err := attrs.Update(windows.PROC_THREAD_ATTRIBUTE_HANDLE_LIST, unsafe.Pointer(&handles[0]), unsafe.Sizeof(handles)); err != nil {
+	if err := attrs.Update(windows.PROC_THREAD_ATTRIBUTE_HANDLE_LIST, unsafe.Pointer(&handles[0]), uintptr(len(handles))*unsafe.Sizeof(handles[0])); err != nil {
 		return err
 	}
 	si := windows.StartupInfoEx{
@@ -91,8 +103,7 @@ func (j *job) start(cmd *exec.Cmd) (err error) {
 	if err != nil {
 		return err
 	}
-	j.io.startCopies()
-	return nil
+	return j.io.startCopies()
 }
 
 func nativeArguments(cmd *exec.Cmd) (app, line, dir *uint16, env []uint16, err error) {

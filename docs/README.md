@@ -75,11 +75,18 @@ CLI：`xallor-remote`。路径与前缀见 [decisions.md](decisions.md)。`platf
 | **安装信任根设计与 #74 边界** | [install-trust-design.md](install-trust-design.md) |
 | #56/#76 治理候选验收与后续依赖 | [governance-acceptance.md](governance-acceptance.md) |
 | #75 受保护发行候选证据 | [attested-candidates.md](attested-candidates.md) |
+| 非 GUI 剩余 TODO / 证据分级 | [superpowers/plans/2026-11-17-non-gui-todo.md](superpowers/plans/2026-11-17-non-gui-todo.md) |
+| 产品成熟路线 / 默认决策 | [superpowers/specs/2026-11-17-product-maturity-roadmap.md](superpowers/specs/2026-11-17-product-maturity-roadmap.md) |
+| 授权码生命周期设计 | [superpowers/specs/2026-11-17-access-code-lifecycle.md](superpowers/specs/2026-11-17-access-code-lifecycle.md) |
+| 授权码生命周期实现计划（非 GUI） | [superpowers/plans/2026-11-17-access-code-lifecycle-implementation.md](superpowers/plans/2026-11-17-access-code-lifecycle-implementation.md) |
+| 授权码 Relay 逻辑会话协议（非 GUI） | [superpowers/specs/2026-11-17-access-code-relay-session.md](superpowers/specs/2026-11-17-access-code-relay-session.md) |
+| 逻辑会话安全重连设计（非 GUI，待实现） | [superpowers/specs/2026-11-18-session-reconnect.md](superpowers/specs/2026-11-18-session-reconnect.md) |
 | #61 目标 Shell capability 验收 | [shell-capabilities-acceptance.md](shell-capabilities-acceptance.md) |
 | #65 OIDC / SSO provider-neutral 验证边界 | [oidc.md](oidc.md) |
 | #67 Entitlement / admission 边界 | [entitlements.md](entitlements.md) |
 | #68 Privacy-preserving usage / audit 边界 | [usage.md](usage.md) |
 | CLI 文档入口 / 参数审查 | [cli.md](cli.md) / [cli-ux-review.md](cli-ux-review.md)（建议未实施） |
+| Agent CLI Skill（当前 WIP 能力边界） | [../skills/xallor-remote/SKILL.md](../skills/xallor-remote/SKILL.md) |
 | Windows/Linux | [os.md](os.md) |
 | Account / 订阅 | [platform.md](platform.md) |
 

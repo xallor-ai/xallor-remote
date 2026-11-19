@@ -1,15 +1,17 @@
 """Real Runtime foreground/handoff completion must reclaim owned descendants."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import sys
 import time
 import uuid
 
-from fixtures.runtime_cluster import Cluster
+from fixtures.mechanics_cli import add_mechanics_options, cluster_from_options, completed_report
 from fixtures.process_ref import ProcessRef
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -17,9 +19,15 @@ parser = argparse.ArgumentParser()
 platform = "windows-amd64/xallor-remote.exe" if os.name == "nt" else "linux-amd64/xallor-remote"
 parser.add_argument("--binary", default=str(Path(__file__).resolve().parents[1]/"dist/release"/platform))
 parser.add_argument("--go", default="go")
+add_mechanics_options(parser, add_go=False)
+parser.add_argument("--tree-fixture", help="Explicit trusted precompiled process-tree test program")
+parser.add_argument("--agent-fixture", help="Explicit trusted precompiled Cursor test program")
 args = parser.parse_args()
 repo = Path(__file__).resolve().parents[1]
-cluster, refs, results = Cluster(args.binary), [], []
+output = repo / "dist/verification/process-lifetime.json"
+cluster = cluster_from_options(args, output, __file__)
+refs, results = [], []
+quiet = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 controller = None
 
 
@@ -49,8 +57,13 @@ def command(executable, mode, directory):
 try:
     suffix = ".exe" if os.name == "nt" else ""
     tree, agent = cluster.root / ("tree"+suffix), cluster.root / ("agent"+suffix)
-    for path, source in ((tree, "process-tree"), (agent, "cursor-cli")):
-        subprocess.run([args.go, "build", "-o", str(path), "./tests/fixtures/"+source], cwd=repo, check=True, timeout=180)
+    for path, source, prebuilt in ((tree, "process-tree", args.tree_fixture), (agent, "cursor-cli", args.agent_fixture)):
+        if prebuilt:
+            shutil.copy2(Path(prebuilt).resolve(), path)
+            path.chmod(0o700)
+        else:
+            subprocess.run([args.go, "build", "-o", str(path), "./tests/fixtures/"+source], cwd=repo, check=True, timeout=180, **quiet)
+        cluster.evidence[source+"_fixture_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
     cluster.start()
     target = cluster.add("target")
     cluster.add("controller")
@@ -96,7 +109,7 @@ try:
     shutdown=workspace/"lifecycle"
     shutdown.mkdir()
     controller=subprocess.Popen([str(cluster.binary),"exec","--device",target,"--",command(tree,"parent",shutdown)],
-                                 env=cluster.env("controller"),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                                 env=cluster.env("controller"),stdout=subprocess.PIPE,stderr=subprocess.PIPE, **quiet)
     pids=json.loads(wait_file(shutdown/"pids.json",controller))
     parent,child=owned(pids["parent"]),owned(pids["child"])
     assert parent.alive() and child.alive()
@@ -112,7 +125,5 @@ finally:
     for ref in refs:
         ref.close()
     cluster.close()
-    output=repo/"dist/verification/process-lifetime.json"
-    output.parent.mkdir(parents=True,exist_ok=True)
-    output.write_text(json.dumps(results,indent=2),encoding="utf-8")
+output.write_text(json.dumps(completed_report(cluster, results),indent=2),encoding="utf-8")
 print(json.dumps(results),flush=True)

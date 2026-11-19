@@ -1,12 +1,13 @@
 """An oversized unfinished IPC request must close only its own connection."""
 import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import threading
 
-from fixtures.runtime_cluster import Cluster
+from fixtures.mechanics_cli import add_mechanics_options, cluster_from_options, completed_report
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,9 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--binary", required=True)
+    platform = "windows-amd64/xallor-remote.exe" if os.name == "nt" else "linux-amd64/xallor-remote"
+    parser.add_argument("--binary", default=str(ROOT / "dist/release" / platform))
+    add_mechanics_options(parser)
     args = parser.parse_args()
-    cluster = Cluster(args.binary)
+    cluster = cluster_from_options(args, ROOT / "dist/verification/ipc-bounds.json", __file__)
     bridge = None
     writer = None
     try:
@@ -24,7 +27,8 @@ def main():
         cluster.add("target")
         before = json.loads(cluster.cli("target", "runtime", "status").stdout)["running"]["pid"]
         bridge = subprocess.Popen([str(cluster.binary), "ipc-bridge"], env=cluster.env("target"),
-                                  stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                  stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                  **({"creationflags":subprocess.CREATE_NO_WINDOW} if os.name=="nt" else {}))
 
         def send_unfinished_record():
             try:
@@ -44,10 +48,6 @@ def main():
         assert json.loads(cluster.cli("target", "status", "--json").stdout)["online"]
         result = dict(passed=True, checks=["oversize_without_newline_closes_connection",
                                           "other_connections_and_runtime_survive"])
-        out = ROOT / "dist/verification/ipc-bounds.json"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(result, indent=2), encoding="utf-8")
-        print(json.dumps(result), flush=True)
     finally:
         if bridge:
             if bridge.poll() is None:
@@ -57,6 +57,11 @@ def main():
                 writer.join(timeout=5)
             bridge.stdin.close()
         cluster.close()
+    evidence = completed_report(cluster, result["checks"])
+    out = ROOT / "dist/verification/ipc-bounds.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+    print(json.dumps(evidence), flush=True)
 
 
 if __name__ == "__main__":

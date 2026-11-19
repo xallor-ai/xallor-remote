@@ -55,8 +55,8 @@ func (d *Daemon) manageDeviceAccess(id string, parameters access.Request) ipc.Fr
 		if result.Code != "" {
 			return ipc.Fail(id, result.Code, ipc.Human(result.Code))
 		}
-		var state access.State
-		if json.Unmarshal(result.Payload, &state) != nil || state.DeviceUID == "" {
+		state, err := decodeDeviceAccessResult(parameters, result.Payload, result.DeviceContext)
+		if err != nil {
 			return unknown()
 		}
 		return ipc.OK(id, state)

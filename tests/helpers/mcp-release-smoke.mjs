@@ -5,9 +5,22 @@ import { readFileSync } from "node:fs";
 import readline from "node:readline";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import assert from "node:assert/strict";
 if (!process.env.XALLOR_REMOTE_DATA_DIR) throw new Error("isolated profile required");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const expectedVersion = JSON.parse(readFileSync(path.join(root, "packages/mcp/package.json"), "utf8")).version;
+const run = promisify(execFile);
+const cli = (...args) => run(process.env.XALLOR_TEST_CLI, args,
+  { env: process.env, windowsHide: true, timeout: 75000 });
+// A pre-existing owner must be reused; an absent one may be bootstrapped once.
+const initialOwner = process.env.XALLOR_TEST_CLI
+  ? JSON.parse((await cli("runtime", "status")).stdout).running : null;
+function sameOwner(mcp, live) {
+  assert.ok(live && Number.isInteger(live.pid) && live.pid > 0, "CLI must observe a live owner");
+  assert.match(live.sha256, /^[a-f0-9]{64}$/, "owner must expose its loaded digest");
+  for (const key of ["pid", "sha256", "revision", "protocol", "profile_format"])
+    assert.equal(mcp.build?.[key], live[key], `MCP and CLI disagree on owner ${key}`);
+}
 const child = spawn(process.execPath, [process.env.XALLOR_TEST_MCP_ENTRY || path.join(root, "packages/mcp/dist/index.js")],
   { env: { ...process.env, XALLOR_REMOTE_DEVICE_ID: "", XALLOR_REMOTE_DEVICE_GRANT: "" }, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
 const pending = new Map();
@@ -54,8 +67,15 @@ try {
     }
   }
   if (process.env.XALLOR_TEST_CLI) {
-    const run = promisify(execFile);
-    const cli = (...args) => run(process.env.XALLOR_TEST_CLI, args, { env: process.env, windowsHide: true, timeout: 20000 });
+    const live = JSON.parse((await cli("runtime", "status")).stdout).running;
+    sameOwner(status, live);
+    if (initialOwner) sameOwner(status, initialOwner);
+    // Concurrent heads must reuse one owner instead of each spawning a process.
+    await Promise.all([cli("ensure"), cli("ensure")]);
+    const reused = await call("tools/call", { name: "remote.devices", arguments: {} });
+    if (reused.isError) throw Error("MCP owner reuse failed");
+    sameOwner(JSON.parse(reused.content[0].text), live);
+    sameOwner(status, JSON.parse((await cli("runtime", "status")).stdout).running);
     await cli("stop");
     const deadline = Date.now() + 10000;
     while (JSON.parse((await cli("runtime", "status")).stdout).running) {
@@ -66,6 +86,10 @@ try {
     const after = await call("tools/call", { name: "remote.devices", arguments: {} });
     if (after.isError || JSON.parse(after.content[0].text).device_id !== status.device_id)
       throw Error("MCP did not reconnect after Runtime restart");
+    const restarted = JSON.parse((await cli("runtime", "status")).stdout).running;
+    sameOwner(JSON.parse(after.content[0].text), restarted);
+    assert.notEqual(restarted.pid, live.pid, "restart must replace the stopped owner");
+    assert.equal(restarted.sha256, live.sha256, "restart must retain the selected artifact");
   }
   console.log("MCP profile and version verified");
 } finally {

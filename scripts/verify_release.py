@@ -12,8 +12,12 @@ import sys
 
 
 def attest(path, repo, source_ref, revision, workflow='release.yml'):
+    cert_identity = 'https://github.com/'+repo+'/.github/workflows/'+workflow+'@'+source_ref
     subprocess.run(['gh','attestation','verify',str(path),'--repo',repo,
-                    '--signer-workflow',repo+'/.github/workflows/'+workflow,
+                    '--signer-digest',revision,
+                    '--cert-identity',cert_identity,
+                    '--cert-oidc-issuer','https://token.actions.githubusercontent.com',
+                    '--predicate-type','https://slsa.dev/provenance/v1',
                     '--source-ref',source_ref,'--source-digest',revision,
                     '--deny-self-hosted-runners'], check=True, timeout=120)
 
