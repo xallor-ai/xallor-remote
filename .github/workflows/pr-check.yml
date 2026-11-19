@@ -228,7 +228,11 @@ jobs:
         working-directory: packages/mcp
       - run: python scripts/build-release.py --platform ${{ matrix.platform }}
       - name: Fixture selection and evidence contracts
-        run: python -m unittest discover -s tests -p test_mechanics_cli.py
+        run: |
+          python -m unittest discover -s tests -p test_mechanics_cli.py
+          python -m unittest discover -s tests -p test_ipc_bounds_report.py
+          python -m unittest discover -s tests -p test_report_producers.py
+          python -m unittest discover -s tests -p test_publication_read.py
       - name: Fixture environment and cleanup contracts
         run: python -m unittest discover -s tests -p test_runtime_cluster.py
       - name: Relay metadata schema acceptance contract
