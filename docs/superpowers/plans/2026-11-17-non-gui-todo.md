@@ -43,6 +43,19 @@ current Runtime authority is `runtime/activations`; candidate B updates both
 signed-install acceptance helpers to assert that resource. The failed A report is
 preserved and is not counted as signed-candidate acceptance.
 
+Candidate B is now merged as `e111b57e35b90b7514aecbb3bd4b6c3659d0447f` and
+tagged `v0.3.0-rc.2`. Workflow `44505177735` completed its `bundles` job with
+real provenance, tamper rejection, installer source-gate, and artifact checks;
+the `draft` job is waiting for the configured `release` environment human
+review. No release was published and no production deployment occurred.
+
+The first protected A-tag workflow `44499474905` remains a failure record. Its
+real provenance and tamper rejection passed, but the installer acceptance helper
+asserted the obsolete `runtime/versions` cache after a successful install. The
+current Runtime authority is `runtime/activations`; candidate B updates both
+signed-install acceptance helpers to assert that resource. The failed A report is
+preserved and is not counted as signed-candidate acceptance.
+
 The initial Windows full Go run failed in native handoff cleanup/readiness/probe
 cases. A later full run passed; replacing hardcoded version fixtures does not
 establish the cause of those failures. Python discovery initially timed out in

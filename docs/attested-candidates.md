@@ -10,12 +10,24 @@
 合并提交为 `bec508f2dbc15c7527323518971d4cbf21c180a0`；原 PR97 工作树保留。
 受保护 tag `v0.3.0-rc.1` 已指向该合并提交，workflow `44499474905` 的
 失败记录见下文。版本 B 的元数据修复在 [PR #109](https://github.com/xallor-ai/xallor-remote/pull/109)，
-当前提交为 `214152789afabd3fbac8b1d202bde15a873721ef`，尚未合并或创建 B tag。
+该 PR 已合并，合并提交为 `e111b57e35b90b7514aecbb3bd4b6c3659d0447f`；受保护 tag
+`v0.3.0-rc.2` 已指向该提交，release workflow `44505177735` 的 bundles
+job 已通过真实制品验证。draft release 当前仅等待 `release` 环境人工审核，未发布给用户。
 
 当前门槛依次为：最终提交 CI 和独立评审通过、集成候选 A、建立独立版本 B、
 通过受保护 tag 生成真实签名制品，再运行下述双平台签名生命周期。
 `release` 环境的人工审核与生产部署保持独立，不以代码提交授权代替。
 具体 CI 缺口和首次失败记录由 [非 GUI 台账](superpowers/plans/2026-11-17-non-gui-todo.md) 维护。
+
+候选 A 的首次受保护 tag workflow `44499474905` 已保留为失败证据：raw
+provenance、篡改拒绝和 `runtime verify` 均通过，安装验收脚本在成功安装后仍
+读取已不再作为选择权威的 `runtime/versions` 目录而失败。候选 B 的验收脚本已
+改为核对 `runtime/activations`，并同步修正双版本签名生命周期脚本；不会把这次
+失败重写为成功，也不会把 A 的 draft 当成可用候选。
+
+候选 B 的 bundles 证据已上传为 verified release bundles 与 signed-vendor
+evidence artifacts；人工审核步骤未被代理绕过。生产部署、Relay 升级和其他
+设备升级仍未执行，需另行授权。
 
 候选 A 的首次受保护 tag workflow `44499474905` 已保留为失败证据：raw
 provenance、篡改拒绝和 `runtime verify` 均通过，安装验收脚本在成功安装后仍
