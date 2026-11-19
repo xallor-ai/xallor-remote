@@ -17,12 +17,24 @@ Candidate A is `0.3.0-rc.1`; candidate B remains planned as `0.3.0-rc.2`.
 Neither protected tag nor signed A/B acceptance has been created in this batch.
 Production deployment and the release environment's human approval are separate.
 
-PR CI is currently failing. Open repairs concern bootstrap snapshot ownership,
+PR CI initially failed. Open repairs concerned bootstrap snapshot ownership,
 the existing GUI development bridge's removed executable-selection import,
 explicit native-owner mechanics for the GUI test harness, cross-layer report
 producer schemas, and Linux descendant-exit proof. Fixing the existing bridge
-does not add GUI product functionality. Do not merge or create release tags
-until the final commit passes CI and review.
+does not add GUI product functionality. These repairs are now included below;
+the final commit must still be the one used for any merge or release tag.
+
+### Final PR #108 CI checkpoint — 2026-11-19
+
+Commit `669bd9af03eb731bc0f0cf5940ff7b5dec568847` completed GitHub Actions run
+`44495435321` with every required check successful: Go on Windows/Linux, MCP,
+GUI build and unit tests, GUI/native bridge on both systems, release lifecycle on
+both systems, cross-layer integration on both systems, Cursor handoff contract on
+both systems, and the repository PR gate. The run includes the Node 20 Windows
+snapshot cleanup regression, strict native report-producer contracts, Linux
+pidfd settlement regression, and the Runtime-owned GUI bridge. This is CI and
+review evidence for the PR only; it is not a protected signed release or a
+production deployment.
 
 The initial Windows full Go run failed in native handoff cleanup/readiness/probe
 cases. A later full run passed; replacing hardcoded version fixtures does not
