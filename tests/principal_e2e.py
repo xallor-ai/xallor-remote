@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from fixtures.runtime_cluster import Cluster
+from fixtures.mechanics_cli import add_mechanics_options, cluster_from_options, completed_report
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,8 +15,9 @@ def main():
     platform = "windows-amd64/xallor-remote.exe" if os.name == "nt" else "linux-amd64/xallor-remote"
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", default=str(ROOT / "dist/release" / platform))
+    add_mechanics_options(parser)
     args = parser.parse_args()
-    cluster = Cluster(args.binary)
+    cluster = cluster_from_options(args, ROOT / "dist/verification/principal.json", __file__)
     results = []
     try:
         cluster.start()
@@ -59,9 +60,9 @@ def main():
         results.append({"name": "corrupt_profile_blocks_remote_but_preserves_local_recovery", "status": "pass"})
     finally:
         cluster.close()
-        output = ROOT / "dist/verification/principal.json"
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    output = ROOT / "dist/verification/principal.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(completed_report(cluster, results), indent=2), encoding="utf-8")
     print(json.dumps(results), flush=True)
 
 

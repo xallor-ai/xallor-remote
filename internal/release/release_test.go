@@ -35,35 +35,54 @@ func writeManifest(t *testing.T, dir string, m Manifest) {
 }
 
 type fakeControl struct {
-	builds        map[string]buildinfo.Info
-	live          *buildinfo.Executable
-	fail          string
-	badMetadata   bool
-	stops         int
-	checks        int
-	runningChecks int
+	builds              map[string]buildinfo.Info
+	live                *buildinfo.Executable
+	fail                string
+	badMetadata         bool
+	unsupportedOwnerSHA string
+	stops               int
+	checks              int
+	runningChecks       int
 }
 
 func (f *fakeControl) Running() (*buildinfo.Executable, error) { f.runningChecks++; return f.live, nil }
 func (f *fakeControl) Stop() error                             { f.stops++; f.live = nil; return nil }
-func (f *fakeControl) Check(path string) (buildinfo.Executable, error) {
+func (f *fakeControl) acknowledge() error {
+	if f.live == nil {
+		return errors.New("no running owner to acknowledge")
+	}
+	return nil
+}
+func (f *fakeControl) check(path, expectedSHA string) (buildinfo.Executable, error) {
 	f.checks++
 	sum, err := buildinfo.HashFile(path)
 	if err != nil {
 		return buildinfo.Executable{}, err
 	}
+	if sum != expectedSHA {
+		return buildinfo.Executable{}, errors.New("candidate digest mismatch")
+	}
 	i := f.builds[sum]
 	if f.badMetadata {
 		i.Revision = "wrong"
 	}
-	return buildinfo.Executable{Info: i, Path: path, SHA256: sum, PID: 123}, nil
+	ownerProtocol := buildinfo.RuntimeOwnerProtocol
+	if sum == f.unsupportedOwnerSHA {
+		ownerProtocol = 0
+	}
+	return buildinfo.Executable{Info: i, Path: path, SHA256: sum, PID: 123, OwnerProtocol: ownerProtocol}, nil
 }
 func (f *fakeControl) Start(path, sum string) error {
 	if sum == f.fail {
 		return errors.New("candidate failed health check")
 	}
-	e, err := f.Check(path)
+	e, err := f.check(path, sum)
 	if err == nil {
+		st, readErr := (Store{Dir: filepath.Dir(filepath.Dir(filepath.Dir(path)))}).Read()
+		if readErr == nil {
+			e.ActivationID = filepath.Base(filepath.Dir(path))
+			e.LaunchID = st.PendingLaunchID
+		}
 		f.live = &e
 	}
 	return err
@@ -164,7 +183,12 @@ func TestActivePath_should_failClosed_whenArtifactIsChanged(t *testing.T) {
 	if err := s.Install(a, c); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(s.Path(m), []byte("corrupt"), 0700)
+	state, _ := s.Read()
+	activation, err := s.Activation(state.CurrentActivation, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(activation.Binary, []byte("corrupt"), 0700)
 	if _, err := s.ActivePath(); err == nil {
 		t.Fatal("corrupt artifact accepted")
 	}

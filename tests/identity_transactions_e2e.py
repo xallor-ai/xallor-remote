@@ -3,25 +3,27 @@ import argparse
 import json
 import os
 from pathlib import Path
-import signal
 import sqlite3
 import sys
 import time
-from fixtures.runtime_cluster import Cluster
+from fixtures.mechanics_cli import add_mechanics_options, cluster_from_options, completed_report
+from fixtures.process_ref import ProcessRef
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 platform = "windows-amd64/xallor-remote.exe" if os.name == "nt" else "linux-amd64/xallor-remote"
 parser.add_argument("--binary", default=str(ROOT / "dist/release" / platform))
+add_mechanics_options(parser)
 args = parser.parse_args()
-cluster = Cluster(args.binary)
+output = ROOT / "dist/verification/identity-transactions.json"
+cluster = cluster_from_options(args, output, __file__)
 results = []
 db = None
 
 
 def passed(name):
-    results.append(name)
+    results.append(dict(name=name, status="pass"))
     print(name, flush=True)
 
 
@@ -96,11 +98,15 @@ try:
     execute("committed-rotation")
     cluster.cli("target", "inbound", "off")
     saved = cluster.device_state("target")
-    # Only terminate the PID reported by the fixture's isolated profile. No jobs
-    # are active; this checks restart after a confirmed committed local mutation.
+    # Hold the native process object before abrupt termination, excluding PID
+    # reuse. Confirm no jobs are active before testing committed-state recovery.
     state = json.loads(cluster.cli("target", "runtime", "status").stdout)
-    owned_pid = state["running"]["pid"]
-    os.kill(owned_pid, signal.SIGTERM)
+    assert json.loads((profile/"jobs.json").read_text(encoding="utf-8"))["jobs"] == {}
+    owned = ProcessRef(state["running"]["pid"])
+    try:
+        assert owned.alive(), "owned Runtime exited before the crash injection"
+    finally:
+        owned.close()
     wait_for(lambda: json.loads(cluster.cli("target", "runtime", "status").stdout)["running"] is None,
              "owned Runtime did not terminate")
     cluster.cli("target", "ensure")
@@ -139,6 +145,4 @@ finally:
         db.close()
     cluster.close()
 
-output = ROOT / "dist/verification/identity-transactions.json"
-output.parent.mkdir(parents=True, exist_ok=True)
-output.write_text(json.dumps(results, indent=2), encoding="utf-8")
+output.write_text(json.dumps(completed_report(cluster,results), indent=2), encoding="utf-8")

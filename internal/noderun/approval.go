@@ -2,15 +2,22 @@ package noderun
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"os/exec"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/xallor-ai/xallor-remote/internal/buildinfo"
+	"github.com/xallor-ai/xallor-remote/internal/execution"
 	"github.com/xallor-ai/xallor-remote/internal/ipc"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
 )
 
 const approvalWait = 60 * time.Second
+const approvalWriteWait = 2 * time.Second
 
 type approvalHub struct {
 	mu      sync.Mutex
@@ -21,14 +28,84 @@ type approvalHub struct {
 }
 
 type frameWriter interface {
-	WriteFrame(ipc.Frame) error
+	WriteFrameContext(context.Context, ipc.Frame) error
 }
 
 type pendingApproval struct {
 	execID  string
-	preview string
+	details approvalDetails
+	digest  string
 	created string
+	expires string
 	ch      chan decide
+}
+
+// approvalDetails is the exact, immutable operation fact shown to a human
+// before the owner starts a child. It contains no derived preview or shell
+// re-interpretation; the digest binds every field to the response.
+type approvalDetails struct {
+	Backend    string          `json:"backend,omitempty"`
+	Kind       string          `json:"kind"`
+	Script     string          `json:"script,omitempty"`
+	Shell      string          `json:"shell,omitempty"`
+	Executable string          `json:"executable,omitempty"`
+	Args       []string        `json:"args,omitempty"`
+	Cwd        string          `json:"cwd"`
+	Target     string          `json:"target,omitempty"`
+	Runtime    approvalRuntime `json:"runtime"`
+}
+
+type approvalRuntime struct {
+	PID          int    `json:"pid"`
+	SHA256       string `json:"sha256"`
+	ActivationID string `json:"activation_id,omitempty"`
+	LaunchID     string `json:"launch_id,omitempty"`
+}
+
+type approvalRequest struct {
+	ExecID  string
+	Details approvalDetails
+}
+
+func approvalDigest(execID string, details approvalDetails) (string, error) {
+	raw, err := json.Marshal(struct {
+		ExecID  string          `json:"exec_id"`
+		Details approvalDetails `json:"details"`
+	}{ExecID: execID, Details: details})
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func detailsForExecution(req execution.Request, cmd *exec.Cmd, cwd, backend, target string) approvalDetails {
+	d := approvalDetails{Backend: backend, Cwd: cwd, Target: target, Runtime: approvalRuntimeFromBuild()}
+	if req.Script != nil {
+		d.Kind = "script"
+		d.Script = req.Script.Text
+		d.Shell = req.Script.Shell
+		if cmd != nil {
+			d.Executable = cmd.Path
+			if len(cmd.Args) > 1 {
+				d.Args = append([]string(nil), cmd.Args[1:]...)
+			}
+		}
+		return d
+	}
+	d.Kind = "program"
+	if cmd != nil {
+		d.Executable = cmd.Path
+		if len(cmd.Args) > 1 {
+			d.Args = append([]string(nil), cmd.Args[1:]...)
+		}
+	}
+	return d
+}
+
+func approvalRuntimeFromBuild() approvalRuntime {
+	running := buildinfo.Running()
+	return approvalRuntime{PID: running.PID, SHA256: running.SHA256, ActivationID: running.ActivationID, LaunchID: running.LaunchID}
 }
 
 type decide struct {
@@ -52,14 +129,31 @@ func (h *approvalHub) subscribe(c frameWriter) {
 
 func (h *approvalHub) unsubscribe(c frameWriter) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	delete(h.subs, c)
+	var pending []*pendingApproval
+	if len(h.subs) == 0 {
+		for id, p := range h.pending {
+			delete(h.pending, id)
+			pending = append(pending, p)
+		}
+	}
+	h.mu.Unlock()
+	for _, p := range pending {
+		select {
+		case p.ch <- decide{allow: false, code: protocol.Cancelled}:
+		default:
+		}
+	}
 }
 
 // ask broadcasts to human UI heads. No subscriber → policy_deny without waiting.
-func (h *approvalHub) ask(ctx context.Context, execID, preview string) (allow bool, code string) {
+func (h *approvalHub) ask(ctx context.Context, request approvalRequest) (allow bool, code string) {
 	if ctx.Err() != nil {
 		return false, protocol.Cancelled
+	}
+	digest, err := approvalDigest(request.ExecID, request.Details)
+	if err != nil {
+		return false, protocol.PolicyDeny
 	}
 	h.mu.Lock()
 	if len(h.subs) == 0 {
@@ -67,29 +161,37 @@ func (h *approvalHub) ask(ctx context.Context, execID, preview string) (allow bo
 		return false, protocol.PolicyDeny
 	}
 	id := "a" + itoa(h.seq.Add(1))
-	p := &pendingApproval{execID: execID, preview: preview, created: time.Now().UTC().Format(time.RFC3339), ch: make(chan decide, 1)}
+	now := time.Now().UTC()
+	p := &pendingApproval{execID: request.ExecID, details: request.Details, digest: digest,
+		created: now.Format(time.RFC3339), expires: now.Add(approvalWait).Format(time.RFC3339), ch: make(chan decide, 1)}
 	h.pending[id] = p
-	h.byExec[execID] = id
+	h.byExec[request.ExecID] = id
 	subs := make([]frameWriter, 0, len(h.subs))
 	for c := range h.subs {
 		subs = append(subs, c)
 	}
 	h.mu.Unlock()
 
-	params := map[string]string{"exec_id": execID, "preview": preview}
+	waitContext, cancelWait := context.WithDeadline(ctx, now.Add(approvalWait))
+	defer cancelWait()
+	defer h.clear(id, request.ExecID)
+	params := approvalParams(id, p)
 	fr := ipc.EventParams(id, "approval", params)
 	for _, c := range subs {
-		_ = c.WriteFrame(fr)
+		if err := writeApproval(waitContext, c, fr); err != nil {
+			if waitContext.Err() != nil {
+				break
+			}
+			h.unsubscribe(c)
+		}
 	}
-
-	timer := time.NewTimer(approvalWait)
-	defer timer.Stop()
 	select {
-	case <-ctx.Done():
-		h.clear(id, execID)
-		return false, protocol.Cancelled
+	case <-waitContext.Done():
+		return false, approvalContextCode(ctx)
 	case d := <-p.ch:
-		h.clear(id, execID)
+		if waitContext.Err() != nil {
+			return false, approvalContextCode(ctx)
+		}
 		if d.allow {
 			return true, ""
 		}
@@ -97,15 +199,28 @@ func (h *approvalHub) ask(ctx context.Context, execID, preview string) (allow bo
 			return false, protocol.PolicyDeny
 		}
 		return false, d.code
-	case <-timer.C:
-		h.clear(id, execID)
-		return false, protocol.ApprovalTimeout
 	}
 }
 
-func (h *approvalHub) respond(id string, allow bool) bool {
+func writeApproval(ctx context.Context, c frameWriter, frame ipc.Frame) error {
+	writeContext, cancel := context.WithTimeout(ctx, approvalWriteWait)
+	defer cancel()
+	return c.WriteFrameContext(writeContext, frame)
+}
+
+func approvalContextCode(parent context.Context) string {
+	if parent.Err() != nil {
+		return protocol.Cancelled
+	}
+	return protocol.ApprovalTimeout
+}
+
+func (h *approvalHub) respond(id, digest string, allow bool) bool {
 	h.mu.Lock()
 	p := h.pending[id]
+	if p != nil && p.digest != digest {
+		p = nil
+	}
 	// Claim once, before the waiting goroutine can consume and clear its channel.
 	if p != nil {
 		delete(h.pending, id)
@@ -124,6 +239,11 @@ func (h *approvalHub) respond(id string, allow bool) bool {
 	default:
 		return false
 	}
+}
+
+func approvalParams(id string, p *pendingApproval) map[string]any {
+	return map[string]any{"approval_id": id, "exec_id": p.execID, "request_sha256": p.digest,
+		"created": p.created, "expires": p.expires, "details": p.details}
 }
 
 func (h *approvalHub) cancelExec(execID string) {

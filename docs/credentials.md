@@ -36,6 +36,9 @@ Workspace: C:\Users\<you>\XallorRemote\workspace
 | 设备密钥 secret | 仅本机 Runtime | 直到重装/撤机 | 证明上线的是这台 |
 | 账号凭据 account_token | 当前 profile 的 Runtime | 有效期或撤销 | 证明签发方、主体与空间成员关系；不自动授予设备访问权 |
 
+一次性/限时/长期授权码属于新的逻辑 session WIP，不改变上表 v0 grant 语义；在正式协议、
+接收方批准和跨平台验收完成前，不把它们当作稳定可用的授权类型。
+
 `peers.json` 里存的是**对方**的 grant，等同密钥库：笔记本失窃 = 能控所有 peer。权限仅当前用户。
 
 ---
@@ -69,7 +72,11 @@ Workspace: C:\Users\<you>\XallorRemote\workspace
 | 认领、分享、撤销分享、转移 | 被控机本机 CLI，经 Runtime | 已认证 device 连接及有效账号凭据；已认领时校验所有者 |
 | 持 grant 的 MCP / 对端 Runtime | **不能** | client 连接发 revoke/rotate → 协议拒绝 |
 
-签发、轮换、吊销、开入站：**不走 MCP tool**，也不走对端的 `hello_client`。
+上表的 v0 grant 签发/轮换、设备吊销和开入站：**不走 MCP tool**，也不走对端的
+`hello_client`。逻辑授权码是另一组 WIP 管理动作：本机 owner CLI 和
+`remote.device_code_revoke` / `remote.device_code_rotate` 经本机 Runtime 的 device 连接发起，由 Relay 在
+写事务内复验完整账号身份及当前设备归属。持远端 grant 的 client 因而不能管理这些码；
+此 WIP 入口不代表正式发布或通用管理面已完成，字段以 [protocol.md](protocol.md) 为准。
 
 `rotate` ≠ `revoke`：前者作废旧 grant；后者注销这台设备在 Relay 上的身份。
 

@@ -12,10 +12,20 @@ import (
 func (d *Daemon) serveIPC(c *ipc.Conn) {
 	defer func() { _ = c.Close(); d.cancelAllForConn(c) }()
 	defer d.approvals.unsubscribe(c)
+	if d.sessionApprovals != nil {
+		defer d.sessionApprovals.unsubscribe(c)
+	}
 	for {
 		req, err := c.ReadRequest()
 		if err != nil {
 			return
+		}
+		if !startupObservation(req.Method) && !d.startupReady() {
+			_ = c.WriteFrame(ipc.Fail(req.ID, protocol.RuntimePendingRecovery, "Runtime 启动尚未完成，请先检查本机运行状态。"))
+			continue
+		}
+		if d.handleLifecycle(c, req) {
+			continue
 		}
 		if d.handleDeviceSettings(c, req) || d.handleDeviceAccess(c, req) || d.handleAccount(c, req) || d.handleObservation(c, req) || d.handleHeadState(c, req) || d.handleHandoffIPC(c, req) || d.handleLocal(c, req) {
 			continue
@@ -42,23 +52,45 @@ func (d *Daemon) serveIPC(c *ipc.Conn) {
 		case "approval.subscribe":
 			d.approvals.subscribe(c)
 			_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
+		case "session.approval.subscribe":
+			d.sessionApprovals.subscribe(c)
+			_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
+		case "session.approval.respond":
+			var p struct {
+				Allow      *bool  `json:"allow"`
+				ApprovalID string `json:"approval_id"`
+				Digest     string `json:"request_sha256"`
+			}
+			if json.Unmarshal(req.Params, &p) != nil || p.Allow == nil || p.ApprovalID == "" || len(p.Digest) != 64 {
+				_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "需要 approval_id、request_sha256 与 allow"))
+				continue
+			}
+			if !d.sessionApprovals.respond(p.ApprovalID, p.Digest, *p.Allow) {
+				_ = c.WriteFrame(ipc.Fail(req.ID, protocol.UnknownExec, ipc.Human(protocol.UnknownExec)))
+				continue
+			}
+			_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
 		case "approval.respond":
 			var p struct {
 				Allow      *bool  `json:"allow"`
 				ApprovalID string `json:"approval_id"`
+				Digest     string `json:"request_sha256"`
 			}
-			_ = json.Unmarshal(req.Params, &p)
-			if p.Allow == nil || p.ApprovalID == "" {
-				_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "需要 approval_id 与 allow"))
+			if json.Unmarshal(req.Params, &p) != nil || p.Allow == nil || p.ApprovalID == "" || len(p.Digest) != 64 {
+				_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, "需要 approval_id、request_sha256 与 allow"))
 				continue
 			}
-			if !d.approvals.respond(p.ApprovalID, *p.Allow) {
+			if !d.approvals.respond(p.ApprovalID, p.Digest, *p.Allow) {
 				_ = c.WriteFrame(ipc.Fail(req.ID, protocol.UnknownExec, ipc.Human(protocol.UnknownExec)))
 				continue
 			}
 			_ = c.WriteFrame(ipc.OK(req.ID, map[string]string{"ok": "1"}))
 		case "exec":
 			go d.ipcExec(c, req)
+		case "session.request":
+			go d.ipcSessionRequest(c, req)
+		case "session.resume":
+			go d.ipcSessionResume(c, req)
 		case "exec.cancel":
 			d.ipcCancel(c, req)
 		case "read":
@@ -77,7 +109,8 @@ func (d *Daemon) serveIPC(c *ipc.Conn) {
 
 func (d *Daemon) ipcExec(c *ipc.Conn, req ipc.Request) {
 	var p struct {
-		DeviceID string `json:"device_id"`
+		DeviceID  string `json:"device_id"`
+		SessionID string `json:"session_id,omitempty"`
 		execution.Request
 	}
 	if err := execution.DecodeJSON(req.Params, &p); err != nil {
@@ -107,12 +140,13 @@ func (d *Daemon) ipcExec(c *ipc.Conn, req ipc.Request) {
 		return
 	}
 	payload, _ := json.Marshal(p.Request)
-	d.forwardInvoke(c, req.ID, peer.DeviceID, link, cl, protocol.OpExec, execID, payload, true)
+	d.forwardInvoke(c, req.ID, peer.DeviceID, link, cl, p.SessionID, protocol.OpExec, execID, payload, true)
 }
 
 func (d *Daemon) ipcOp(c *ipc.Conn, req ipc.Request, op string) {
 	var p struct {
-		DeviceID string `json:"device_id"`
+		DeviceID  string `json:"device_id"`
+		SessionID string `json:"session_id,omitempty"`
 	}
 	_ = json.Unmarshal(req.Params, &p)
 	peer, ok := d.store.Peer(p.DeviceID)
@@ -131,10 +165,14 @@ func (d *Daemon) ipcOp(c *ipc.Conn, req ipc.Request, op string) {
 		_ = c.WriteFrame(ipc.Fail(req.ID, protocol.AgentError, err.Error()))
 		return
 	}
-	d.forwardInvoke(c, req.ID, peer.DeviceID, link, cl, op, execID, req.Params, false)
+	d.forwardInvoke(c, req.ID, peer.DeviceID, link, cl, p.SessionID, op, execID, req.Params, false)
 }
 
-func (d *Daemon) forwardInvoke(c *ipc.Conn, reqID, deviceID string, link *wsConn, cl *clientLink, op, execID string, payload json.RawMessage, stream bool) {
+func invokeMessage(sessionID, op, execID string, payload json.RawMessage) protocol.Message {
+	return protocol.Message{Type: protocol.TypeInvoke, ExecID: execID, SessionID: sessionID, Op: op, Payload: payload}
+}
+
+func (d *Daemon) forwardInvoke(c *ipc.Conn, reqID, deviceID string, link *wsConn, cl *clientLink, sessionID, op, execID string, payload json.RawMessage, stream bool) {
 	r := d.trackRemote(execID, link, c)
 	if r == nil {
 		return
@@ -143,7 +181,7 @@ func (d *Daemon) forwardInvoke(c *ipc.Conn, reqID, deviceID string, link *wsConn
 	defer d.untrackRemote(execID)
 	w := cl.subscribe(execID)
 	defer cl.unsubscribe(execID)
-	err := link.send(protocol.Message{Type: protocol.TypeInvoke, ExecID: execID, Op: op, Payload: payload})
+	err := link.send(invokeMessage(sessionID, op, execID, payload))
 	r.sent = err == nil
 	r.mu.Unlock()
 	if err != nil {

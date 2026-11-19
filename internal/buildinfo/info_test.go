@@ -4,17 +4,18 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
 
 // A running artifact must expose a usable identity, not a hardcoded dev marker.
 func TestCurrent_should_identifyExecutingArtifact(t *testing.T) {
 	i := Current()
-	if !regexp.MustCompile(`^\d+\.\d+\.\d+$`).MatchString(i.Version) || i.Protocol != 1 || i.Revision == "" || i.OS == "" {
+	if !regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$`).MatchString(i.Version) || i.Version != strings.TrimSpace(sourceVersion) || i.Protocol != 1 || i.Revision == "" || i.OS == "" {
 		t.Fatalf("%+v", i)
 	}
 	e := Running()
-	if e.PID != os.Getpid() || len(e.SHA256) != 64 || e.Path == "" {
+	if e.PID != os.Getpid() || len(e.SHA256) != 64 || e.Path == "" || e.OwnerProtocol != RuntimeOwnerProtocol {
 		t.Fatalf("%+v", e)
 	}
 }

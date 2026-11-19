@@ -9,11 +9,11 @@ import (
 )
 
 var (
-	reRmRoot   = regexp.MustCompile(`(?i)rm\s+-[rf]+\s+(/|/\*|\\\\[a-z]:\\?)\s*$`)
-	reWinRoot  = regexp.MustCompile(`(?i)remove-item\s+.*-recurse.*[a-z]:\\?\s*$`)
-	reDDDev    = regexp.MustCompile(`(?i)dd\s+.*of=/dev/`)
-	reMkfs     = regexp.MustCompile(`(?i)\bmkfs(\.\w+)?\b`)
-	reFormat   = regexp.MustCompile(`(?i)format-volume`)
+	reRmRoot  = regexp.MustCompile(`(?i)rm\s+-[rf]+\s+(/|/\*|\\\\[a-z]:\\?)\s*$`)
+	reWinRoot = regexp.MustCompile(`(?i)remove-item\s+.*-recurse.*[a-z]:\\?\s*$`)
+	reDDDev   = regexp.MustCompile(`(?i)dd\s+.*of=/dev/`)
+	reMkfs    = regexp.MustCompile(`(?i)\bmkfs(\.\w+)?\b`)
+	reFormat  = regexp.MustCompile(`(?i)format-volume`)
 )
 
 func denyCommand(command string) bool {

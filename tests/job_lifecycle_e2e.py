@@ -3,13 +3,13 @@ import argparse
 import json
 import os
 from pathlib import Path
-import shlex
 import subprocess
 import sys
 import time
 import uuid
 
-from fixtures.runtime_cluster import Cluster
+from fixtures.mechanics_cli import add_mechanics_options, cluster_from_options
+from fixtures.expected_retention import verify_expected_retention
 from fixtures.process_ref import ProcessRef
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -18,11 +18,18 @@ parser=argparse.ArgumentParser()
 platform="windows-amd64/xallor-remote.exe" if os.name=="nt" else "linux-amd64/xallor-remote"
 parser.add_argument("--binary",default=str(root/"dist/release"/platform))
 parser.add_argument("--go",default="go")
+add_mechanics_options(parser, add_go=False)
 args=parser.parse_args()
-cluster=Cluster(args.binary)
+output=root/"dist/verification/job-lifecycle.json"
+cluster=cluster_from_options(args, output, __file__)
+quiet={"creationflags":subprocess.CREATE_NO_WINDOW} if os.name=="nt" else {}
 controllers=[]
 refs=[]
 results=[]
+confirmed_exits={}
+replacement=None
+retained_bytes=None
+expected_report=None
 
 
 def wait(predicate, description, seconds=30):
@@ -41,6 +48,14 @@ def owned(pid):
     return ref
 
 
+def close_owned(ref):
+    # close() signals only this retained native process object, waits for its
+    # exit, then releases the handle. Failure must propagate before recording.
+    if id(ref) not in confirmed_exits:
+        ref.close()
+        confirmed_exits[id(ref)] = True
+
+
 def jobs():
     return json.loads((cluster.root/"target/jobs.json").read_text(encoding="utf-8"))["jobs"]
 
@@ -49,8 +64,7 @@ def launch_tree(index):
     folder=workspace/("tree"+str(index))
     folder.mkdir()
     values=[str(tree),"parent",str(folder)]
-    command=("& "+" ".join("'"+v.replace("'","''")+"'" for v in values)) if os.name=="nt" else shlex.join(values)
-    child=subprocess.Popen([str(cluster.binary),"exec","--device",target,"--",command],env=cluster.env("controller"),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    child=subprocess.Popen([str(cluster.binary),"exec","--device",target,"--program",values[0],"--",*values[1:]],env=cluster.env("controller"),stdout=subprocess.PIPE,stderr=subprocess.PIPE, **quiet)
     controllers.append(child)
     def ready():
         if child.poll() is not None:
@@ -71,10 +85,10 @@ try:
     tree,agent=cluster.root/("tree"+suffix),cluster.root/("agent"+suffix)
     reservations=cluster.root/("reservations"+suffix)
     for path,source in ((tree,"process-tree"),(agent,"cursor-cli"),(reservations,"job-reservations")):
-        subprocess.run([args.go,"build","-o",str(path),"./tests/fixtures/"+source],cwd=root,check=True,timeout=180)
-    subprocess.run([str(reservations),"sequence",str(cluster.root/"sequence")],check=True,timeout=30)
+        subprocess.run([args.go,"build","-o",str(path),"./tests/fixtures/"+source],cwd=root,check=True,timeout=180, **quiet)
+    subprocess.run([str(reservations),"sequence",str(cluster.root/"sequence")],check=True,timeout=30, **quiet)
     results.append("one_owner_rejects_parallel_launch_and_reuses_slot_after_cleanup")
-    subprocess.run([str(reservations),"close",str(cluster.root/"close")],check=True,timeout=30)
+    subprocess.run([str(reservations),"close",str(cluster.root/"close")],check=True,timeout=30, **quiet)
     results.append("closed_owner_cannot_launch_or_release_replacement_ledger_debt")
     cluster.start()
     target=cluster.add("target")
@@ -84,7 +98,7 @@ try:
     cluster.cli("controller","peer","add","--device",target,"--grant",grant)
     cluster.stop("target")
     ready=cluster.root/"reservations-ready.json"
-    reserver=subprocess.Popen([str(reservations),str(cluster.root/"target"),str(ready)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    reserver=subprocess.Popen([str(reservations),str(cluster.root/"target"),str(ready)],stdout=subprocess.PIPE,stderr=subprocess.PIPE, **quiet)
     controllers.append(reserver)
     def reserved():
         if reserver.poll() is not None:
@@ -95,7 +109,7 @@ try:
             return None
     records=wait(reserved,"reservation fixture never published readiness")
     assert len(records)==4 and all(r["state"]=="reserved" for r in records),records
-    owned(reserver.pid).close()
+    close_owned(owned(reserver.pid))
     reserver.communicate(timeout=10)
     cluster.cli("target","ensure")
     wait(lambda:cluster.cli("controller","doctor","--device",target,"--json",check=False).returncode==0,"Runtime did not reconnect after lost reservations",45)
@@ -140,7 +154,7 @@ try:
     assert len(jobs())==4
     old_ids=set(jobs())
     runtime=json.loads(cluster.cli("target","runtime","status").stdout)["running"]
-    owned(runtime["pid"]).close()
+    close_owned(owned(runtime["pid"]))
     for control in controllers:
         if control.poll() is None:
             control.communicate(timeout=20)
@@ -154,16 +168,35 @@ try:
         receipt=json.loads(cluster.cli("controller","handoff","get","--device",target,"--request-id","job"+str(i)).stdout)
         assert receipt["state"]=="unknown" and receipt["code"]=="runtime_restarted",receipt
     assert len((cluster.root/"target/fixture-agent-count").read_text().splitlines())==2
+    # Retain the replacement's native exit observer before stop; an absent IPC
+    # endpoint or a later PID lookup cannot prove this process exited.
+    running=json.loads(cluster.cli("target","runtime","status").stdout)["running"]
+    replacement=ProcessRef(running["pid"])
+    assert replacement.alive()
+    retained_bytes=(cluster.root/"target/jobs.json").read_bytes()
     results.append("runtime_crash_keeps_uncertain_occupancy_without_replay")
 finally:
-    for control in controllers:
-        if control.poll() is None:
-            control.terminate()
-            control.communicate(timeout=10)
-    for ref in refs:
-        ref.close()
-    cluster.close()
-    output=root/"dist/verification/job-lifecycle.json"
-    output.parent.mkdir(parents=True,exist_ok=True)
-    output.write_text(json.dumps(results,indent=2),encoding="utf-8")
+    try:
+        for control in controllers:
+            if control.poll() is None:
+                control.terminate()
+                control.communicate(timeout=10)
+        for ref in refs:
+            close_owned(ref)
+    finally:
+        try:
+            cluster.close()
+        except Exception as error:
+            output.write_text(json.dumps({"status":"incomplete", "evidence":dict(cluster.evidence),
+                                          "cleanup_complete":False, "results":results,
+                                          "cleanup_error":str(error), "retained_root":str(cluster.root)}, indent=2), encoding="utf-8")
+            if len(results) != 6 or replacement is None or retained_bytes is None:
+                raise
+            expected_report=verify_expected_retention(cluster,error,replacement,retained_bytes,
+                                                     list(confirmed_exits.values()),results)
+        finally:
+            if replacement is not None:
+                replacement.close()
+assert expected_report is not None, "uncertain job debt was unexpectedly reported released"
+output.write_text(json.dumps(expected_report,indent=2),encoding="utf-8")
 print(json.dumps(results),flush=True)

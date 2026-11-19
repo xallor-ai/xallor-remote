@@ -9,7 +9,8 @@ import time
 import uuid
 
 from fixtures.process_ref import ProcessRef
-from fixtures.runtime_cluster import Cluster
+from fixtures.mechanics_cli import cluster_from_options, completed_report
+from fixtures.handoff_cli import add_handoff_options, prepare_agent
 from fixtures.file_stamp import stamp
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -18,10 +19,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--binary", required=True)
-    parser.add_argument("--go", default="go")
+    add_handoff_options(parser)
     args = parser.parse_args()
-    cluster, references, results = Cluster(args.binary), [], []
+    output = ROOT / "dist/verification/handoff-revocation.json"
+    cluster = cluster_from_options(args, output, __file__)
+    references, results = [], []
 
     def wait(check, description, seconds=30):
         deadline = time.monotonic() + seconds
@@ -50,8 +52,7 @@ def main():
             return subprocess.check_output(["git", "-C", str(workspace), *args], encoding="utf-8").strip()
         git("init", "--quiet")
         git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "--quiet", "-m", "fixture")
-        fake = cluster.root / ("agent.exe" if os.name == "nt" else "agent")
-        subprocess.run([args.go, "build", "-o", str(fake), "./tests/fixtures/cursor-cli"], cwd=ROOT, check=True, timeout=180)
+        fake = prepare_agent(cluster, args)
         cluster.cli("target", "handoff", "configure", "--executable", str(fake))
         revision = git("rev-parse", "HEAD")
 
@@ -151,12 +152,12 @@ def main():
         assert len((profile / "fixture-agent-count").read_text(encoding="utf-8").splitlines()) == 5
         assert git("status", "--porcelain") == ""
     finally:
-        for ref in references:
-            ref.close()
-        cluster.close()
-        output = ROOT / "dist/verification/handoff-revocation.json"
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(results, indent=2), encoding="utf-8")
+        try:
+            for ref in references:
+                ref.close()
+        finally:
+            cluster.close()
+    output.write_text(json.dumps(completed_report(cluster,results), indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":

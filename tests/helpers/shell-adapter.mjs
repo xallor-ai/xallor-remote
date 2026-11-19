@@ -94,7 +94,7 @@ try {
     results.push({name:"explicit_missing_interpreter_does_not_fallback",status:"pass"});
   }
   ok(await bounded(target.call("config.set",{shell:process.env.XALLOR_TEST_SHELL})));
-  const dest=path.resolve("dist/verification/shell-adapter.json");
+  const dest=path.join(root,"shell-adapter-results.json");
   fs.mkdirSync(path.dirname(dest),{recursive:true});fs.writeFileSync(dest,JSON.stringify(results,null,2));
   console.log(JSON.stringify(results));
 } finally {target.close();controller.close();}

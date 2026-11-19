@@ -18,6 +18,10 @@ type Device struct {
 	OwnershipID    string
 	OwnerTenant    string
 	OwnerPrincipal string
+	// Internal committed recipient-consent authority, separate from the
+	// transport sharing/ownership Binding and never serialized as a credential.
+	SessionEpoch       string `json:"-"`
+	SessionEpochActive bool   `json:"-"`
 }
 
 // Binding identifies what was authenticated, without retaining a bearer secret.

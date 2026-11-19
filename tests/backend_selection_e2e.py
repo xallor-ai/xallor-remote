@@ -1,6 +1,5 @@
 """Real CLI/IPC/Runtime/Relay backend refusals on isolated local profiles."""
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -9,7 +8,7 @@ import subprocess
 import sys
 import threading
 
-from fixtures.runtime_cluster import Cluster
+from fixtures.mechanics_cli import add_mechanics_options, cluster_from_options, completed_report
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,7 +20,8 @@ class IPC:
         self.process = subprocess.Popen(
             [str(cluster.binary), "ipc-bridge"], env=cluster.env(profile),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding="utf-8", errors="replace", bufsize=1)
+            text=True, encoding="utf-8", errors="replace", bufsize=1,
+            **({"creationflags":subprocess.CREATE_NO_WINDOW} if os.name=="nt" else {}))
         self.frames = queue.Queue()
         self.sequence = 0
         self.reader = threading.Thread(target=self._read, daemon=True)
@@ -66,8 +66,9 @@ def main():
     parser = argparse.ArgumentParser()
     platform = "windows-amd64/xallor-remote.exe" if os.name == "nt" else "linux-amd64/xallor-remote"
     parser.add_argument("--binary", default=str(ROOT / "dist/release" / platform))
+    add_mechanics_options(parser)
     args = parser.parse_args()
-    cluster = Cluster(args.binary)
+    cluster = cluster_from_options(args, ROOT / "dist/verification/backend-selection.json", __file__)
     clients = []
     results = []
     try:
@@ -137,13 +138,17 @@ def main():
             assert refused.returncode != 0 and "execution backend unavailable" in refused.stderr, refused.stderr
         finally:
             config_path.write_bytes(good_config)
+        # Failed startup retains its selection. Configuration repair alone must
+        # not silently replay it; explicit recovery uses the retained owner role.
+        cluster.cli("target", "runtime", "rollback")
         cluster.cli("target", "ensure")
         results.append({"name": "unsupported_persisted_backend_blocks_runtime_start", "status": "pass"})
     finally:
         for client in clients:
             client.close()
         cluster.close()
-    evidence = {"os": sys.platform, "binary_sha256": hashlib.sha256(cluster.binary.read_bytes()).hexdigest(), "results": results}
+    evidence = completed_report(cluster, results)
+    evidence["os"] = sys.platform
     output = ROOT / "dist/verification/backend-selection.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(evidence, indent=2), encoding="utf-8")

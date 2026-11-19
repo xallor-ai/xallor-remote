@@ -12,6 +12,10 @@ import (
 )
 
 func cmdHandoff() *cobra.Command {
+	return cmdHandoffWith(ensureRuntime, rpc)
+}
+
+func cmdHandoffWith(ensure func() error, call peerRPC) *cobra.Command {
 	c := &cobra.Command{Use: "handoff", Short: "交接到指定 Cursor CLI 会话并查询回执"}
 	var executable string
 	var prefix []string
@@ -25,7 +29,7 @@ func cmdHandoff() *cobra.Command {
 	configure.Flags().StringVar(&executable, "executable", "", "Cursor CLI 可执行文件绝对路径；JS 包使用 node.exe")
 	configure.Flags().StringArrayVar(&prefix, "prefix-arg", nil, "固定启动前置参数；JS 包指定 index.js")
 	_ = configure.MarkFlagRequired("executable")
-	var device, file string
+	var device, file, submitSession string
 	submit := &cobra.Command{Use: "submit", Short: "提交带固定请求 ID 的交接文件；重试不重复启动", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		f, err := os.Open(file)
 		if err != nil {
@@ -43,28 +47,38 @@ func cmdHandoff() *cobra.Command {
 		if err = json.Unmarshal(b, &request); err != nil {
 			return fmt.Errorf("交接文件不是有效 JSON。")
 		}
-		return printHandoff(cmd, "handoff.submit", map[string]any{"device_id": device, "request": request})
+		params := map[string]any{"device_id": device, "request": request}
+		if submitSession != "" {
+			params["session_id"] = submitSession
+		}
+		return printHandoff(cmd, "handoff.submit", params, ensure, call)
 	}}
 	submit.Flags().StringVar(&device, "device", "", "对方设备 ID")
 	submit.Flags().StringVar(&file, "request", "", "完整交接 JSON 文件")
+	submit.Flags().StringVar(&submitSession, "session-id", "", "已批准的访问会话 ID；不是交接文件中的 Cursor 会话 ID")
 	_ = submit.MarkFlagRequired("device")
 	_ = submit.MarkFlagRequired("request")
-	var target, id string
+	var target, id, getSession string
 	get := &cobra.Command{Use: "get", Short: "查询已有回执；不会启动或重放 Agent", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		return printHandoff(cmd, "handoff.get", map[string]any{"device_id": target, "request_id": id})
+		params := map[string]any{"device_id": target, "request_id": id}
+		if getSession != "" {
+			params["session_id"] = getSession
+		}
+		return printHandoff(cmd, "handoff.get", params, ensure, call)
 	}}
 	get.Flags().StringVar(&target, "device", "", "对方设备 ID")
 	get.Flags().StringVar(&id, "request-id", "", "原请求 ID")
+	get.Flags().StringVar(&getSession, "session-id", "", "已批准的访问会话 ID")
 	_ = get.MarkFlagRequired("device")
 	_ = get.MarkFlagRequired("request-id")
 	c.AddCommand(configure, submit, get)
 	return c
 }
-func printHandoff(cmd *cobra.Command, method string, params map[string]any) error {
-	if err := ensureRuntime(); err != nil {
+func printHandoff(cmd *cobra.Command, method string, params map[string]any, ensure func() error, call peerRPC) error {
+	if err := ensure(); err != nil {
 		return err
 	}
-	result, err := rpc(method, params)
+	result, err := call(method, params)
 	if err != nil {
 		return fmt.Errorf("交接结果未确认，请保留原请求 ID 并查询回执：%w", err)
 	}

@@ -50,5 +50,6 @@ func cmdDevice() *cobra.Command {
 	unshare.Flags().StringVar(&shareID, "share", "", "分享 ID")
 	_ = unshare.MarkFlagRequired("share")
 	root.AddCommand(transfer, share, unshare)
+	root.AddCommand(cmdDeviceCode(run))
 	return root
 }

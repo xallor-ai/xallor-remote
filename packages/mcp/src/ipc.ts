@@ -37,7 +37,7 @@ export class RuntimeIpc {
       const s = net.createConnection(path);
       const t = setTimeout(() => {
         s.destroy();
-        reject(new Error("Runtime 未运行"));
+        reject(Object.assign(new Error("Runtime 连接超时，请检查运行状态。"), { code: "ETIMEDOUT" }));
       }, timeoutMs);
       s.once("connect", () => {
         clearTimeout(t);
@@ -65,8 +65,8 @@ export class RuntimeIpc {
     this.buf = "";
   }
 
-  async call(method: string, params: Record<string, unknown> = {}): Promise<Frame> {
-    return this.roundTrip(method, params);
+  async call(method: string, params: Record<string, unknown> = {}, timeoutMs?: number): Promise<Frame> {
+    return this.roundTrip(method, params, undefined, timeoutMs);
   }
 
   async stream(
@@ -81,7 +81,11 @@ export class RuntimeIpc {
     method: string,
     params: Record<string, unknown>,
     onEvent?: (f: Frame) => void,
+    timeoutMs?: number,
   ): Promise<Frame> {
+    if (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2147483647)) {
+      return Promise.reject(new Error("IPC observation deadline is invalid"));
+    }
     if (!this.sock) {
       return Promise.reject(new Error("IPC 未连接"));
     }
@@ -91,9 +95,20 @@ export class RuntimeIpc {
       return Promise.reject(new Error("IPC 参数超过上限"));
     }
     return new Promise<Frame>((resolve, reject) => {
-      this.waiters.set(id, { resolve, reject, onEvent });
+      let deadline: NodeJS.Timeout | undefined;
+      this.waiters.set(id, {
+        resolve: frame => { clearTimeout(deadline); resolve(frame); },
+        reject: error => { clearTimeout(deadline); reject(error); },
+        onEvent,
+      });
+      if (timeoutMs !== undefined) {
+        deadline = setTimeout(() => {
+          this.failConnection(Object.assign(new Error("Runtime 应答超时，状态尚未确认，请检查本机运行状态。"), { code: "ETIMEDOUT" }));
+        }, timeoutMs);
+      }
       this.sock!.write(line, (err) => {
         if (err) {
+          clearTimeout(deadline);
           this.waiters.delete(id);
           reject(err);
         }

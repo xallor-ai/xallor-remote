@@ -23,6 +23,10 @@ var Modified string
 
 const Protocol = 1
 
+// RuntimeOwnerProtocol versions local lifecycle ownership independently of
+// the Relay/data protocol and on-disk profile format.
+const RuntimeOwnerProtocol = 1
+
 type Info struct {
 	Version       string `json:"version"`
 	Revision      string `json:"revision"`
@@ -60,10 +64,13 @@ func Current() Info {
 }
 
 type Executable struct {
+	ActivationID string `json:"activation_id,omitempty"`
+	LaunchID     string `json:"launch_id,omitempty"`
 	Info
-	Path   string `json:"path"`
-	SHA256 string `json:"sha256"`
-	PID    int    `json:"pid"`
+	Path          string `json:"path"`
+	SHA256        string `json:"sha256"`
+	PID           int    `json:"pid"`
+	OwnerProtocol int    `json:"runtime_owner_protocol"`
 }
 
 var runningOnce sync.Once
@@ -72,9 +79,15 @@ var running Executable
 // Running caches the loaded image identity before an on-disk package is upgraded.
 func Running() Executable {
 	runningOnce.Do(func() {
-		running = Executable{Info: Current(), PID: os.Getpid()}
+		running = Executable{Info: Current(), PID: os.Getpid(), OwnerProtocol: RuntimeOwnerProtocol}
 		running.Path, _ = os.Executable()
-		running.SHA256, _ = HashFile(running.Path)
+		imagePath := running.Path
+		if runtime.GOOS == "linux" {
+			// A sealed memfd (or an unlinked executable) has no reopenable
+			// display pathname. Hash the loaded kernel image, not a disk alias.
+			imagePath = "/proc/self/exe"
+		}
+		running.SHA256, _ = HashFile(imagePath)
 	})
 	return running
 }

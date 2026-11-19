@@ -10,15 +10,17 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/xallor-ai/xallor-remote/internal/execution"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
+	"github.com/xallor-ai/xallor-remote/internal/runtimehead"
 )
 
 func cmdExec() *cobra.Command {
 	return executionCommand(func(cmd *cobra.Command, device string, request execution.Request) error {
 		jsonl, _ := cmd.Flags().GetBool("jsonl")
+		sessionID, _ := cmd.Flags().GetString("session-id")
 		if err := ensureRuntime(); err != nil {
-			return localExecError(cmd.OutOrStdout(), jsonl, protocol.RuntimeUnavailable, err)
+			return localExecError(cmd.OutOrStdout(), jsonl, runtimehead.ErrorCode(err), err)
 		}
-		return streamExec(device, request, jsonl, cmd.OutOrStdout(), cmd.ErrOrStderr())
+		return streamExec(device, sessionID, request, jsonl, cmd.OutOrStdout(), cmd.ErrOrStderr())
 	})
 }
 
@@ -99,6 +101,7 @@ func executionCommand(run func(*cobra.Command, string, execution.Request) error)
 	c.Flags().StringVar(&program, "program", "", "对方程序路径或名称，-- 后逐个传递程序参数")
 	c.Flags().StringVar(&cwd, "cwd", "", "对方工作目录（默认 workspace）")
 	c.Flags().StringVar(&backend, "backend", "", "对方执行后端（省略使用对方配置）；不支持时拒绝执行")
+	c.Flags().String("session-id", "", "已批准的逻辑会话 ID（由 session request 返回）")
 	c.Flags().IntVar(&timeout, "timeout-ms", 0, "执行超时毫秒，0 不设期限，最长 3600000")
 	return c
 }

@@ -15,10 +15,10 @@ func (s *SQLStore) migrate() error {
 	if err := tx.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		return err
 	}
-	if version > 8 {
+	if version > 13 {
 		return fmt.Errorf("unsupported Relay database version %d", version)
 	}
-	if version == 8 {
+	if version == 13 {
 		return tx.Commit()
 	}
 	if version < 3 {
@@ -71,6 +71,31 @@ PRAGMA user_version=3;
 	}
 	if err := migrateOIDC(tx); err != nil {
 		return err
+	}
+	if version < 9 {
+		if err := migrateAccessCodes(tx); err != nil {
+			return err
+		}
+	}
+	if version < 10 {
+		if err := migrateResumeCapabilities(tx); err != nil {
+			return err
+		}
+	}
+	if version < 11 {
+		if err := migrateSessionConsent(tx); err != nil {
+			return err
+		}
+	}
+	if version < 12 {
+		if err := migrateSessionTargets(tx); err != nil {
+			return err
+		}
+	}
+	if version < 13 {
+		if err := migrateCodeManagement(tx); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

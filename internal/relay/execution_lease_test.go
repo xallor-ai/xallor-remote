@@ -57,7 +57,7 @@ func TestExecutionLease_should_bindRenewalToLiveRouteAndDevice(t *testing.T) {
 				t.Fatal(reply)
 			}
 			if kind == "live" {
-				if reply.Code != "" || reply.LeaseMS != protocol.ExecutionLeaseDuration.Milliseconds() {
+				if reply.Code != "" || reply.LeaseMS <= 0 || reply.LeaseMS > protocol.ExecutionLeaseDuration.Milliseconds() {
 					t.Fatal(reply)
 				}
 			} else if reply.Code != protocol.Unauthorized || reply.LeaseMS != 0 {

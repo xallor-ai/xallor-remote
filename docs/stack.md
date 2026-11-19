@@ -34,6 +34,7 @@ SSOT：语言、库、仓库形态、发行。语言级选型结论在 [decision
 | 日志 | Go `log/slog`；TS 侧少日志、可 `debug` | 自研日志平台 |
 | ID | `github.com/google/uuid` | 自写随机串当 UUID |
 | Windows Job Object / Unix 进程组 | `golang.org/x/sys` | 只 `kill` 父进程留孤儿 |
+| npm 首次引导的 OS 映像保护 | 固定版本 `koffi 3.3.7` 调 Windows 句柄 / Linux sealed memfd；仅限可信引导例外 | 以只读权限或启动前哈希代替执行字节绑定；在 MCP 增加激活状态机 |
 | Windows named pipe | **`github.com/Microsoft/go-winio`** | localhost TCP 冒充管道 |
 | TLS | `crypto/tls` + 系统根证书 | 自签当默认；跳过证书校验 |
 | grant / secret 哈希 | **SHA-256**（高熵，不必 bcrypt） | 自创哈希；明文落 Relay |

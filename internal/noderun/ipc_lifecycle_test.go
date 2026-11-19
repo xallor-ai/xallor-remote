@@ -12,6 +12,15 @@ import (
 	"time"
 )
 
+// A logical session returned by session.request must be carried by every
+// subsequent invoke envelope so Relay can enforce its scope and expiry.
+func TestInvoke_shouldCarryLogicalSessionID_whenHeadProvidesOne(t *testing.T) {
+	message := invokeMessage("session-1", protocol.OpInfo, "exec-1", json.RawMessage(`{"device_id":"device-1"}`))
+	if message.Type != protocol.TypeInvoke || message.SessionID != "session-1" || message.Op != protocol.OpInfo {
+		t.Fatalf("invoke envelope lost logical session: %+v", message)
+	}
+}
+
 // A slow peer dial may finish after its GUI window closes. Never send that invoke.
 func TestForward_should_notDispatch_afterHeadClosed(t *testing.T) {
 	a, b := net.Pipe()
@@ -20,7 +29,7 @@ func TestForward_should_notDispatch_afterHeadClosed(t *testing.T) {
 	_ = c.Close()
 	d := &Daemon{remote: map[string]*remoteExec{}}
 	// A nil link intentionally proves no network send/subscription is attempted.
-	d.forwardInvoke(c, "request", "123456789", nil, nil, protocol.OpExec, "exec", nil, true)
+	d.forwardInvoke(c, "request", "123456789", nil, nil, "", protocol.OpExec, "exec", nil, true)
 	if len(d.remote) != 0 {
 		t.Fatal("closed head acquired a task")
 	}

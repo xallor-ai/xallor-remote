@@ -7,7 +7,8 @@ import subprocess
 import sys
 import time
 import uuid
-from fixtures.runtime_cluster import Cluster
+from fixtures.mechanics_cli import cluster_from_options, completed_report
+from fixtures.handoff_cli import add_handoff_options, prepare_agent
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,10 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--binary", required=True)
-    parser.add_argument("--go", default="go")
+    add_handoff_options(parser)
     args = parser.parse_args()
-    cluster = Cluster(args.binary)
+    output = ROOT / "dist/verification/handoff-scope.json"
+    cluster = cluster_from_options(args, output, __file__)
     results = []
 
     def passed(name):
@@ -40,8 +41,7 @@ def main():
 
         git("init", "--quiet")
         git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "--quiet", "-m", "fixture")
-        fake = cluster.root / ("cursor-fixture.exe" if os.name == "nt" else "cursor-fixture")
-        subprocess.run([args.go, "build", "-o", str(fake), "./tests/fixtures/cursor-cli"], cwd=ROOT, check=True, timeout=180)
+        fake = prepare_agent(cluster, args)
         cluster.cli("target", "handoff", "configure", "--executable", str(fake))
         base = dict(workspace=str(workspace), revision=git("rev-parse", "HEAD"), agent="cursor",
                     mode="ask", prompt="Isolated scope fixture", trust_workspace=True, timeout_seconds=30)
@@ -153,9 +153,7 @@ def main():
         passed("persistent_records_bind_server_identity_without_credentials_or_prompt")
     finally:
         cluster.close()
-        output = ROOT / "dist/verification/handoff-scope.json"
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    output.write_text(json.dumps(completed_report(cluster,results), indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":

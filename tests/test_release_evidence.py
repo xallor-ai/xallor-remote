@@ -102,8 +102,16 @@ class ReleaseEvidenceTests(unittest.TestCase):
         with patch.object(verify.subprocess,'run') as run:
             verify.attest(Path('artifact.zip'),'owner/repo','refs/tags/v0.2.2','a'*40)
         args = run.call_args.args[0]
-        self.assertIn('owner/repo/.github/workflows/release.yml',args)
+        self.assertNotIn('--signer-workflow', args)
+        self.assertTrue(any('owner/repo/.github/workflows/release.yml' in arg for arg in args))
         self.assertIn('--source-ref',args); self.assertIn('--source-digest',args)
+        self.assertIn('--signer-digest',args); self.assertIn('a'*40,args)
+        self.assertIn('--cert-identity',args)
+        self.assertIn('https://github.com/owner/repo/.github/workflows/release.yml@refs/tags/v0.2.2',args)
+        self.assertIn('--cert-oidc-issuer',args)
+        self.assertIn('https://token.actions.githubusercontent.com',args)
+        self.assertIn('--predicate-type',args)
+        self.assertIn('https://slsa.dev/provenance/v1',args)
         self.assertIn('--deny-self-hosted-runners',args)
         self.assertTrue(run.call_args.kwargs['check'])
 

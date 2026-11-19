@@ -1,18 +1,13 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 
-	"log/slog"
 	"os"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/xallor-ai/xallor-remote/internal/identity"
-	"github.com/xallor-ai/xallor-remote/internal/ipc"
-	"github.com/xallor-ai/xallor-remote/internal/noderun"
 )
 
 func Execute() error {
@@ -24,31 +19,13 @@ func Execute() error {
 		SilenceErrors: true,
 	}
 	addProfileFormatGuard(root)
-	root.AddCommand(cmdRelay(), cmdStart(), cmdEnsure(), cmdStop(), cmdStatus(), cmdDoctor(), cmdPolicy(), cmdEntitlement(), cmdUsage(), cmdGrant(), cmdInbound(), cmdRevoke(), cmdReset(), cmdPeer(), cmdExec(), cmdApprove(), cmdTUI(), cmdMCP(), cmdVersion(), cmdRuntime(), cmdIPCBridge(), cmdHandoff(), cmdAccount())
+	root.AddCommand(cmdRelay(), cmdStart(), cmdEnsure(), cmdStop(), cmdStatus(), cmdDoctor(), cmdPolicy(), cmdEntitlement(), cmdUsage(), cmdGrant(), cmdSession(), cmdInbound(), cmdRevoke(), cmdReset(), cmdPeer(), cmdExec(), cmdApprove(), cmdTUI(), cmdMCP(), cmdVersion(), cmdRuntime(), cmdIPCBridge(), cmdHandoff(), cmdAccount())
 	root.AddCommand(cmdDevice())
 	root.AddCommand(cmdConfig())
+	root.AddCommand(cmdRuntimeServe())
+	root.AddCommand(cmdRuntimeTransaction())
+	root.AddCommand(cmdRuntimeRecovery())
 	return executeCLI(root, os.Args[1:])
-}
-
-func cmdStart() *cobra.Command {
-	return &cobra.Command{
-		Use:   "start",
-		Short: "前台运行 Runtime",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			unlock, err := lockRuntime()
-			if err != nil {
-				return err
-			}
-			defer unlock()
-			st, err := identity.Load()
-			if err != nil {
-				return err
-			}
-			printBanner(st)
-			log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-			return noderun.New(st, log).Run()
-		},
-	}
 }
 
 func cmdEnsure() *cobra.Command {
@@ -221,32 +198,4 @@ func printStatus() error {
 	fmt.Printf("在线:      %v\n", res["online"])
 	fmt.Printf("版本:      %v\n", res["version"])
 	return nil
-}
-
-func rpc(method string, params map[string]any) (map[string]any, error) {
-	raw, err := ipc.Dial(2 * time.Second)
-	if err != nil {
-		return nil, fmt.Errorf("Runtime 未运行，请先 xallor-remote start 或 ensure")
-	}
-	defer raw.Close()
-	_ = raw.SetDeadline(time.Now().Add(10 * time.Second))
-	c := ipc.NewConn(raw)
-	if err := ipc.Call(c, "1", method, params); err != nil {
-		return nil, err
-	}
-	fr, err := c.ReadFrame()
-	if err != nil {
-		return nil, err
-	}
-	if fr.OK == nil || !*fr.OK {
-		return nil, fmt.Errorf("%s", ipc.FailureMessage(fr))
-	}
-	var out map[string]any
-	if len(fr.Result) > 0 {
-		_ = json.Unmarshal(fr.Result, &out)
-	}
-	if out == nil {
-		out = map[string]any{}
-	}
-	return out, nil
 }

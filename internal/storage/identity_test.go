@@ -97,8 +97,12 @@ func TestSQLIdentity_should_cancelPoolWait_withoutMutatingRows(t *testing.T) {
 	for name, call := range map[string]func(context.Context) error{
 		"register": func(ctx context.Context) error { _, err := s.RegisterDevice(ctx, "device", "secret", true); return err },
 		"load":     func(ctx context.Context) error { _, err := s.LoadDevice(ctx, "device"); return err },
-		"update":   func(ctx context.Context) error { _, err := s.UpdateDevice(ctx, "device", access.Device{}); return err },
-		"delete":   func(ctx context.Context) error { return s.DeleteDevice(ctx, "device", "uid", "secret") },
+		// A well-formed binding reaches the SQL pool; empty UID is rejected before I/O.
+		"update": func(ctx context.Context) error {
+			_, err := s.UpdateDevice(ctx, "device", access.Device{UID: "uid", SecretHash: "secret", Inbound: true})
+			return err
+		},
+		"delete": func(ctx context.Context) error { return s.DeleteDevice(ctx, "device", "uid", "secret") },
 	} {
 		t.Run(name, func(t *testing.T) {
 			held, err := s.db.Conn(context.Background())

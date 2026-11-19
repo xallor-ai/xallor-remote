@@ -4,6 +4,164 @@ SSOT：消息语义、错误码、角色。建立连接、inflight、流式、ca
 
 JSON 字段名实现时可加前缀，**type、code、角色不得改义**。本文不是加密规格。
 
+本机 Runtime 生命周期能力使用独立的 `runtime_owner_protocol`，当前值为整数 `1`，
+由 `version --json` 和运行身份中的 build 信息返回。它不改变 Relay `protocol`
+或持久化 `profile_format`，也不替代来源证明。安装、恢复基线、回滚和无 owner
+启动在执行受保护的版本探测时要求精确匹配；缺字段、零或其他值均在 Stop、
+新 pending 和 Start 之前拒绝，不尝试旧协议降级。就绪信封见 [ipc.md](ipc.md)。
+
+本机选择记录的 `pending_launch_id` 为每次新启动随机生成的 32 位小写十六进制，
+提交时复制为 `current_launch_id` 并清空 pending 字段。私有启动信封的 `launch_id`
+必须与该次选择对应；即使 activation ID、程序摘要不变，恢复也生成新的启动标识，
+旧许可在 pending 阶段及最终提交后均不能恢复有效。该标识不替代来源证明，不是
+远程执行幂等键或授权码。历史未完成选择可以缺少此字段，但普通启动不会自动恢复它；
+显式恢复会撤销或生成新标识，再允许启动。服务在持有运行锁时、身份/IPC 初始化前检查。
+
+本机只读 `runtime.operation.status` 使用现有 IPC 信封，参数仅含
+`operation_id`（32 位小写十六进制）；参数 JSON 至多 256 字节，未知字段和尾随数据拒绝。
+只读 `runtime.operation.reconcile` 仅接受 `operation_id`、`namespace_sha256`、
+`expected_revision`、`expected_record_sha256` 四个字段，执行 namespace 与 record
+revision/digest 的 CAS 观察，返回相同的原始事务记录并附
+`disposition:unresolved` 与 blocker `native_owner_observation_required`。当前没有
+公共 resolution writer；该方法不会创建 profile/数据库、追加 resolution、运行
+install/rollback 或重放请求。未知字段、超限参数、错误 namespace、未知 operation
+或过期 CAS 均以有界错误拒绝；请求 JSON 上限为 512 字节，revision 为正数且不超过
+1,000,000,000，operation、namespace 和 record digest 必须分别是 32/64/64 位小写十六进制。
+成功返回 `result.operation`，其中 `request` 含 `id`、`kind`（install/rollback）和
+`intent_sha256`；记录另含 `namespace_sha256`，`outcome` 为 pending、uncertain、succeeded、failed 或 rejected，
+`effects` 至多 32 项，每项含 `name`、`state`、`before`、`target` 和可选 `target_sha256`。
+`before` 是派发前的选择观测；选择写入（prepare/commit/clear）另含必填 `expected`，
+仅表示计划写入的选择。返回后独立读取的 `observed` 不能由 expected 替代。
+选择观测含 `state_sha256`（对 Go State 按声明字段顺序紧凑 JSON 编码的 SHA-256，包含完整 manifest），
+以及 `current`、`previous`、`pending` 三个对象；每个对象含可选 `sha256`、`activation_id`、
+`launch_id`，空引用为 `{}`。Previous 不保留 launch ID。历史选择可缺 activation/launch，
+但 start、prepare、commit、ready 的 target 必须含完整 SHA、activation 和 launch。
+target 与对应选择引用严格关联；start 恢复 Current 时使用 Pending 的 launch ID。
+stop 的 target 为空，另含必填 `stop` 意图：`mode`（peer/no_peer）、32 位小写十六进制
+`attempt_id`，peer 另含 `peer_pid`、`image_sha256`、`selection` 和
+`identity_scope=process_image_and_launch`。selection 必须精确对应 before 的 Current 或
+Pending，且与实际 IPC 内核进程和保留映像观察器绑定。普通 status 的 build 新增
+`activation_id`、`launch_id`，由服务从已认证启动许可锁存；Pending 时仍返回，且不代表 ready。
+no_peer 只含 `absence_basis`：fresh 或 explicit_legacy_recovery，不含 PID、映像或 selection。
+fresh 要求原选择全空；legacy recovery 要求已有 Pending、经认证的恢复入口及保留的运行锁。
+公共 stop 的 public_observation/process_image 和 absent_profile 仅用于即时观察，不得进入日志。
+
+停止结果另含 `stop_observed`，必须关联同一 attempt_id，字段和值为：
+- `dispatch`：not_sent / may_have_been_sent / acknowledged；
+- `process`：exit_observed / still_running_or_unknown / not_observed（no_peer 仅此值）；
+- `runtime_resource`：released_under_lock / held_by_recovery / unknown；
+- `jobs`：absent / empty / reserved_only / unreleased_or_unknown；
+- `observers`：released / unknown；
+- `result`：released_peer / quiescent_no_peer / not_dispatched / unknown。
+
+confirmed 必须由本次保留观察器确认退出（peer）或获准静默（no_peer），并确认运行锁、
+同一次 jobs.lock 下账本读取、连接/进程/映像观察器关闭。恢复运行锁不属于观察器，持续保留到
+旧启动许可撤销或新 Pending 落盘。已发送后丢失确认仍为 unknown，即使另观察到退出；
+只有明确未派发且观察器释放的失败可为 not_applied。保存意图失败不能发送 stop，结果保存
+失败不能自动重放或恢复。任务账本只读；这些证据不证明逃逸子进程、崩溃宿主或历史债务已释放。
+序列化 PID、摘要和 attempt_id 不可重新构造原生观察器，也不是重放或协调授权。
+pending 效果不得带 observed；confirmed/not_applied/quiescent_failure 必须有匹配的 observed。
+观测读取失败或与预期不符保留 unknown；unknown 可含实际不匹配观测，不能触发恢复或重放。
+成功 commit/ready 必须关联同一 activation/launch 以及完整提交后选择，不能仅比较程序 SHA。
+单条记录上限 128 KiB；这些字段均是观测证据，不提供执行或自动协调授权。
+效果名称为 prepare/stop/start/commit/ready/clear；状态为 pending/confirmed/not_applied/
+unknown/quiescent_failure。摘要均为 64 位小写十六进制；不返回 bundle 路径、凭据或执行授权。
+pending 仅说明事务未完成，不证明协调进程仍然存活；uncertain 阻止自动重放和新的准入。
+查询成功不等于安装成功。rejected 仅说明未派发生命周期副作用，不声称从未执行来源检查。
+quiescent_failure 表示失败启动的自有进程和映像资源已确认释放，不表示进程从未运行。
+未知 ID 返回下表的 `runtime_operation_unknown`；查询不创建 profile、修复记录或恢复执行。
+
+`namespace_sha256` 是配置中绝对日志目录 `<profile>/runtime/lifecycle` 的关联摘要：
+对 `xallor-runtime-lifecycle-v2`、一个 NUL 字节、`ToSlash(Clean(absoluteJournalDir))`
+拼接后的 UTF-8 字节计算 SHA-256，输出 64 位小写十六进制。拒绝相对目录；不自动解析
+符号链接、大小写别名或迁移位置。SQLite 生命周期日志 schema 8 在同一事务中创建
+库级 namespace 元数据；每条记录也保留同一摘要。打开库、读取记录及后续保存均须
+匹配，schema 1/2/3/4 或缺失/不匹配元数据不会自动补写或升级。namespace 摘要域仍为 v2；
+schema 8 保留选择证据、预捕获停止身份、停止结果证据、已解析请求绑定及显式转换目的；resolution 单独追加并以原记录摘要与 revision 做 CAS。schema 1–7 均拒绝且不静默迁移。它用于配置命名空间关联，
+不是 MAC、机器身份、来源证明或执行许可，也不防御同一用户主动篡改本地存储。
+
+首个生命周期副作用前必须一次性持久化 `binding`：`baseline` 为原始选择证据，
+`requested` 固定已认证候选的 SHA 与 activation（此时尚无 launch），`manifest` 保存
+来源 build/version/revision 与 artifact 元数据，`manifest_sha256` 是认证私有快照中的
+原始 manifest 字节摘要，禁止重读 bundle 路径或序列化解析对象代替。绑定不可重写。
+rollback 的目标必须是原始 Previous（有 Pending 时为 Current）；仅失败首次启动恢复
+允许 `clear_only:true`，此时 Current/Previous 都为空且 Pending 存在，不伪造候选。
+无副作用的拒绝记录可无 binding；只要存在副作用就必须有合法 binding。
+
+每个 effect 的 `purpose` 必须为 `requested`、`baseline_prepare`、`restore` 或 `cancel`。
+原始基线准备写入与请求转换分开记录；恢复启动使用本次 Pending launch，不复用旧 launch。
+成功要求最终确认的 commit/ready 同属 requested，且目标与原始绑定的候选一致；rollback
+的明确 clear-only 也可成功。restore/cancel 只证明请求失败后基线恢复或取消，不能作为
+请求成功。原请求、绑定与已有 effects 保留，供后续显式追加式 reconciliation 使用；
+R4 reconciliation 只允许 Runtime owner 对原始 Failed/Rejected，或带最终 stop/not_applied + StopObserved.NotDispatched 的 Uncertain 记录做核对；不得含 start/commit/ready、unknown 或 pending effect。必须同时持有生命周期准入、确认 worker 已停止，并以 bounded jobs/runtime/observers evidence 证明资源 settled。成功只追加 `resolution`（`disposition:resolved`、`request_result:not_applied`），不改写原 `record`，不执行重放或 force-clear；证据缺失返回 unresolved/busy 并保留 active。重复请求返回同一 resolution，过期 revision/digest CAS 拒绝。
+
+R1 当前是 Runtime owner 内部的严格观察与追加式 resolution writer，不是公共 IPC/CLI 能力，也不提供重放或协调授权。它只能在原始 `binding` 不可变、`requested` 目的的 confirmed `commit` 精确匹配绑定候选，而历史 `ready` 确实缺失或为 unknown 时继续观察。owner-only evidence 必须同时包含同 namespace 和当前 record 摘要、内核 IPC peer PID、owner 认证的同 activation/launch、实际加载映像摘要、原始 manifest 来源证明、精确稳定的当前 selection，以及 jobs/runtime/source/probe/observers 五类已 settled debt；原始 worker/reconciler 必须不活跃。baseline restore/cancel、同 SHA 的错误 activation/launch/source、任一 unknown debt、错误 namespace/digest 或不稳定 ready 均为 unresolved。`Journal.ReconcileR1` 在生命周期锁内以原始 record digest/revision 做 CAS，仅追加 `resolution`，保留原 record/outcome/effects，并标记 `disposition:resolved`、`request_result:requested_applied`、`resource_state:settled`、`historical_ready_ack_uncertain:true` 与 `evidence_evaluator:runtimeowner/reconciliation-r1/v1`；缺失证据、活动 worker/reconciler、过期 CAS、错误 namespace 或 malformed/oversized journal 均拒绝写入。重复请求只在原始 digest/revision 匹配时幂等返回同一 resolution。
+
+schema 8 的每个 operation 最多保留 32 条资源义务；activation 只有经过 owner 内部 `SelectionReceipt` 与 `TransferSelectedResource` 才能从 `allocated/release_required` 转为 `retained/retain_selected`。receipt 不超过 4096 字节，绑定 operation、namespace、resource/attempt/generation、资源 revision、原记录摘要/revision、requested purpose、activation/launch、image/source snapshot/manifest 摘要及完整 selection。转换要求同一 admitted transaction 的 requested commit/ready 均 confirmed，且 owner 证据匹配；重复或过期转换拒绝。保留状态不等于释放状态。Finish/Complete 及 R4/R1 读取时必须重新验证 receipt 与原 binding/effects 的链接，缺失或错误 receipt 仍是未结资源债务。状态接口只有在 lifecycle 锁可获取且资源账本校验通过时才能返回 `settled=true`；新操作准入在持锁期间逐个校验资源账本关联的历史 operation，不能因其 outcome 已终结或资源标为 closed 而跳过损坏、孤立或未结记录。正常 install/rollback 路径已接入原生就绪观察与内部 transfer；没有公共 transfer IPC/CLI 入口，历史 ready 不确定的 R1 不得凭当前 ready 自行生成此 receipt。
+
+新候选在创建 activation 目录前记录不可变 allocation/attempt/launch 身份；实际启动沿用该 launch。就绪观察前记录 observer 义务并持久化 pending ready effect，再在同一 IPC 连接上核对内核 peer PID、加载映像、activation/launch、原始 manifest 摘要和稳定 selection。该 observer 义务覆盖此次连接、进程/映像观察器及 rooted manifest 读取句柄；只有其精确清理回执与持久化关闭均成功才能确认 ready。正常失败候选只凭原创建回执删除后关闭义务；清理不确定保留文件与债务。ready 已确认但 transfer 失败不能自动恢复或重放。rollback 复用历史 activation，不伪造新的创建义务，也不关闭其它 operation 的未知债务。
+本阶段不提供重放或资源全部回收证明。任何来源快照清理不确定仍使
+整个操作 uncertain，即使 requested commit/ready 均已确认。
+
+版本 probe 使用独立的 `preflight/probe` 资源义务，在原生分配或执行前记录
+attempt、activation、映像与原始来源快照摘要，不填入服务 launch ID。
+prepared probe 的精确清理回执覆盖受监督的进程及后代、输出读取和受保护映像；
+stdout/stderr 各最多保留 65536 字节，执行期限 30 秒。超限、版本不兼容或非零
+退出不等于清理不确定；只有完整清理回执才能关闭义务。缺失、重复、错身份或
+任一原生/持久化清理失败均保留债务，不能继续 Stop、发布 pending 或启动服务。
+Linux 进程组监督不声明拦截主动 setsid 逃逸。
+
+已记录的 source 义务仅在隔离副本、原始二进制及原始目录句柄全部清理后关闭。
+源自身的副本成员关闭错误单独累计，即使目录已删除仍须记录 Unknown；consumer
+在其它资源上的失败不混入源清理结论。记录 source intent 前的失败保留操作级
+清理不确定，不伪造尚不存在的资源回执。
+
+managed stop 在准备 IPC/进程/映像观察器前记录一个 observer 义务，并预分配
+与 StopIntent 相同的 AttemptID。准备失败也须返回原始组的精确清理回执；缺失、
+重复、错身份或隐藏的映像捕获清理不确定不能关闭该义务。owner 在已有事务锁内
+完成该组的持久化关闭后，才记录 confirmed/not_applied 停止结果；原有
+StopObservation 继续独立证明 Runtime/job 释放，不新增重复账本。
+
+bootstrap 与新事务准入使用同一历史资源检查：即使 operation 已是终态，未知、
+损坏或孤立资源仍阻止启动；读取缺失日志不得创建数据库。R4 已解析请求仅接受
+原始 revision/digest 的幂等重试，过期或解析后 revision 拒绝；resolution 严格
+解码，资源债务仍在所有成功返回前检查。核对只能打开已有数据库，不能因检查
+和打开之间文件消失而初始化新的日志。
+
+已准入 worker 使用 worker-scope 资源组归集 admission proof 与查询端点的收尾。
+查询端点的监听器、最多 8 个活动连接及超额连接的关闭错误统一保留；所有查询
+协程退出且组结账完成后，才记录该次 backend 的终态。验证失败仍发生在准入前，
+不因未验证的 parent 创建日志。ACK 投递失败不能取消或重放已准入的 backend；
+Unix 专用 ACK 写入返回 EPIPE，不改变进程全局 SIGPIPE 策略。
+
+launcher 的 Attempt.Done 必须等待原 worker 进程退出结果、ACK 观察协程及全部自有
+映像/管道/log 资源的首次关闭结果。完整 ACK JSON 不等待 EOF；超时只取消观察，
+不杀 worker。原 worker 进程退出后，后代持有 stdout 不能阻止观察结束。非零退出和
+关闭不确定仍使启动门禁保持不确定。上述正常收尾组不提供 pre-auth quarantine、
+崩溃后 worker 身份、日志自身最终句柄或 bootstrap attempt 的历史回收授权。
+
+来源证明工具使用同一原生进程监督机制。工具根进程退出不等于其后代、输出读取
+和句柄已回收；清理不确定保留为独立错误并计入 source 资源组的 unknown 状态。
+证明拒绝或服务不可用且清理已确认时，仍是普通来源拒绝，不伪造清理不确定。
+验证器的任意输出和错误细节不得转发到用户日志；固定签发策略不因此改变。
+
+查询结果同时包含 `settled` 和 `observer`（查询服务进程的完整 build 身份，含 PID、
+路径、SHA 和本机 owner 协议）。终态记录写入后、事务进程尚持有生命周期锁时，
+settled 为 false；头须继续只读观察，不能提前报告成功或启动下一事务。
+observer 仅是待验证输入：头在同连接获取内核 peer PID，持有原进程退出观察器，
+再验证其实际映像及稳定保留 activation 的原始来源证明；Current/Previous/Pending
+引用可覆盖替换窗口。缺少验证、查询者退出、选择变化或请求意图不匹配时，均不能接受
+成功结果。头还须将记录的 namespace 与提交时保留的目标 namespace 核对，不能因查询期间环境变化而换绑。首次提交的 ready 握手不能为后续新查询连接提供身份担保。
+
+已就绪 owner 的 `runtime.install` 参数含 `operation_id`、`namespace_sha256` 和绝对且规范化的 `bundle`；
+`runtime.rollback` 只接受 `operation_id`、`namespace_sha256`。两者的 namespace 均必填，服务端在创建 worker 前与自身配置目录核对，不符返回 `runtime_profile_mismatch`。事务 ID 同上，bundle 最多 32768 字节，
+参数 JSON 最多 128 KiB；禁止未知字段、尾随值和回滚携带 bundle。
+请求先在当前 owner 内串行进入交接，然后由认证后的事务进程持久准入。
+成功回执为 `{accepted:true,operation_id}`，仅说明事务已接收，不代表安装完成。
+收到失败、断线或超时后只查询原事务 ID，不重发原请求或更换 ID 隐式重试。
+事务进程创建后，即使确认回执丢失，owner 仍保留启动门禁至该进程退出且资源释放确认；
+释放不确定则保留门禁。明确的后续新请求必须等待前一事务可安全结束。
+
 ---
 
 ## 1. 两条连接
@@ -34,8 +192,8 @@ TLS 证书校验失败时不会建立 WebSocket。反代传输策略或浏览器
 | `device.settings` | **仅 device** | request_id, inbound；grant_hash 可省略 | 原子替换本连接设备的完整共享访问设置 |
 | `device.settings.result` | Relay → device | request_id, code? | 持久化并应用后的确认；无 code 表示成功 |
 | `revoke` | **仅 device** | device_id | 注销本机身份；踢线 |
-| `access.request` | **仅 device** | request_id, account_token, payload | 管理本连接证明的设备归属与分享 |
-| `access.result` | Relay → device | request_id, code? / payload? | 管理结果；成功为归属快照，失败为错误码 |
+| `access.request` | **仅 device** | request_id, account_token, payload | 管理本连接证明的设备归属、分享及逻辑授权码 |
+| `access.result` | Relay → device | request_id, code? / payload?, device_context? | 成功为对应动作的结果及设备上下文，失败为错误码 |
 | `execution.renew` | **仅 device** | request_id, delegation | 复验本设备收到的后台执行委托 |
 | `execution.route.renew` | **仅 device** | request_id, exec_id | 复验本设备仍存活的前台 exec 路由 |
 | `execution.lease` | Relay → device | request_id, code? / lease_ms? | 短期执行许可；不确认任务结束或释放额度 |
@@ -71,8 +229,30 @@ Relay 下发 `handoff.submit` 时附带 `delegation`，客户端自报值被丢�
 | `share` | membership_id, operations, ttl_seconds | 对有效成员签发或替换有期限的操作授权 |
 | `unshare` | share_id | 删除本设备的指定分享 |
 | `transfer` | membership_id | 转移到有效成员所属的空间及主体，删除所有旧分享 |
+| `code.revoke` | code_id | 所有者撤销逻辑授权码及其派生授权；WIP |
+| `code.rotate` | code_id, new_code_id, new_secret | 所有者轮换逻辑授权码；WIP，不自动重试 |
 
 `operations` 仅接受 `info`、`read`、`write`、`exec`、`processes`、`handoff.submit`、`handoff.get` 的非空集合；cancel 始终只属于原连接，不是可授予他人的权限。分享期限为 60 至 7776000 秒，最多 128 份未过期分享，超限 `quota_exceeded`。成功快照为 `{device_uid,ownership_id?,owner_tenant?,owner_principal?,shares:[{id,membership_id,operations,expires_at}]}`，时间为 Unix 秒。角色或权限不符返回 `unauthorized`。设备身份取自实际 device 连接，忽略客户端自报目标；client 连接不能调用此入口。
+
+授权码动作使用独立成功结果，不返回上述归属快照：`code.revoke` 为
+`{code_id,state:"revoked"}`，ID 必须匹配请求。`code.rotate` 的 Relay payload 为
+`{previous_code_id,code:{code_id,device_uid,ownership_id,type,generation,issued_at,expires_at?,scope,require_recipient_approval,state},intent_sha256}`。
+previous_code_id 匹配请求 code_id，内部 code_id 匹配 new_code_id；generation 为
+2 至有符号 64 位整数上限。device_uid/ownership_id 非空且与有效 device_context 一致。
+type 为 one_time/expiring/long_lived；scope 是上述操作的非空、无重复集合；approval
+字段必须是明确的 bool。issued_at 和限时码 expires_at 为 RFC3339，后者晚于 issued_at；
+其他类型无 expires_at。state 保留持久化的 active/revoked/consumed/expired 值。
+
+intent_sha256 使用现有 rotation intent v1：旧 ID、新 ID 与新 secret 的 SHA-256
+共同参与摘要。Runtime 按原请求重算并校验后，只向 IPC/CLI/MCP 返回
+`{previous_code_id,code:{...}}`，剥除 intent_sha256；任何成功或失败回执都不回显 secret。
+回执来自同一已授权写事务中的原替代码快照，只有 commit 确认后发布；不追踪后续轮换
+得到的后代，不进行第二次事务外读取。自然到期但持久 state 仍为 active 时，保留原
+expires_at，不能把回执成功或 active 值解释为现在可用、已批准会话或重新签发。
+
+两种成功回执仍必须携带有效 device_context；Runtime 先同步上下文，再校验结果。
+缺失上下文会断开连接；结果类型、ID、意图摘要、设备归属或元数据不符时返回结果未确认，
+不得按已回滚处理或自动重放。旧的含 secret 回执形状不再接受。同意图重试仍需重新授权。
 
 `reset` 不是协议消息：CLI 清空本机数据目录，并发送 `revoke`。
 
@@ -91,7 +271,13 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 `info.shell` 为 `{configured,selected?,available:[],code?}`：configured 为目标配置名或 auto，selected 是当前能找到的解释器名，available 是本系统受支持且可找到的名字；不能解析选择时返回 code，不伪造 selected。只探测可执行文件，不包含路径、版本或远程凭据。可选解释器及执行语义见 [os.md](os.md)。
 
 - `exec`：`script: {text, shell?}` 或 `program: {executable, args?}` 二选一，另有 `cwd?`、`timeout_ms?`。`text` / `executable` 必须非空；args 为字符串数组，省略时无参数。script.shell 省略时使用目标配置，显式 auto 使用目标自动选择。cwd、程序路径及 PATH 均属于目标设备；文本、参数不得含 NUL 或非法 Unicode，未知字段与非法形状返回 `invalid_execution`。可选字段应省略，不使用 null。CLI、IPC 和 MCP 使用同一输入形状，IPC/MCP 另带路由字段 device_id。脚本不跨语言翻译，程序参数不拼接成脚本。具体目标系统约束见 [os.md](os.md)。
-- `cancel`：`exec_id`。只取消**本条 client 连接**登记的 inflight；对别人的或未知 id 一律 `unknown_exec`（不区分「存在但是别人的」）
+- `cancel`：client 只提供 `exec_id`，仅取消**本条 client 连接**登记的 inflight；对别人的或未知 id 一律 `unknown_exec`（不区分「存在但是别人的」）。Relay 重建普通取消帧，不转发 client 自报的 code。
+
+Relay → device 的 `invoke/op=cancel` 可带 `code=unauthorized`，专门表示原调用授权已撤销；
+code 为空仍表示普通取消。Runtime 仅从已认证 device 数据通道处理该通知，其他 code
+不触发取消。运行中的前台 exec 保留首个取消原因：授权撤销对应 `authorization_lost`，
+用户取消对应 `cancelled`，并仍须完成真实进程清理才返回终态；已开始的用户取消不会被
+后到的撤销重写。尚未启动时沿用现有 nack 语义。该字段不是 client 的授权声明。
 - `read`：路径 + `head`/`tail`（行）或 offset/limit（字节）
 - `write`：路径 + **完整** `content`。覆盖；无 append、无 patch
 
@@ -159,6 +345,7 @@ scope 是稳定执行命名空间，不是访问凭据或权限快照。凭据�
 | `agent_error` | Runtime 内部失败 |
 | `result_unknown` | 控制端未收到有效终态、响应标识不匹配或终态字段矛盾；不表示未执行，不自动重试 |
 | `runtime_unavailable` | 执行头无法启动或连接本机 Runtime，本次尚未发送执行请求 |
+| `runtime_operation_unknown` | 本机生命周期查询未找到指定事务；不表示请求已被拒绝或未执行，不能据此重放安装或回滚 |
 | `invalid_execution` | 执行输入形状、文本或参数无效 |
 | `program_unavailable` | 目标无法安全找到指定程序；不回退到 Shell |
 | `backend_unavailable` | 请求与目标本机 backend 不匹配或 provider 不可用；启动前拒绝，不回退 native_user |
@@ -243,3 +430,89 @@ JSONL 选择在 `--` 前识别，允许出现在错误选项之前或之后；�
 回执字段：`request_id,fingerprint,workspace,revision,agent,session_id,mode,state,code?,created_at,updated_at,cli_version?,result?,truncated`。fingerprint 为规范化请求 JSON 的 SHA256；时间为 UTC RFC3339Nano。state：received / accepted / running / completed / failed / unknown，语义与恢复步骤见 [handoff.md](handoff.md)。回执 code 为适配器诊断，**不是** WSS invoke_nack code。
 
 每 Runtime 最多 2 个在途交接，每会话最多 1 个；最多保留 128 个回执，达到上限拒绝新 ID，不自动淘汰。单回执磁盘上限 512 KiB；CLI 单行最大 1 MiB、累计输出最大 8 MiB；结果最多 64 KiB UTF-8，截断时显式标记。启动配置仅本机设置，最多 4 个固定前置参数，每项最长 2048 字节。
+
+## 逻辑授权会话（非 GUI WIP）
+
+当前 v0 `grant` 仍是可轮换/吊销的共享 bearer credential。一次性、限时、长期授权码以及
+`session.request` / `session.approval.*` / `session.result` 是正在实现的逻辑会话协议，不能
+与 v0 grant 的稳定能力混写。新路径由 Relay 负责 reservation、最终消费和 session authorization，
+Runtime 负责本地接收方批准；批准请求不携带明文授权码，unknown 不自动重兑。
+
+目标连接的授权代次由 Relay 生成并持久化，不接受客户端传入。每次目标重新认证注册，
+先停止旧 slot 路由，再在同一事务切换代次、撤销旧 session/resume、把旧 reserved
+attempt 标为 unknown；新连接只有在事务成功且 greeting 入队后才能发布。
+reservation 和 session 保留批准所针对的 device UID/代次，Reserve、Finalize、
+ConsumeResume 都在事务内核对；迟到的旧连接 Drop 只按其捕获的代次失效，不影响新代次。
+队列拒绝、身份写入失败或设备删除同样触发此失效边界，不能依赖已被清空的 conn。
+批准发布还须匹配原 pending 对象、client 状态和原目标 slot/connection；最终 invoke
+路由复核 session 的目标代次。该机制限定单个活跃 Relay authority，不宣称多活 fencing。
+
+Relay schema 12 撤销历史上无法证明目标代次的 active session/resume，保留已消费码；
+legacy reserved 转为 unknown，已有多条 unknown 历史不合并、不释放。一次性码的新
+reservation 在事务内检查 reserved/unknown 独占占位，避免未知尝试被重新兑换。
+当前 schema 重开数据库本身不轮换代次；重新注册与下述授权设置变化触发对应代次迁移。迁移只在本地副本验证，
+没有执行生产数据库升级。
+
+同一目标连接上的有效设置变更也构成授权边界：关闭入站时，在更新设置的同一事务中
+退休现有 session epoch，撤销旧 session/resume 并使旧 pending reservation 进入 unknown；
+重新开启时创建新代次。共享访问绑定实际改变同样轮换；同值设置，以及已认领设备上
+不参与授权的 grant 同步，不轮换。内部设备快照带有事务返回的 epoch 状态，不新增
+客户端协议字段，也不因缺少 target 行而隐式开启会话功能。
+
+Typed 授权码的撤销/轮换已在 WIP 中接入域规则、存储事务、管理协议、Runtime IPC、
+CLI `device code revoke/rotate` 和对应 MCP 工具，以及前台路由失效通知与续租约束。
+顶层 CLI `rotate`/`revoke` 仍是 v0 grant/设备动作，两者不能混用；上述 WIP 不代表
+正式发布或完整跨平台包验收通过。管理动作及同意图回执重试均复验当前 actor/device；
+事务顺序和未知结果边界见 [dataplane.md](dataplane.md)。
+显式撤销会原子作废该 code ID/generation 的派生 session/resume；消费和 unknown 历史
+不回退。轮换保留策略和原截止时间，只对仍有资格的旧码生成新 ID/代次与回执；已使用
+或仍有 reserved/unknown 的一次性码不能借轮换再获得一次资格。schema 13 保存稳定
+轮换意图回执，相同意图只读取原替代码当前元数据，不重新签发或复活。自然到期仍不
+自动结束已有 session。不能把这些存储状态当作任务已经停止或完整管理功能已交付。
+
+Resume 消费提交后、active 结果发布前，Relay 在同一设备管理 gate 内复读持久 session，
+核对原 code ID/generation、UID/目标代次、scope、期限及 active 状态，再发布并绑定连接。
+同 code 撤销/轮换先完成时不得返回旧 active 或占住新连接的 session slot；同设备无关
+code 的管理不阻断合法恢复。无法发布仍返回 unknown，不退还已消费 proof、不重放消费。
+
+前台 `exec` 的续租现在还检查该任务最初获准的逻辑 session，而不借用控制连接后来
+采用的新 session。明确结束/撤销/过期或失去 exec scope 时拒绝续租，旧 route 永不复活；
+SQL 暂态错误不授予新租约，也不刷新旧期限。返回时长不得越过基础授权预算或 session
+截止，毫秒换算向下取整。到期状态的尽力持久化发生在拒绝回复和匹配解绑之后，失败
+不冒充 durable end，也不阻止同连接重新取得批准。旧输出/终态和 transport 占用仍
+独立结算。此检查受租约期限约束，尚不能替代管理操作的 per-code 发布 fence，也不覆盖
+后台 handoff 的 session 传播或宣称即时零窗口撤销。
+
+后台 handoff 的 session 委托在 WIP 中绑定原批准的 ID、code/generation、目标代次和
+scope；签名期限取委托年龄上限与原 session 截止时间的较早者。续租时复验持久会话，
+当前更短截止时间同样限制租约，不能通过延长或移除存储中的截止时间延长原委托。
+所有身份/权限读取完成后重新计算剩余期限；跨过截止时拒绝续租，不返回新的完整租期。
+这属于委托模块的授权边界，不代表独立 Runtime 后台任务的回执、进程清理或发行验收完成。
+
+设置写入前停止新准入/批准发布，但保留既有控制连接和执行流；入站关闭后旧执行不能
+重新获得续租，重新开启不复活旧 lease。Relay 只在目标终态或真实路由丢失后释放
+transport 占用，不把授权撤销当作 Runtime 进程清理证明。写入错误或提交结果未知时
+保持路由停止；若提交已发生，新 epoch 可能仍在数据库中 active，不能声称已回滚或
+全部 inactive。重新注册必须建立新代次，旧同意不会恢复。
+
+`session.request` 的 `code_generation` 必须与当前授权码一致，`session_scope` 必须是
+授权码允许范围的非空子集；Relay 在创建 reservation 的同一事务内检查，越界或旧代次
+返回 `unauthorized`，不向接收方请求批准。最终批准只持久化本次批准的 scope 子集，
+不能复制授权码的全部权限；active `session.result` 的 generation/scope/expiry 来自
+事务生成的授权记录。resume 延续同一记录，不扩权。
+
+resume 消费事务还必须读取当前设备入站、凭据/成员及分享授权，并与原绑定比较；
+连接建立时的身份快照不能替代此复验。消费前再次检查凭据和分享的到期时刻。
+已撤销/到期、成员版本变化、分享替换或关闭入站返回 `unauthorized`，不消费凭证。
+确认回滚的 SQLite 冲突重试须重新读取这些事实；未知提交结果不得据此自动重放。
+
+消费提交成功后，resume 的 active 回执须在路由锁内复核原控制连接、原目标连接、
+入站与有效期，并与会话绑定一起按序入队。连接已失效或回执入队失败，不返回新凭证，
+尝试撤销未交付授权并返回 `session_unknown`；不会退还已消费凭证。撤销失败不能报告
+清理成功；回执已入队也不等于已送达。
+
+Relay schema 11 会撤销旧 WIP 数据库中无法证明原始批准范围的 active session 及
+active resume 凭证，并保留授权码消费记录；需要重新授权，不能推断或恢复原始同意。
+
+当前代码已有 WIP envelope、状态机、SQLite 事务、Relay wire 和 Runtime IPC 切片，但尚未完成
+正式 CLI/MCP 发布契约、稳定 reconnect、生产授权码类型发布或完整跨平台端到端验收。

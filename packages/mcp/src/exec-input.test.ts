@@ -8,6 +8,7 @@ test("execution inputs preserve arguments and reject ambiguous modes", () => {
   const args = ["", "a b", "$HOME", "`", "中文🌍", 'a"b'];
   assert.deepEqual(execInputSchema.parse({ program: { executable: "git", args } }).program?.args, args);
   assert(execInputSchema.safeParse({ script: { text: "echo hello", shell: "powershell" } }).success);
+  assert.equal(execInputSchema.parse({ script: { text: "echo hello" }, session_id: "session-1" }).session_id, "session-1");
   for (const backend of ["native_user", "low_privilege", "cgroup", "container", "unknown"]) {
     assert.equal(execInputSchema.parse({ script: { text: "echo hello" }, backend }).backend, backend);
   }

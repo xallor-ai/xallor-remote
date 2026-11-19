@@ -24,7 +24,9 @@ func testRequest(workspace string) Request {
 func TestManager_should_deduplicate_and_rejectChangedRequest(t *testing.T) {
 	m := newTestManager(context.Background(), t.TempDir())
 	defer m.Close()
-	r := testRequest(t.TempDir())
+	// This tests receipt deduplication. A deterministic filesystem refusal
+	// avoids making its short wait depend on an unrelated Git process startup.
+	r := testRequest(filepath.Join(t.TempDir(), "missing-workspace"))
 	first, err := m.Submit(testScope, r, r.Workspace)
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +46,7 @@ func TestManager_should_deduplicate_and_rejectChangedRequest(t *testing.T) {
 			t.Fatal(err)
 		}
 		if terminal(receipt.State) {
-			if receipt.State != "failed" {
+			if receipt.State != "failed" || receipt.Code != "workspace_unavailable" {
 				t.Fatal(receipt)
 			}
 			break

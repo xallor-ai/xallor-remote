@@ -9,7 +9,9 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"golang.org/x/sync/singleflight"
 
+	"github.com/xallor-ai/xallor-remote/internal/accesscode"
 	"github.com/xallor-ai/xallor-remote/internal/activity"
 	"github.com/xallor-ai/xallor-remote/internal/buildinfo"
 	"github.com/xallor-ai/xallor-remote/internal/handoff"
@@ -20,11 +22,13 @@ import (
 )
 
 type clientLink struct {
-	target  string
-	ws      *wsConn
-	cancel  context.CancelFunc
-	mu      sync.Mutex
-	waiters map[string]*execWaiter
+	target               string
+	ws                   *wsConn
+	cancel               context.CancelFunc
+	mu                   sync.Mutex
+	waiters              map[string]*execWaiter
+	sessionReplies       map[string]*sessionReplyWaiter
+	sessionRepliesClosed bool
 }
 
 type Daemon struct {
@@ -33,22 +37,29 @@ type Daemon struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu                sync.Mutex
-	device            *wsConn
-	clients           map[clientKey]*clientLink
-	ensuring          map[clientKey]chan struct{}
-	accountGeneration uint64
-	accessRequests    deviceReplies
-	executionReplies  deviceReplies
-	settingsReplies   deviceReplies
-	settings          settingsGate
-	local             map[string]context.CancelCauseFunc
-	localWG           sync.WaitGroup
-	remote            map[string]*remoteExec
-	approvals         *approvalHub
-	activity          *activity.Log
-	handoffs          *handoff.Manager
-	jobs              *job.Ledger
+	mu                 sync.Mutex
+	device             *wsConn
+	clients            map[clientKey]*clientLink
+	ensuring           map[clientKey]chan struct{}
+	accountGeneration  uint64
+	accessRequests     deviceReplies
+	executionReplies   deviceReplies
+	settingsReplies    deviceReplies
+	settings           settingsGate
+	local              map[string]context.CancelCauseFunc
+	localWG            sync.WaitGroup
+	remote             map[string]*remoteExec
+	approvals          *approvalHub
+	sessionApprovals   *sessionApprovalHub
+	activity           *activity.Log
+	handoffs           *handoff.Manager
+	jobs               *job.Ledger
+	ownerObservation   singleflight.Group
+	ownerObservationWG sync.WaitGroup
+	startup            *startupAdmission
+	activationID       string
+	launchID           string
+	lifecycle          *lifecycleDispatch
 }
 
 type remoteExec struct {
@@ -62,13 +73,14 @@ func New(store *identity.Store, log *slog.Logger) *Daemon {
 	ctx, cancel := context.WithCancel(context.Background())
 	d := &Daemon{
 		log: log, store: store, ctx: ctx, cancel: cancel,
-		clients:   map[clientKey]*clientLink{},
-		ensuring:  map[clientKey]chan struct{}{},
-		local:     map[string]context.CancelCauseFunc{},
-		remote:    map[string]*remoteExec{},
-		approvals: newApprovalHub(),
-		activity:  activity.Open(store.Dir),
-		jobs:      job.New(store.Dir),
+		clients:          map[clientKey]*clientLink{},
+		ensuring:         map[clientKey]chan struct{}{},
+		local:            map[string]context.CancelCauseFunc{},
+		remote:           map[string]*remoteExec{},
+		approvals:        newApprovalHub(),
+		sessionApprovals: newSessionApprovalHub(),
+		activity:         activity.Open(store.Dir),
+		jobs:             job.New(store.Dir),
 	}
 	d.handoffs = handoff.New(ctx, store.Dir, d.jobs, d.renewExecution)
 	return d
@@ -80,6 +92,8 @@ func (d *Daemon) Run() error {
 	defer d.jobs.Close()
 	defer d.handoffs.Close()
 	defer d.waitLocalExecs()
+	defer d.waitOwnerObservations()
+	defer d.waitLifecycleLaunches()
 	_ = buildinfo.Running()
 	ln, err := ipc.Listen()
 	if err != nil {
@@ -87,7 +101,7 @@ func (d *Daemon) Run() error {
 	}
 	defer ln.Close()
 	go func() { <-d.ctx.Done(); _ = ln.Close() }()
-	go d.keepDevice()
+	go d.connectSelectedDevice()
 	d.log.Info("runtime ipc up", "device", d.store.ID())
 	for {
 		c, err := ln.Accept()
@@ -232,16 +246,24 @@ func (d *Daemon) onDeviceMsg(link *wsConn, msg protocol.Message) {
 		d.settingsReplies.deliver(link, msg)
 	case protocol.TypeAccessResult:
 		d.accessRequests.deliver(link, msg)
+	case protocol.TypeSessionApprovalRequest:
+		if err := protocol.ValidateSessionApprovalRequest(msg); err != nil {
+			_ = link.send(protocol.Message{Type: protocol.TypeSessionApprovalResult, RequestID: msg.RequestID, SessionID: msg.SessionID, RequestSHA256: msg.RequestSHA256, Allow: protocol.Bool(false), Code: protocol.AgentError})
+			return
+		}
+		request := accesscode.SessionRequest{RequestID: msg.RequestID, SessionID: msg.SessionID, TargetUID: msg.TargetUID, CodeID: msg.CodeID, Generation: msg.CodeGeneration, Scope: append([]string(nil), msg.SessionScope...)}
+		if msg.SessionExpiresAt != nil {
+			expires := time.Unix(*msg.SessionExpiresAt, 0).UTC()
+			request.SessionExpiresAt = &expires
+		}
+		go func() {
+			allow, code := d.sessionApprovals.ask(d.ctx, request)
+			_ = link.send(protocol.Message{Type: protocol.TypeSessionApprovalResult, RequestID: msg.RequestID, SessionID: msg.SessionID, RequestSHA256: msg.RequestSHA256, Allow: protocol.Bool(allow), Code: code})
+		}()
 	case protocol.TypeHeartbeat:
 	case protocol.TypeInvoke:
 		if msg.Op == protocol.OpCancel {
-			d.approvals.cancelExec(msg.ExecID)
-			d.mu.Lock()
-			cancel := d.local[msg.ExecID]
-			d.mu.Unlock()
-			if cancel != nil {
-				cancel(nil)
-			}
+			d.cancelLocalExec(msg.ExecID, msg.Code)
 			return
 		}
 		d.recordActivity(activity.Entry{ExecID: msg.ExecID, Direction: "inbound", DeviceID: d.store.ID(), Op: msg.Op, Stage: "requested"})

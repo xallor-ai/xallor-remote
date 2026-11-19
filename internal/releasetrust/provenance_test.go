@@ -61,7 +61,7 @@ func TestVerify_should_refuseToolInsideCandidateDirectory_beforeExecution(t *tes
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
-	err := Verify(context.Background(), filepath.Join(dir, "artifact"), Identity{Version: "0.2.2", Revision: strings.Repeat("a", 40)}, "", dir)
+	err := Verify(context.Background(), filepath.Join(dir, "artifact"), Identity{Version: "0.2.2", Revision: strings.Repeat("a", 40)}, "", dir, strings.Repeat("b", 64))
 	if !errors.Is(err, ErrUnverified) || !strings.Contains(err.Error(), "待验目录内") {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestRealGH_should_refuseMalformedProof_withoutAuthenticationMock(t *testing
 	if err != nil {
 		t.Fatal("real-gh check requested but GitHub CLI is missing", err)
 	}
-	version, err := exec.Command(tool, "--version").Output()
+	version, err := proofCommand(context.Background(), tool, "--version").Output()
 	if err != nil {
 		t.Fatal("installed GitHub CLI cannot run", err)
 	}
@@ -93,7 +93,7 @@ func TestRealGH_should_refuseMalformedProof_withoutAuthenticationMock(t *testing
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	if err := Verify(ctx, artifact, Identity{Version: "0.2.2", Revision: strings.Repeat("a", 40)}, proof, dir); !errors.Is(err, ErrUnverified) || !strings.Contains(err.Error(), "检查失败") {
+	if err := Verify(ctx, artifact, Identity{Version: "0.2.2", Revision: strings.Repeat("a", 40)}, proof, dir, strings.Repeat("b", 64)); !errors.Is(err, ErrUnverified) || !strings.Contains(err.Error(), "检查失败") {
 		t.Fatal("malformed proof accepted", err)
 	}
 }

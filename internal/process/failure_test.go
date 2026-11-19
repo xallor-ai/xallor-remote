@@ -58,3 +58,38 @@ func TestProcess_should_reapRoot_whenAttachmentFails(t *testing.T) {
 		t.Fatal("failed start leaked ownership", err)
 	}
 }
+
+type failedBoundaryClose struct{ boundary }
+
+func (g failedBoundaryClose) close() error {
+	return errors.Join(g.boundary.close(), errors.New("injected close failure"))
+}
+
+// A pre-start cancellation still owns the prepared native boundary; failed close
+// must be distinguished from an ordinary never-started process.
+func TestProcess_should_preserveCleanupFailure_beforeStart(t *testing.T) {
+	cmd := helper("empty")
+	g, err := prepare(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = startPrepared(ctx, cmd, failedBoundaryClose{g})
+	if !errors.Is(err, ErrCleanup) || !errors.Is(err, context.Canceled) {
+		t.Fatal("cleanup failure lost", err)
+	}
+}
+
+// Attachment failure closes the real job, but injected uncertainty remains debt.
+func TestProcess_should_preserveCleanupFailure_afterAttachFailure(t *testing.T) {
+	cmd := helper("wait")
+	g, err := prepare(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = startPrepared(context.Background(), cmd, failedBoundaryClose{&failedAttachment{boundary: g}})
+	if !errors.Is(err, ErrCleanup) {
+		t.Fatal("cleanup failure lost", err)
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"testing"
 	"time"
 
@@ -31,6 +32,9 @@ func TestJob_should_reclaimDescendant_whenParentExitsNormally(t *testing.T) {
 		}
 		child := exec.Command(os.Args[0], "-test.run=^TestJob_should_reclaimDescendant_whenParentExitsNormally$")
 		child.Env = append(os.Environ(), "XR_JOB_LIFETIME_ROLE=child")
+		if os.Getenv("XR_JOB_TRACE") == "1" {
+			child.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
+		}
 		if child.Start() != nil {
 			os.Exit(2)
 		}
@@ -87,7 +91,9 @@ func TestJob_should_reclaimDescendant_whenParentExitsNormally(t *testing.T) {
 	if err := child.Wait(); err != nil {
 		t.Fatal(err)
 	}
-	state, err := windows.WaitForSingleObject(h, 2000)
+	// Wait already reported cleanup complete; do not grant an extra two
+	// seconds that could hide completion being reported before child exit.
+	state, err := windows.WaitForSingleObject(h, 0)
 	if err != nil || state != windows.WAIT_OBJECT_0 {
 		t.Fatalf("owned descendant survived normal parent completion: wait=%d err=%v", state, err)
 	}

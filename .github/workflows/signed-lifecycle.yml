@@ -1,0 +1,91 @@
+name: Signed Runtime lifecycle acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      first_tag:
+        description: Baseline A release tag (owner protocol 1)
+        required: true
+        type: string
+      first_revision:
+        description: Expected full 40-character A commit
+        required: true
+        type: string
+      second_tag:
+        description: Candidate B release tag; dispatch this workflow on the same tag
+        required: true
+        type: string
+      second_revision:
+        description: Expected full 40-character B commit
+        required: true
+        type: string
+
+# Acceptance downloads and executes authenticated candidates, but cannot sign,
+# publish, change tags or deploy. The release environment approval stays separate.
+permissions:
+  contents: read
+  attestations: read
+
+jobs:
+  native:
+    name: Signed A-B-A and failed-start recovery (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      FIRST_TAG: ${{ inputs.first_tag }}
+      FIRST_REVISION: ${{ inputs.first_revision }}
+      SECOND_TAG: ${{ inputs.second_tag }}
+      SECOND_REVISION: ${{ inputs.second_revision }}
+    steps:
+      # An invalid request fails explicitly instead of skipping the whole job.
+      # Input expressions are data in env, never interpolated into shell/Python.
+      - name: Require protected B source
+        shell: python
+        run: |
+          import os, re
+          e = os.environ
+          expected = dict(GITHUB_REPOSITORY='xallor-ai/xallor-remote', GITHUB_EVENT_NAME='workflow_dispatch',
+                          GITHUB_REF_TYPE='tag', GITHUB_REF_PROTECTED='true',
+                          GITHUB_REF='refs/tags/'+e['SECOND_TAG'], GITHUB_SHA=e['SECOND_REVISION'])
+          if (any(e.get(k) != v for k, v in expected.items())
+                  or not re.fullmatch('[0-9a-f]{40}', e['SECOND_REVISION'])):
+              raise SystemExit('Run acceptance on the protected B tag and its exact commit in the official repository')
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run signed lifecycle
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import os, subprocess, sys
+          subprocess.run([sys.executable, 'scripts/signed_lifecycle_ci.py', '--output-directory',
+                          os.path.join(os.environ['RUNNER_TEMP'], 'signed-lifecycle')], check=True)
+      - name: Preserve lifecycle evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-lifecycle-${{ runner.os }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/signed-lifecycle/acceptance.json
+            ${{ runner.temp }}/signed-lifecycle/lifecycle.json
+            ${{ runner.temp }}/signed-lifecycle/lifecycle.log
+            ${{ runner.temp }}/signed-lifecycle/observer-build.log
+            ${{ runner.temp }}/signed-lifecycle/package-supervisor-build.log
+            ${{ runner.temp }}/signed-lifecycle/installed-package.json
+            ${{ runner.temp }}/signed-lifecycle/installed-package.log

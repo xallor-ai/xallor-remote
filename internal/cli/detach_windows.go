@@ -7,10 +7,9 @@ import (
 	"syscall"
 )
 
-func detach(cmd *exec.Cmd) error {
+func configureDetached(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | 0x00000008, // DETACHED_PROCESS
 		HideWindow:    true,
 	}
-	return cmd.Start()
 }

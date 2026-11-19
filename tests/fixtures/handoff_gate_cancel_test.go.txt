@@ -1,0 +1,46 @@
+package relay
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/xallor-ai/xallor-remote/internal/protocol"
+)
+
+// The overlay cancels only after the real identity gate was acquired. The real
+// handler must release it and leave the same device available for a new caller.
+func TestHandoffGateOverlay_shouldRelease_whenCancelledAfterAcquisition(t *testing.T) {
+	h, device, _, _ := routingFixture(t)
+	client := &contextSender{ctx: context.Background()}
+	if code := h.RegisterClient("device", "grant", "", client); code != "" {
+		t.Fatal("fixture registration failed", code)
+	}
+	injected := false
+	client.ctx = context.WithValue(context.Background(), "xr-test-handoff-after-acquire", func(cancel context.CancelFunc) {
+		injected = true
+		cancel()
+	})
+	before := len(device.got)
+	h.Handle(client, protocol.RoleClient, "device", protocol.Message{Type: protocol.TypeInvoke, ExecID: "cancelled-handoff", Op: protocol.OpHandoffSubmit})
+	if !injected {
+		t.Fatal("post-acquisition cancellation was not injected")
+	}
+	if reply := client.last(); reply.Code != protocol.RelayError || reply.ExecID != "cancelled-handoff" {
+		t.Fatal("cancelled handoff did not return correlated refusal", reply)
+	}
+	if len(device.got) != before || len(h.inflight) != 0 || len(h.requests) != 0 {
+		t.Error("cancelled handoff was dispatched or retained a route")
+	}
+	h.identities.mu.Lock()
+	remaining := len(h.identities.entries)
+	h.identities.mu.Unlock()
+	if remaining != 0 {
+		t.Error("cancelled handoff retained the acquired identity gate")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if code := h.RegisterClient("device", "grant", "", &contextSender{ctx: ctx}); code != "" {
+		t.Fatal("subsequent same-device client could not register", code)
+	}
+}

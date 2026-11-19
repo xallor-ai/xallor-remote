@@ -101,3 +101,57 @@ test("should close and reject malformed response", { timeout: 15000 }, async (t)
   await assert.rejects(client.call("status"), /IPC 报文格式无效/);
   assert.equal(client.isConnected, false);
 });
+
+// Connected but silent owner must not hold a coalesced admission forever.
+// The test's fallback detects missing transport deadlines without hanging.
+test("silent owner observation expires and closes the connection", async t => {
+  let requests = 0;
+  const client = await fixture(t, () => { requests++; });
+  let fallback: NodeJS.Timeout | undefined;
+  try {
+    const result = await Promise.race([
+      client.call("runtime.ensure", {}, 25).then(() => "accepted", error => {
+        assert.equal(error.code, "ETIMEDOUT");
+        return "expired";
+      }),
+      new Promise<string>(resolve => { fallback = setTimeout(() => resolve("still pending"), 500); }),
+    ]);
+    assert.equal(result, "expired");
+    assert.equal(client.isConnected, false);
+    assert.equal(requests, 1);
+  } finally { clearTimeout(fallback); }
+});
+
+// The admission timer cannot later close a connection that completed in time.
+test("completed observation clears its deadline for later calls", async t => {
+  const client = await fixture(t, (socket, request) => {
+    socket.write(JSON.stringify({ id: request.id, ok: true, result: {} })+"\n");
+  });
+  assert.equal((await client.call("status", {}, 25)).ok, true);
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.equal(client.isConnected, true);
+  assert.equal((await client.call("status", {})).ok, true);
+});
+
+// Refuse invalid deadlines before dispatch, including values Node would clamp
+// to a very short timer. Streaming execution does not inherit an observation timer.
+test("invalid observation deadlines dispatch nothing", async t => {
+  let requests = 0;
+  const client = await fixture(t, () => { requests++; });
+  for (const timeout of [0, -1, NaN, Infinity, 0.5, 2147483648]) {
+    await assert.rejects(client.call("status", {}, timeout), /deadline is invalid/);
+  }
+  assert.equal(requests, 0);
+  assert.equal(client.isConnected, true);
+});
+
+test("execution stream retains output until its own terminal without admission timeout", async t => {
+  const client = await fixture(t, (socket, request) => {
+    socket.write(JSON.stringify({ id: request.id, event: "stdout", data: "observed" })+"\n");
+    setTimeout(() => socket.write(JSON.stringify({ id: request.id, ok: true, result: { status: "completed", exit_code: 0 } })+"\n"), 60);
+  });
+  const output: string[] = [];
+  const result = await client.stream("exec", {}, frame => output.push(frame.data ?? ""));
+  assert.equal(result.ok, true);
+  assert.deepEqual(output, ["observed"]);
+});

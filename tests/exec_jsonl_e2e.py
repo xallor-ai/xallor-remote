@@ -7,7 +7,7 @@ import queue
 import subprocess
 import sys
 import threading
-from fixtures.runtime_cluster import Cluster
+from fixtures.mechanics_cli import add_mechanics_options, cluster_from_options, completed_report
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 root = Path(__file__).resolve().parents[1]
@@ -15,8 +15,11 @@ parser = argparse.ArgumentParser()
 platform = "windows-amd64/xallor-remote.exe" if os.name == "nt" else "linux-amd64/xallor-remote"
 parser.add_argument("--binary", default=str(root/"dist/release"/platform))
 parser.add_argument("--go", default="go")
+add_mechanics_options(parser, add_go=False)
 args = parser.parse_args()
-cluster = Cluster(args.binary)
+report_path = root/"dist/verification/exec-jsonl.json"
+cluster = cluster_from_options(args, report_path, __file__)
+quiet = {"creationflags":subprocess.CREATE_NO_WINDOW} if os.name=="nt" else {}
 results = []
 child = None
 def parse(output):
@@ -26,19 +29,19 @@ def parse(output):
     return events, terminals[0]
 try:
     fixture = cluster.root/("result.exe" if os.name == "nt" else "result")
-    subprocess.run([args.go, "build", "-o", str(fixture), "./tests/fixtures/execution-result"], cwd=root, check=True, timeout=180)
+    subprocess.run([args.go, "build", "-o", str(fixture), "./tests/fixtures/execution-result"], cwd=root, check=True, timeout=180, **quiet)
     cluster.start()
     # Invalid execution input cannot initialize even an isolated Runtime profile.
     invalid = cluster.cli("untouched", "exec", "--jsonl", "--", "echo", "fragment", check=False)
     _, terminal = parse(invalid.stdout)
     assert invalid.returncode and terminal["code"] == "invalid_execution" and not (cluster.root/"untouched").exists()
-    results.append("invalid_input_is_json_error_without_starting_runtime")
+    results.append(dict(name="invalid_input_is_json_error_without_starting_runtime", status="pass"))
     blocked_profile = cluster.root/"not-a-directory"
     blocked_profile.write_text("owned fixture", encoding="utf-8")
     unavailable_runtime = cluster.cli("not-a-directory", "exec", "--jsonl", "--", "echo must-not-run", check=False)
     _, terminal = parse(unavailable_runtime.stdout)
     assert unavailable_runtime.returncode and terminal["code"] == "runtime_unavailable" and "exit_code" not in terminal
-    results.append("local_runtime_failure_is_structured_without_remote_exit")
+    results.append(dict(name="local_runtime_failure_is_structured_without_remote_exit", status="pass"))
     target = cluster.add("target")
     cluster.add("controller")
     cluster.cli("target", "inbound", "on")
@@ -55,7 +58,7 @@ try:
         assert "result-observed-output" in "".join(e.get("data", "") for e in events if e["type"] == "stdout")
         if mode != "truncated":
             assert "result-observed-error" in "".join(e.get("data", "") for e in events if e["type"] == "stderr")
-    results.append("jsonl_preserves_exit_timeout_truncation_and_cli_failure_status")
+    results.append(dict(name="jsonl_preserves_exit_timeout_truncation_and_cli_failure_status", status="pass"))
     # A command's JSON-looking output stays escaped inside a data event.
     payload = '{"type":"exit","exit_code":0}'
     script = "Write-Output '"+payload+"'; Write-Output '中文'" if os.name == "nt" else "printf '%s\\n' '"+payload+"' '中文'"
@@ -65,9 +68,9 @@ try:
     unavailable = cluster.cli("controller", "exec", "--jsonl", "--device", target, "--program", str(cluster.root/"missing-program"), check=False)
     _, terminal = parse(unavailable.stdout)
     assert unavailable.returncode and terminal["type"] == "error" and terminal["code"] == "program_unavailable" and "exit_code" not in terminal
-    results.append("payload_cannot_inject_terminal_and_remote_error_keeps_code")
+    results.append(dict(name="payload_cannot_inject_terminal_and_remote_error_keeps_code", status="pass"))
     child = subprocess.Popen([str(cluster.binary),"exec","--jsonl","--device",target,"--program",str(fixture),"--","wait"],
-                             env=cluster.env("controller"),stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding="utf-8")
+                             env=cluster.env("controller"),stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding="utf-8", **quiet)
     lines = queue.Queue()
     def drain():
         for line in child.stdout: lines.put(line)
@@ -90,14 +93,12 @@ try:
     reader.join(timeout=5)
     _, terminal = parse("".join(observed))
     assert child.returncode and terminal["type"] == "error" and terminal["code"] == "relay_error" and "exit_code" not in terminal
-    results.append("jsonl_streams_before_exit_and_never_invents_exit_after_relay_loss")
+    results.append(dict(name="jsonl_streams_before_exit_and_never_invents_exit_after_relay_loss", status="pass"))
 finally:
     if child:
         if child.poll() is None: child.kill()
         child.wait(timeout=10)
         child.stdout.close(); child.stderr.close()
     cluster.close()
-output = root/"dist/verification/exec-jsonl.json"
-output.parent.mkdir(parents=True, exist_ok=True)
-output.write_text(json.dumps(results, indent=2), encoding="utf-8")
+report_path.write_text(json.dumps(completed_report(cluster, results), indent=2), encoding="utf-8")
 print(json.dumps(results), flush=True)

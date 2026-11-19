@@ -1,12 +1,13 @@
 package release
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	"github.com/xallor-ai/xallor-remote/internal/buildinfo"
 	"github.com/xallor-ai/xallor-remote/internal/filelock"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 type Store struct {
@@ -14,11 +15,23 @@ type Store struct {
 	// Production always uses nil (real provenance). Private injection is only
 	// available to package tests for lifecycle mechanics, never through CLI/env.
 	sourceVerifier sourceVerifier
+	// Tests may replace kernel image observation independently of provenance.
+	// Production never accepts this dependency from heads or environment.
+	handoffImageVerifier handoffImageVerifier
+	purpose              string
+	effects              EffectRecorder
+	resources            ResourceRecorder
+	bootstrapGuard       func(func() error) error
 }
 type State struct {
-	Current  *Manifest `json:"current,omitempty"`
-	Previous *Manifest `json:"previous,omitempty"`
-	Pending  *Manifest `json:"pending,omitempty"`
+	Current            *Manifest `json:"current,omitempty"`
+	Previous           *Manifest `json:"previous,omitempty"`
+	Pending            *Manifest `json:"pending,omitempty"`
+	CurrentActivation  string    `json:"current_activation,omitempty"`
+	PreviousActivation string    `json:"previous_activation,omitempty"`
+	PendingActivation  string    `json:"pending_activation,omitempty"`
+	CurrentLaunchID    string    `json:"current_launch_id,omitempty"`
+	PendingLaunchID    string    `json:"pending_launch_id,omitempty"`
 }
 
 func (s Store) Lock() (func(), error) {
@@ -32,7 +45,7 @@ func (s Store) Path(m Manifest) string {
 }
 func (s Store) Read() (State, error) {
 	var state State
-	err := readJSON(filepath.Join(s.Dir, "state.json"), &state)
+	err := readStateJSON(filepath.Join(s.Dir, "state.json"), &state)
 	if os.IsNotExist(err) {
 		return state, nil
 	}
@@ -46,9 +59,19 @@ func (s Store) Read() (State, error) {
 			}
 		}
 	}
+	if (state.CurrentLaunchID != "" && (state.Current == nil || !observedActivationID.MatchString(state.CurrentLaunchID))) ||
+		(state.PendingLaunchID != "" && (state.Pending == nil || !observedActivationID.MatchString(state.PendingLaunchID))) {
+		return state, errors.New("invalid Runtime launch selection identity")
+	}
 	return state, nil
 }
 func (s Store) save(state State) error {
+	if s.effects != nil {
+		return s.recordSave(state)
+	}
+	return s.saveRaw(state)
+}
+func (s Store) saveRaw(state State) error {
 	b, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
@@ -70,7 +93,14 @@ func (s Store) save(state State) error {
 	if err != nil {
 		return err
 	}
-	return os.Rename(name, filepath.Join(s.Dir, "state.json"))
+	// Root.Rename uses handle-based POSIX replacement semantics on supported
+	// Windows filesystems, keeping existing snapshot readers valid. os.Rename's
+	// MoveFileEx path can deny replacement merely because a reader is open.
+	root, err := os.OpenRoot(s.Dir)
+	if err != nil {
+		return err
+	}
+	return errors.Join(root.Rename(filepath.Base(name), "state.json"), root.Close())
 }
 
 // ActivePath fails closed on corrupt state/artifacts rather than launching a fallback.
@@ -79,34 +109,17 @@ func (s Store) ActivePath() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if st.Pending != nil {
+		return "", errors.New("interrupted install; run runtime rollback")
+	}
 	if st.Current == nil {
-		if st.Pending != nil {
-			return "", errors.New("interrupted initial install; run runtime rollback")
-		}
 		return "", nil
 	}
-	if err = s.Verify(*st.Current); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	activation, err := s.authenticatedActivation(ctx, st.CurrentActivation, *st.Current)
+	if err != nil {
 		return "", err
 	}
-	return s.Path(*st.Current), nil
-}
-func (s Store) snapshot(e buildinfo.Executable) (Manifest, error) {
-	st, err := os.Stat(e.Path)
-	if err != nil {
-		return Manifest{}, err
-	}
-	name := "xallor-remote"
-	if e.OS == "windows" {
-		name += ".exe"
-	}
-	m := Manifest{Schema: 1, Build: e.Info, Artifact: Artifact{Filename: name, SHA256: e.SHA256, Size: st.Size()}}
-	if err = m.validate(); err != nil {
-		return m, err
-	}
-	f, err := os.Open(e.Path)
-	if err != nil {
-		return m, err
-	}
-	defer f.Close()
-	return m, s.copyArtifact(f, m)
+	return activation.Binary, nil
 }

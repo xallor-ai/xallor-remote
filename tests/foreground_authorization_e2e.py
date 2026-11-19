@@ -1,16 +1,18 @@
 """Continuous foreground authorization with real Relay/Runtime/CLI processes."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 import time
 
 from fixtures.file_stamp import stamp
 from fixtures.mcp_foreground import verify_revocation
 from fixtures.process_ref import ProcessRef
-from fixtures.runtime_cluster import Cluster
+from fixtures.mechanics_cli import add_mechanics_options, cluster_from_options, completed_report
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,10 +20,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--binary", required=True)
+    platform = "windows-amd64/xallor-remote.exe" if os.name == "nt" else "linux-amd64/xallor-remote"
+    parser.add_argument("--binary", default=str(ROOT / "dist/release" / platform))
     parser.add_argument("--go", default="go")
+    add_mechanics_options(parser, add_go=False)
+    parser.add_argument("--tree-fixture", help="Explicit trusted precompiled process-tree test program")
     args = parser.parse_args()
-    cluster, references, controllers, results = Cluster(args.binary), [], [], []
+    output = ROOT / "dist/verification/foreground-authorization.json"
+    cluster = cluster_from_options(args, output, __file__)
+    references, controllers, results = [], [], []
+    quiet = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 
     def wait(check, description, seconds=35):
         deadline = time.monotonic() + seconds
@@ -35,7 +43,12 @@ def main():
 
     try:
         tree = cluster.root / ("tree.exe" if os.name == "nt" else "tree")
-        subprocess.run([args.go, "build", "-o", str(tree), "./tests/fixtures/process-tree"], cwd=ROOT, check=True, timeout=180)
+        if args.tree_fixture:
+            shutil.copy2(Path(args.tree_fixture).resolve(), tree)
+            tree.chmod(0o700)
+        else:
+            subprocess.run([args.go, "build", "-o", str(tree), "./tests/fixtures/process-tree"], cwd=ROOT, check=True, timeout=180, **quiet)
+        cluster.evidence["tree_fixture_sha256"] = hashlib.sha256(tree.read_bytes()).hexdigest()
         cluster.start()
         target = cluster.add("target")
         cluster.add("controller")
@@ -58,7 +71,7 @@ def main():
             process = subprocess.Popen([str(cluster.binary), "exec", "--jsonl", "--device", target,
                                         "--program", str(tree), "--", "parent", str(directory)],
                                        env=cluster.env("controller"), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                       encoding="utf-8", errors="replace")
+                                       encoding="utf-8", errors="replace", **quiet)
             controllers.append(process)
             def started():
                 if process.poll() is not None:
@@ -155,9 +168,7 @@ def main():
                 reference.close()
         finally:
             cluster.close()
-        output = ROOT / "dist/verification/foreground-authorization.json"
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    output.write_text(json.dumps(completed_report(cluster, results), indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":

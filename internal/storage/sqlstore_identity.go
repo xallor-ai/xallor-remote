@@ -8,19 +8,20 @@ import (
 	"time"
 
 	"github.com/xallor-ai/xallor-remote/internal/access"
+	"github.com/xallor-ai/xallor-remote/internal/accesscode"
 )
 
 func scanDevice(row *sql.Row) (access.Device, error) {
 	var record access.Device
-	err := row.Scan(&record.UID, &record.SecretHash, &record.Inbound, &record.GrantID, &record.GrantHash, &record.OwnershipID, &record.OwnerTenant, &record.OwnerPrincipal)
+	err := row.Scan(&record.UID, &record.SecretHash, &record.Inbound, &record.GrantID, &record.GrantHash, &record.OwnershipID, &record.OwnerTenant, &record.OwnerPrincipal, &record.SessionEpoch, &record.SessionEpochActive)
 	if errors.Is(err, sql.ErrNoRows) {
 		return access.Device{}, access.ErrDeviceNotFound
 	}
 	return record, err
 }
 
-const deviceFields = `SELECT d.uid, d.secret_hash, d.inbound, COALESCE(g.id,''), COALESCE(g.token_hash,''), COALESCE(o.id,''), COALESCE(o.tenant_id,''), COALESCE(o.principal_id,'')
-FROM devices d LEFT JOIN device_grants g ON g.device_uid=d.uid LEFT JOIN device_ownership o ON o.device_uid=d.uid`
+const deviceFields = `SELECT d.uid, d.secret_hash, d.inbound, COALESCE(g.id,''), COALESCE(g.token_hash,''), COALESCE(o.id,''), COALESCE(o.tenant_id,''), COALESCE(o.principal_id,''),COALESCE(st.epoch,''),COALESCE(st.active,0)
+FROM devices d LEFT JOIN device_grants g ON g.device_uid=d.uid LEFT JOIN device_ownership o ON o.device_uid=d.uid LEFT JOIN session_targets st ON st.device_uid=d.uid`
 const selectDevice = deviceFields + ` WHERE d.id=?`
 
 func (s *SQLStore) LoadDevice(ctx context.Context, id string) (access.Device, error) {
@@ -51,6 +52,13 @@ ON CONFLICT(id) DO NOTHING`, candidate.UID, id, secretHash, inbound, time.Now().
 }
 
 func (s *SQLStore) UpdateDevice(ctx context.Context, id string, requested access.Device) (access.Device, error) {
+	if requested.UID == "" {
+		return access.Device{}, access.ErrDeviceIdentity
+	}
+	proposed, err := accesscode.NewTargetBinding(requested.UID)
+	if err != nil {
+		return access.Device{}, err
+	}
 	return storeTransaction(ctx, s.db, func(tx *sql.Tx) (access.Device, error) {
 		current, err := scanDevice(tx.QueryRowContext(ctx, selectDevice, id))
 		if errors.Is(err, access.ErrDeviceNotFound) {
@@ -77,7 +85,10 @@ WHERE uid=? AND secret_hash=?`, record.Inbound, time.Now().Unix(), record.UID, r
 			_, err = tx.ExecContext(ctx, `INSERT INTO device_grants (id, device_uid, token_hash) VALUES (?,?,?)
 ON CONFLICT(device_uid) DO UPDATE SET id=excluded.id, token_hash=excluded.token_hash`, record.GrantID, record.UID, record.GrantHash)
 		}
-		return record, err
+		if err != nil {
+			return access.Device{}, err
+		}
+		return updateSessionSettings(ctx, tx, current, record, proposed)
 	})
 }
 

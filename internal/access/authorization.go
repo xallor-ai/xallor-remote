@@ -2,6 +2,8 @@ package access
 
 import (
 	"errors"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/xallor-ai/xallor-remote/internal/principal"
 	"github.com/xallor-ai/xallor-remote/internal/protocol"
@@ -10,6 +12,8 @@ import (
 var ErrDenied = errors.New("device access is not authorized")
 var ErrInvalid = errors.New("invalid device access request")
 var ErrLimit = errors.New("device share limit reached")
+
+const MaxCodeSecretBytes = 4096
 
 // Permissions are independent of membership and commercial entitlements.
 type Permissions uint64
@@ -85,6 +89,9 @@ type Authorization struct {
 
 type Request struct {
 	Action       string   `json:"action"`
+	CodeID       string   `json:"code_id,omitempty"`
+	NewCodeID    string   `json:"new_code_id,omitempty"`
+	NewSecret    string   `json:"new_secret,omitempty"`
 	MembershipID string   `json:"membership_id,omitempty"`
 	ShareID      string   `json:"share_id,omitempty"`
 	Operations   []string `json:"operations,omitempty"`
@@ -117,6 +124,14 @@ func (d Device) OwnedBy(p principal.Identity) bool {
 
 func (r Request) Validate() error {
 	switch r.Action {
+	case "code.revoke":
+		if !validCodeIdentifier(r.CodeID) || r.NewCodeID != "" || r.NewSecret != "" || r.MembershipID != "" || r.ShareID != "" || len(r.Operations) != 0 || r.TTLSeconds != 0 {
+			return ErrInvalid
+		}
+	case "code.rotate":
+		if !validCodeIdentifier(r.CodeID) || !validCodeIdentifier(r.NewCodeID) || !validCodeSecret(r.NewSecret) || r.MembershipID != "" || r.ShareID != "" || len(r.Operations) != 0 || r.TTLSeconds != 0 {
+			return ErrInvalid
+		}
 	case "claim", "status":
 		if r.MembershipID != "" || r.ShareID != "" || len(r.Operations) != 0 || r.TTLSeconds != 0 {
 			return ErrInvalid
@@ -139,4 +154,11 @@ func (r Request) Validate() error {
 		return ErrInvalid
 	}
 	return nil
+}
+
+func validCodeIdentifier(value string) bool {
+	return value != "" && len(value) <= 128 && strings.TrimSpace(value) == value && utf8.ValidString(value)
+}
+func validCodeSecret(value string) bool {
+	return value != "" && len(value) <= MaxCodeSecretBytes && utf8.ValidString(value) && !strings.ContainsRune(value, 0)
 }

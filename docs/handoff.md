@@ -29,6 +29,17 @@ xallor-remote handoff submit --device 123456789 --request request.json
 xallor-remote handoff get --device 123456789 --request-id review-001
 ```
 
+若已通过 `session request` 获得接收方批准的逻辑授权会话，提交和查询均显式带上
+`--session-id <批准返回的ID>`。该参数是访问授权，不是 `request.json` 内的
+`session_id`：后者仍是目标 Cursor CLI 的会话 UUID，不能互相替代。提交需获准
+`handoff.submit`，查询需获准 `handoff.get`；Runtime 转发后由 Relay 复验范围和期限。
+下例的 `$sessionId` 保存批准返回的逻辑会话 ID。
+
+```powershell
+xallor-remote handoff submit --device 123456789 --session-id $sessionId --request request.json
+xallor-remote handoff get --device 123456789 --session-id $sessionId --request-id review-001
+```
+
 提交只返回已保存的回执，不等待 Agent 完成。查询不会启动 Agent。网络中断后保留原请求 ID，先查询；相同 ID、相同内容返回已有回执，内容冲突拒绝覆盖。不得用新 ID 自动重试未知结果。
 
 请求 ID 作用于 Relay 推导的主体、租户、设备实例与归属实例。不同主体可使用相同 ID，但不能查询或覆盖彼此的回执。凭据续签和重新授予同主体访问权保持幂等；设备转移（包括转回原主体）进入新作用域。未认领设备的无账号访问按共享授权实例隔离，同码持有人属于同一组，不能区分为个人。具体 scope 字段见 [protocol.md](protocol.md)。

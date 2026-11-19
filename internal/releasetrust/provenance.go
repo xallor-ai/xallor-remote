@@ -4,12 +4,15 @@ package releasetrust
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/xallor-ai/xallor-remote/internal/process"
 )
 
 const Repository = "xallor-ai/xallor-remote"
@@ -18,6 +21,10 @@ const Issuer = "https://token.actions.githubusercontent.com"
 const Predicate = "https://slsa.dev/provenance/v1"
 
 var ErrUnverified = errors.New("发行来源未验证")
+
+// ErrCleanupUncertain means verifier resources could not be proven released.
+// Proof refusal alone does not imply this condition.
+var ErrCleanupUncertain = errors.New("发行来源验证进程清理未确认")
 var versionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$`)
 var revisionPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
 
@@ -43,7 +50,7 @@ func Arguments(artifact string, identity Identity, bundle string) ([]string, err
 	args := []string{"attestation", "verify", artifact, "--hostname", "github.com", "--repo", Repository,
 		"--signer-workflow", Workflow, "--cert-oidc-issuer", Issuer, "--predicate-type", Predicate,
 		"--source-ref", "refs/tags/v" + identity.Version, "--source-digest", identity.Revision,
-		"--deny-self-hosted-runners"}
+		"--deny-self-hosted-runners", "--format", "json"}
 	if bundle != "" {
 		args = append(args, "--bundle", bundle)
 	}
@@ -57,7 +64,10 @@ func within(root, candidate string) bool {
 
 // Verify fails on missing tools, unavailable services and invalid proofs. The
 // caller must independently trust the system gh installation outside sourceRoot.
-func Verify(ctx context.Context, artifact string, identity Identity, bundle, sourceRoot string) error {
+func Verify(ctx context.Context, artifact string, identity Identity, bundle, sourceRoot, expectedSHA256 string) error {
+	if digest, err := hex.DecodeString(expectedSHA256); err != nil || len(digest) != 32 || strings.ToLower(expectedSHA256) != expectedSHA256 {
+		return fmt.Errorf("%w：缺少待验证的制品摘要", ErrUnverified)
+	}
 	args, err := Arguments(artifact, identity, bundle)
 	if err != nil {
 		return err
@@ -85,11 +95,34 @@ func Verify(ctx context.Context, artifact string, identity Identity, bundle, sou
 	if within(root, tool) {
 		return fmt.Errorf("%w：不能使用待验目录内的 GitHub CLI", ErrUnverified)
 	}
-	command := exec.CommandContext(ctx, tool, args...)
+	command := proofCommand(ctx, tool, args...)
 	command.Dir = filepath.Dir(artifact)
-	if err := command.Run(); err != nil {
+	var verified proofOutput
+	command.Stdout = &verified
+	child, err := process.Start(ctx, command)
+	if err == nil {
+		err = child.Wait()
+	}
+	if err != nil {
 		// Do not forward arbitrary tool output or credentials to CLI/JSON logs.
-		return fmt.Errorf("%w：证明、签发身份或验证服务检查失败；保留原版本并检查网络和可信 GitHub CLI", ErrUnverified)
+		return proofProcessError(err)
+	}
+	if !verified.matches(expectedSHA256) {
+		return fmt.Errorf("%w：已验证声明不包含保留副本的摘要", ErrUnverified)
 	}
 	return nil
+}
+
+func proofCommand(_ context.Context, tool string, args ...string) *exec.Cmd {
+	cmd := exec.Command(tool, args...)
+	process.HideConsole(cmd)
+	return cmd
+}
+
+func proofProcessError(err error) error {
+	refusal := fmt.Errorf("%w：证明、签发身份或验证服务检查失败；保留原版本并检查网络和可信 GitHub CLI", ErrUnverified)
+	if errors.Is(err, process.ErrCleanup) || errors.Is(err, exec.ErrWaitDelay) {
+		return errors.Join(refusal, ErrCleanupUncertain)
+	}
+	return refusal
 }
