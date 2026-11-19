@@ -13,6 +13,7 @@ import uuid
 
 from fixtures.mechanics_cli import add_mechanics_options, cluster_from_options, completed_report
 from fixtures.process_ref import ProcessRef
+from fixtures.publication_read import wait_text as wait_file
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 parser = argparse.ArgumentParser()
@@ -29,16 +30,6 @@ cluster = cluster_from_options(args, output, __file__)
 refs, results = [], []
 quiet = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 controller = None
-
-
-def wait_file(path, process=None):
-    deadline = time.monotonic() + 15
-    while not path.exists():
-        if process is not None and process.poll() is not None:
-            raise AssertionError(f"fixture command exited before startup: {process.communicate()!r}")
-        assert time.monotonic() < deadline, f"fixture did not start: {path.name}"
-        time.sleep(.02)
-    return path.read_text(encoding="utf-8")
 
 
 def owned(pid):
