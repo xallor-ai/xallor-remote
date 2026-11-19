@@ -35,13 +35,13 @@ try:
     invalid = cluster.cli("untouched", "exec", "--jsonl", "--", "echo", "fragment", check=False)
     _, terminal = parse(invalid.stdout)
     assert invalid.returncode and terminal["code"] == "invalid_execution" and not (cluster.root/"untouched").exists()
-    results.append("invalid_input_is_json_error_without_starting_runtime")
+    results.append(dict(name="invalid_input_is_json_error_without_starting_runtime", status="pass"))
     blocked_profile = cluster.root/"not-a-directory"
     blocked_profile.write_text("owned fixture", encoding="utf-8")
     unavailable_runtime = cluster.cli("not-a-directory", "exec", "--jsonl", "--", "echo must-not-run", check=False)
     _, terminal = parse(unavailable_runtime.stdout)
     assert unavailable_runtime.returncode and terminal["code"] == "runtime_unavailable" and "exit_code" not in terminal
-    results.append("local_runtime_failure_is_structured_without_remote_exit")
+    results.append(dict(name="local_runtime_failure_is_structured_without_remote_exit", status="pass"))
     target = cluster.add("target")
     cluster.add("controller")
     cluster.cli("target", "inbound", "on")
@@ -58,7 +58,7 @@ try:
         assert "result-observed-output" in "".join(e.get("data", "") for e in events if e["type"] == "stdout")
         if mode != "truncated":
             assert "result-observed-error" in "".join(e.get("data", "") for e in events if e["type"] == "stderr")
-    results.append("jsonl_preserves_exit_timeout_truncation_and_cli_failure_status")
+    results.append(dict(name="jsonl_preserves_exit_timeout_truncation_and_cli_failure_status", status="pass"))
     # A command's JSON-looking output stays escaped inside a data event.
     payload = '{"type":"exit","exit_code":0}'
     script = "Write-Output '"+payload+"'; Write-Output '中文'" if os.name == "nt" else "printf '%s\\n' '"+payload+"' '中文'"
@@ -68,7 +68,7 @@ try:
     unavailable = cluster.cli("controller", "exec", "--jsonl", "--device", target, "--program", str(cluster.root/"missing-program"), check=False)
     _, terminal = parse(unavailable.stdout)
     assert unavailable.returncode and terminal["type"] == "error" and terminal["code"] == "program_unavailable" and "exit_code" not in terminal
-    results.append("payload_cannot_inject_terminal_and_remote_error_keeps_code")
+    results.append(dict(name="payload_cannot_inject_terminal_and_remote_error_keeps_code", status="pass"))
     child = subprocess.Popen([str(cluster.binary),"exec","--jsonl","--device",target,"--program",str(fixture),"--","wait"],
                              env=cluster.env("controller"),stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding="utf-8", **quiet)
     lines = queue.Queue()
@@ -93,7 +93,7 @@ try:
     reader.join(timeout=5)
     _, terminal = parse("".join(observed))
     assert child.returncode and terminal["type"] == "error" and terminal["code"] == "relay_error" and "exit_code" not in terminal
-    results.append("jsonl_streams_before_exit_and_never_invents_exit_after_relay_loss")
+    results.append(dict(name="jsonl_streams_before_exit_and_never_invents_exit_after_relay_loss", status="pass"))
 finally:
     if child:
         if child.poll() is None: child.kill()

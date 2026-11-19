@@ -47,6 +47,10 @@ try:
     run_helper("resource-boundaries.mjs",env)
 finally:
     cluster.close()
-results = ["transport_saturation_and_exact_release_across_terminal_drop_reconnect", "full_foreground_capacity_keeps_info_and_files_available","additional_exec_rejected_by_target_capacity","cancel_reclaims_jobs_and_new_execution_succeeds"]
+results = [dict(name=name, status="pass") for name in (
+    "transport_saturation_and_exact_release_across_terminal_drop_reconnect",
+    "full_foreground_capacity_keeps_info_and_files_available",
+    "additional_exec_rejected_by_target_capacity",
+    "cancel_reclaims_jobs_and_new_execution_succeeds")]
 output.write_text(json.dumps(completed_report(cluster,results),indent=2),encoding="utf-8")
 print(json.dumps(results),flush=True)

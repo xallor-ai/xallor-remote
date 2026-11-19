@@ -23,7 +23,7 @@ db = None
 
 
 def passed(name):
-    results.append(name)
+    results.append(dict(name=name, status="pass"))
     print(name, flush=True)
 
 

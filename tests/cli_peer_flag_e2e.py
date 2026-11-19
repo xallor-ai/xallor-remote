@@ -27,11 +27,11 @@ def main():
     try:
         old = cluster.cli('old','peer','add','--id','123456789','--grant','xr_grant_test',check=False)
         assert old.returncode != 0 and 'unknown flag' in old.stderr and not (cluster.root/'old').exists(), (old.stdout,old.stderr)
-        results.append('legacy_id_rejected_without_initializing_profile')
+        results.append(dict(name='legacy_id_rejected_without_initializing_profile', status="pass"))
         new = cluster.cli('new','peer','add','--device','123456789','--grant','xr_grant_test')
         assert 'unknown flag' not in new.stderr and '123456789' in new.stdout, (new.stdout,new.stderr)
         assert (cluster.root/'new').exists(), 'new --device did not reach the command implementation'
-        results.append('device_flag_reaches_runtime_owner_and_adds_peer')
+        results.append(dict(name='device_flag_reaches_runtime_owner_and_adds_peer', status="pass"))
     finally:
         cluster.close()
     output.write_text(json.dumps(completed_report(cluster, results),indent=2),encoding='utf-8')
